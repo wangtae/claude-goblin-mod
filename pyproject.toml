@@ -1,5 +1,5 @@
 [project]
-name = "claude-goblin-usage"
+name = "claude-goblin"
 version = "0.1.0"
 description = "Track and visualize Claude Code usage with a modern TUI dashboard and GitHub-style activity heatmaps"
 readme = "README.md"
@@ -43,6 +43,9 @@ claude-goblin = "claude_goblin_usage.cli:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/claude_goblin_usage"]
 
 [dependency-groups]
 dev = [

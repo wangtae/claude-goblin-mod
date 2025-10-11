@@ -7,6 +7,8 @@
 
 Python command line tool to help with Claude Code utilities and usage tracking/analytics.
 
+**Quick Start:** Install with `pip install claude-goblin` and use `claude-goblin --help` for commands or `claude-goblin --usage` to start tracking. Below are some examples of outputs that this command line can give you.
+
 ---
 
 **TUI Dashboard:**
@@ -42,20 +44,16 @@ Python command line tool to help with Claude Code utilities and usage tracking/a
 
 ## Installation
 
-### With UV (recommended)
+### From PyPI (recommended)
 ```bash
-# Clone the repository
-git clone https://github.com/data-goblin/claude-goblin.git
-cd claude-goblin
-
-# Install with uv
-uv pip install -e .
+# Install from PyPI
+pip install claude-goblin
 
 # Optional: Install export dependencies for PNG/SVG generation
-uv pip install -e ".[export]"
+pip install "claude-goblin[export]"
 ```
 
-### With pip
+### From source
 ```bash
 # Clone the repository
 git clone https://github.com/data-goblin/claude-goblin.git
