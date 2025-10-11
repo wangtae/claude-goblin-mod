@@ -5,9 +5,12 @@
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Python command line tool to help with Claude Code utilities and usage tracking.
+Python command line tool to help with Claude Code utilities and usage tracking/analytics.
 
-> **Platform Note**: Developed and tested on macOS (Python 3.13). Should work on Linux and Windows but is untested on those platforms.
+![TUI dashboard of Claude Code usage](TUI.png)
+
+> [!NOTE] 
+> Developed and tested on macOS (Python 3.13). Should work on Linux and Windows but is untested on those platforms.
 
 ## Features
 
@@ -83,31 +86,28 @@ For most users, just run `--usage` regularly and it will handle data tracking au
 - `claude-goblin --export svg` - Export as SVG image
 - `claude-goblin --export --open` - Export and open the image
 - `claude-goblin --export -y 2024` - Export specific year
-- `claude-goblin --export -o output.png` - Specify output file
+- `claude-goblin --export -o output.png` - Specify output file (path)
 
 ### Hooks (Advanced)
-- `claude-goblin --setup-hooks usage` - Auto-update database on Claude exit
-- `claude-goblin --setup-hooks audio` - Play sound on Claude exit
-- `claude-goblin --setup-hooks png` - Generate PNG on Claude exit
+- `claude-goblin --setup-hooks usage` - Auto-update database on Claude `Stop` hook.
+- `claude-goblin --setup-hooks audio` - Play sound on Claude Code `Stop` hook.
+- `claude-goblin --setup-hooks png` - Generate PNG on Claude Code `Stop` hook.
 - `claude-goblin --remove-hooks` - Remove all hooks
 
 ## Data Source
 
-Claude Goblin reads usage data from Claude Code's session logs:
+Claude Goblin reads usage data from Claude Code's local session logs:
 ```
 ~/.claude/projects/*.jsonl
 ```
 
-**Important**: Claude Code retains session logs for approximately **30 days** (rolling window). Claude Goblin solves this by:
+**Important**: Claude Code retains session logs for approximately **30 days** (rolling window). There is no way to get other historical data without contacting Anthropic support. Claude Goblin solves this by:
 - Automatically saving data to an SQLite database (`~/.claude/usage/usage_history.db`) whenever you run `--usage`
 - Preserving historical data indefinitely
 - Merging current + historical data for complete analytics
+- Configuration to choose between saving detailed or aggregate data
 
 ## How It Works
-
-Claude Goblin uses a simple ingestion → storage → display architecture:
-
-### Data Flow
 
 ```mermaid
 graph TD
@@ -220,6 +220,8 @@ claude-goblin --delete-usage -f
 - **Projects**: Folders/directories where you've used Claude
 - **Time**: Daily activity patterns throughout the year
 - **Usage Limits**: Real-time session, weekly, and Opus limits
+
+It will also compute how much you would have had to pay if you used API pricing instead of a $200 Max plan.
 
 
 ## Technical Details
