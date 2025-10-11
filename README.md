@@ -7,10 +7,31 @@
 
 Python command line tool to help with Claude Code utilities and usage tracking/analytics.
 
+---
+
+**TUI Dashboard:**
+
 ![Example TUI dashboard](dashboard.png)
 
+---
+
+**MacOS status bar for usage limits:**
+
+![Example status bar](status-bar.png)
+
+---
+
+**GitHub activity-style heatmap of annual usage:**
+
+![Example heatmap](heatmap.png)
+
+--- 
+
+
 > [!NOTE] 
-> Developed and tested on macOS (Python 3.13). Should work on Linux and Windows but is untested on those platforms.
+> This tool was developed and tested on macOS (Python 3.13). Should work on Linux and Windows but is untested on those platforms.
+
+
 
 ## Features
 
@@ -179,7 +200,7 @@ Example TUI:
 
 ![Example TUI dashboard](dashboard.png)
 
-## Yearly Heatmap
+## --export Heatmap
 
 Export a GitHub-style yearly activity heatmap:
 
@@ -191,10 +212,34 @@ Example heatmap:
 
 ![Yearly activity heatmap](heatmap.png)
 
-### Export Formats
+### --export Formats
 
 - **PNG** (default): `claude-goblin --export`
 
+## --status-bar (macOS only)
+
+Launch a menu bar app showing your Claude Code usage limits:
+
+```bash
+# Show weekly usage (default)
+claude-goblin --status-bar weekly
+
+# Show session usage
+claude-goblin --status-bar session
+
+# Show Opus weekly usage
+claude-goblin --status-bar opus
+```
+
+The menu bar displays "CC: XX%" and clicking it shows all three limits (Session, Weekly, Opus) with reset times.
+
+**Running in background:**
+- Use `&` to run in background: `claude-goblin --status-bar weekly &`
+- Use `nohup` to persist after terminal closes: `nohup claude-goblin --status-bar weekly > /dev/null 2>&1 &`
+
+Example:
+
+![example status bar](status-bar.png)
 
 ## Historical Data
 
@@ -241,7 +286,9 @@ The token breakdown shows cache efficiency. High "Cache Read" percentages (80-90
 
 - Python >= 3.10
 - Claude Code (for generating usage data)
-- Pillow + CairoSVG for PNG export
+- Rich >= 13.7.0 (terminal UI)
+- rumps >= 0.4.0 (macOS menu bar app, macOS only)
+- Pillow + CairoSVG (optional, for PNG/SVG export)
 
 ## License
 

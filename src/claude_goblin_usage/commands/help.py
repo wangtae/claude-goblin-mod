@@ -28,6 +28,8 @@ Automatically saves historical snapshots to preserve data beyond the 30-day roll
 [bold]Usage:[/bold]
   claude-goblin                      Show this help message
   claude-goblin --limits             Show usage percentages (session, week, opus)
+  claude-goblin --status-bar [type]  Launch macOS menu bar app (session|weekly|opus)
+                                     Defaults to weekly if type not specified
   claude-goblin --usage              Show usage stats (single shot)
   claude-goblin --usage --live       Show usage with auto-refresh
   claude-goblin --update-usage       Update historical database with latest data

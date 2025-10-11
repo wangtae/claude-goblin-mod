@@ -12,6 +12,7 @@ from claude_goblin_usage.commands import (
     restore_backup,
     help,
     limits,
+    status_bar,
 )
 from claude_goblin_usage.hooks.manager import setup_hooks, remove_hooks
 #endregion
@@ -49,6 +50,7 @@ def main() -> None:
     export_flag = "--export" in sys.argv
     delete_usage_flag = "--delete-usage" in sys.argv
     restore_backup_flag = "--restore-backup" in sys.argv
+    status_bar_flag = "--status-bar" in sys.argv
 
     # Dispatch to appropriate command handler
     if show_help_flag:
@@ -99,6 +101,16 @@ def main() -> None:
 
     if restore_backup_flag:
         restore_backup.run(console)
+        return
+
+    if status_bar_flag:
+        # Parse limit type argument (session, weekly, opus)
+        limit_type = "weekly"  # Default to weekly
+        if "session" in sys.argv:
+            limit_type = "session"
+        elif "opus" in sys.argv:
+            limit_type = "opus"
+        status_bar.run(console, limit_type)
         return
 
     if show_usage_flag:

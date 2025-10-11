@@ -23,6 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "rich>=13.7.0",
+    "rumps>=0.4.0; sys_platform == 'darwin'",
 ]
 
 [project.urls]
@@ -43,8 +44,8 @@ claude-goblin = "claude_goblin_usage.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=7.4.0",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.23.0",
