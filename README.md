@@ -7,7 +7,7 @@
 
 Python command line tool to help with Claude Code utilities and usage tracking/analytics.
 
-![TUI dashboard of Claude Code usage](TUI.png)
+![Example TUI dashboard](dashboard.png)
 
 > [!NOTE] 
 > Developed and tested on macOS (Python 3.13). Should work on Linux and Windows but is untested on those platforms.
@@ -177,7 +177,7 @@ graph TD
 
 Example TUI:
 
-![TUI dashboard of Claude Code usage](TUI.png)
+![Example TUI dashboard](dashboard.png)
 
 ## Yearly Heatmap
 
