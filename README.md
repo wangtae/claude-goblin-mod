@@ -155,9 +155,9 @@ graph TD
 2. Generates yearly heatmap
 3. Exports to current directory as `claude-usage-<timestamp>.png` (or specify with `-o`)
 
-**`claude-goblin --stats`** (Display only)
-1. Reads data from DB at `~/.claude/usage/usage_history.db`
-2. Displays comprehensive statistics
+**`claude-goblin --stats`** (Display + Ingestion)
+1. **Ingestion**: Reads JSONL files from `~/.claude/projects/*.jsonl` and saves to DB
+2. **Display**: Reads data from DB and displays comprehensive statistics
 
 **`claude-goblin --update-usage`** (Ingestion only)
 1. Reads JSONL files from `~/.claude/projects/*.jsonl`

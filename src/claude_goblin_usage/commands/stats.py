@@ -3,9 +3,13 @@ from datetime import datetime
 
 from rich.console import Console
 
+from claude_goblin_usage.config.settings import get_claude_jsonl_files
+from claude_goblin_usage.config.user_config import get_storage_mode
+from claude_goblin_usage.data.jsonl_parser import parse_all_jsonl_files
 from claude_goblin_usage.storage.snapshot_db import (
     get_database_stats,
     get_text_analysis_stats,
+    save_snapshot,
 )
 #endregion
 
@@ -27,6 +31,15 @@ def run(console: Console) -> None:
     Args:
         console: Rich console for output
     """
+    # Step 1: Ingestion - parse JSONL and save to DB
+    with console.status("[bold #ff8800]Updating database...", spinner="dots", spinner_style="#ff8800"):
+        jsonl_files = get_claude_jsonl_files()
+        if jsonl_files:
+            current_records = parse_all_jsonl_files(jsonl_files)
+            if current_records:
+                save_snapshot(current_records, storage_mode=get_storage_mode())
+
+    # Step 2: Display stats from DB
     db_stats = get_database_stats()
 
     if db_stats["total_records"] == 0 and db_stats["total_prompts"] == 0:
