@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2025-10-11
+
+### Added
+- Enhanced audio hook to support both `Stop` and `Notification` hooks
+  - Completion sound: Plays when Claude finishes responding (`Stop` hook)
+  - Permission sound: Plays when Claude requests permission (`Notification` hook)
+- User now selects two different sounds during `setup-hooks audio` for better distinction
+- Expanded macOS sound library from 5 to 10 sounds
+
+### Changed
+- Updated `claude-goblin setup-hooks audio` to prompt for two sounds instead of one
+- Audio hook removal now cleans up both `Stop` and `Notification` hooks
+- Updated documentation to reflect dual audio notification capability
+
+### Fixed
+- Fixed `NameError: name 'fast' is not defined` in usage command when `--fast` flag was used
+
 ## [0.1.1] - 2025-10-11
 
 ### Fixed

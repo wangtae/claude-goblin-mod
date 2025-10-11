@@ -22,16 +22,22 @@ def setup(console: Console, settings: dict, settings_path: Path) -> None:
         settings_path: Path to settings.json file
     """
     # Offer sound choices
-    console.print("[bold cyan]Choose a notification sound:[/bold cyan]\n")
+    console.print("[bold cyan]Choose notification sounds:[/bold cyan]\n")
+    console.print("[dim]You'll pick two sounds: one for completion, one for permission requests[/dim]\n")
 
     system = platform.system()
     if system == "Darwin":
         sounds = [
-            ("Glass", "Clear glass sound (recommended)"),
-            ("Ping", "Short ping sound"),
+            ("Glass", "Clear glass sound (recommended for completion)"),
+            ("Ping", "Short ping sound (recommended for permission)"),
             ("Purr", "Soft purr sound"),
             ("Tink", "Quick tink sound"),
             ("Pop", "Pop sound"),
+            ("Basso", "Low bass sound"),
+            ("Blow", "Blow sound"),
+            ("Bottle", "Bottle sound"),
+            ("Frog", "Frog sound"),
+            ("Funk", "Funk sound"),
         ]
     elif system == "Windows":
         sounds = [
@@ -50,59 +56,101 @@ def setup(console: Console, settings: dict, settings_path: Path) -> None:
             ("service-login", "Login sound"),
         ]
 
+    # Choose completion sound
+    console.print("[bold]Sound for when Claude finishes responding:[/bold]")
     for idx, (name, desc) in enumerate(sounds, 1):
         console.print(f"  {idx}. {name} - {desc}")
 
-    console.print("\n[dim]Enter number (1-5) or press Enter for default:[/dim] ", end="")
+    console.print("\n[dim]Enter number (default: 1):[/dim] ", end="")
 
-    # Read user input
     try:
         user_input = input().strip()
         if user_input == "":
-            # Default to first option
-            selected_sound = sounds[0][0]
-        elif user_input.isdigit() and 1 <= int(user_input) <= 5:
-            # Valid number selection
-            selected_sound = sounds[int(user_input) - 1][0]
+            completion_sound = sounds[0][0]
+        elif user_input.isdigit() and 1 <= int(user_input) <= len(sounds):
+            completion_sound = sounds[int(user_input) - 1][0]
         else:
             console.print("[yellow]Invalid selection, using default[/yellow]")
-            selected_sound = sounds[0][0]
+            completion_sound = sounds[0][0]
     except (EOFError, KeyboardInterrupt):
         console.print("\n[yellow]Cancelled[/yellow]")
         return
 
-    hook_command = get_sound_command(selected_sound)
+    # Choose permission sound
+    console.print("\n[bold]Sound for when Claude requests permission:[/bold]")
+    for idx, (name, desc) in enumerate(sounds, 1):
+        console.print(f"  {idx}. {name} - {desc}")
 
-    if not hook_command:
+    console.print("\n[dim]Enter number (default: 2):[/dim] ", end="")
+
+    try:
+        user_input = input().strip()
+        if user_input == "":
+            # Default to second sound if available
+            permission_sound = sounds[1][0] if len(sounds) > 1 else sounds[0][0]
+        elif user_input.isdigit() and 1 <= int(user_input) <= len(sounds):
+            permission_sound = sounds[int(user_input) - 1][0]
+        else:
+            console.print("[yellow]Invalid selection, using default[/yellow]")
+            permission_sound = sounds[1][0] if len(sounds) > 1 else sounds[0][0]
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return
+
+    completion_command = get_sound_command(completion_sound)
+    permission_command = get_sound_command(permission_sound)
+
+    if not completion_command or not permission_command:
         console.print("[red]Audio hooks not supported on this platform[/red]")
         return
 
-    # Check for existing audio hooks and remove them
-    original_count = len(settings["hooks"]["Stop"])
+    # Initialize hook structures
+    if "Stop" not in settings["hooks"]:
+        settings["hooks"]["Stop"] = []
+    if "Notification" not in settings["hooks"]:
+        settings["hooks"]["Notification"] = []
+
+    # Remove existing audio hooks
+    stop_removed = len(settings["hooks"]["Stop"])
+    notification_removed = len(settings["hooks"]["Notification"])
 
     settings["hooks"]["Stop"] = [
         hook for hook in settings["hooks"]["Stop"]
         if not is_hook(hook)
     ]
-    audio_hook_removed = len(settings["hooks"]["Stop"]) < original_count
+    settings["hooks"]["Notification"] = [
+        hook for hook in settings["hooks"]["Notification"]
+        if not is_hook(hook)
+    ]
 
-    # Add new hook
+    stop_removed = stop_removed > len(settings["hooks"]["Stop"])
+    notification_removed = notification_removed > len(settings["hooks"]["Notification"])
+
+    # Add new hooks
     settings["hooks"]["Stop"].append({
         "matcher": "*",
         "hooks": [{
             "type": "command",
-            "command": hook_command
+            "command": completion_command
         }]
     })
 
-    if audio_hook_removed:
-        console.print("[cyan]Replaced existing audio notification hook[/cyan]")
+    settings["hooks"]["Notification"].append({
+        "matcher": "*",
+        "hooks": [{
+            "type": "command",
+            "command": permission_command
+        }]
+    })
 
-    console.print(f"[green]✓ Successfully configured audio notification hook ({selected_sound})[/green]")
+    if stop_removed or notification_removed:
+        console.print("[cyan]Replaced existing audio notification hooks[/cyan]")
+
+    console.print(f"[green]✓ Successfully configured audio notification hooks[/green]")
     console.print("\n[bold]What this does:[/bold]")
-    console.print("  • Plays a sound when Claude finishes responding")
-    console.print(f"  • Sound: {selected_sound}")
-    console.print("  • Runs in the background")
+    console.print(f"  • Completion sound ({completion_sound}): Plays when Claude finishes responding")
+    console.print(f"  • Permission sound ({permission_sound}): Plays when Claude requests permission")
+    console.print("  • Both hooks run in the background")
 
 
 def is_hook(hook) -> bool:

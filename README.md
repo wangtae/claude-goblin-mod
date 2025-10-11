@@ -7,7 +7,7 @@
 
 Python command line tool to help with Claude Code utilities and usage tracking/analytics.
 
-**Quick Start:** Install with `pip install claude-goblin` and use `claude-goblin --help` for commands or `claude-goblin --usage` to start tracking. Below are some examples of outputs that this command line can give you.
+**Quick Start:** Install with `pip install claude-goblin` and use `claude-goblin --help` for commands or `claude-goblin usage` to start tracking. Below are some examples of outputs that this command line can give you.
 
 ---
 
@@ -37,10 +37,11 @@ Python command line tool to help with Claude Code utilities and usage tracking/a
 
 ## Features
 
-- Local snapshotting of Claude Code logs for analytics.
-- Local snapshotting of usage limits from the Claude Code `/usage` command.
-- Dashboard and stats of usage and limit history.
-- Hook setup to automate data logging or analysis of Claude Code as well as audio notifications.
+- Local snapshotting of Claude Code logs for analytics
+- Local snapshotting of usage limits from the Claude Code `/usage` command
+- Dashboard and stats of usage and limit history
+- Hook setup to automate data logging or analysis of Claude Code
+- Audio notifications for Claude Code completion and permission requests
 
 ## Installation
 
@@ -72,47 +73,47 @@ After installation, start tracking your Claude Code usage:
 
 ```bash
 # View your current usage dashboard
-claude-goblin --usage
+claude-goblin usage
 
 # (Optional) Enable automatic tracking with hooks
-claude-goblin --setup-hooks usage
+claude-goblin setup-hooks usage
 ```
 
-**Note**: The `--usage` command automatically saves your data to the historical database every time you run it. No manual setup required.
+**Note**: The `usage` command automatically saves your data to the historical database every time you run it. No manual setup required.
 
 ### Commands Explained
 
-- **`--update-usage`**: Update historical database with latest data and fill in missing date gaps with empty records (use when you want continuous date coverage for the heatmap)
+- **`update-usage`**: Update historical database with latest data and fill in missing date gaps with empty records (use when you want continuous date coverage for the heatmap)
 
-For most users, just run `--usage` regularly and it will handle data tracking automatically. Use `--setup-hooks usage` to automate this completely.
+For most users, just run `usage` regularly and it will handle data tracking automatically. Use `setup-hooks usage` to automate this completely.
 
 ## Commands
 
 ### Data Management
-- `claude-goblin --update-usage` - Update historical database with latest data
-- `claude-goblin --delete-usage --force` - Delete historical database (requires --force)
-- `claude-goblin --restore-backup` - Restore from backup
+- `claude-goblin update-usage` - Update historical database with latest data
+- `claude-goblin delete-usage --force` - Delete historical database (requires --force)
+- `claude-goblin restore-backup` - Restore from backup
 
 ### Dashboard & Analytics
-- `claude-goblin --usage` - Show usage dashboard with KPI cards and breakdowns
-- `claude-goblin --usage --live` - Auto-refresh dashboard every 5 seconds
-- `claude-goblin --usage --fast` - Skip live limits for faster rendering
-- `claude-goblin --limits` - Show current usage limits (session, week, Opus)
-- `claude-goblin --stats` - Show detailed statistics and cost analysis
-- `claude-goblin --status-bar [session|weekly|opus]` - Launch macOS menu bar app (macOS only)
+- `claude-goblin usage` - Show usage dashboard with KPI cards and breakdowns
+- `claude-goblin usage --live` - Auto-refresh dashboard every 5 seconds
+- `claude-goblin usage --fast` - Skip live limits for faster rendering
+- `claude-goblin limits` - Show current usage limits (session, week, Opus)
+- `claude-goblin stats` - Show detailed statistics and cost analysis
+- `claude-goblin status-bar [session|weekly|opus]` - Launch macOS menu bar app (macOS only)
 
 ### Export
-- `claude-goblin --export` - Export yearly heatmap as PNG (default)
-- `claude-goblin --export svg` - Export as SVG image
-- `claude-goblin --export --open` - Export and open the image
-- `claude-goblin --export -y 2024` - Export specific year
-- `claude-goblin --export -o output.png` - Specify output file (path)
+- `claude-goblin export` - Export yearly heatmap as PNG (default)
+- `claude-goblin export --svg` - Export as SVG image
+- `claude-goblin export --open` - Export and open the image
+- `claude-goblin export -y 2024` - Export specific year
+- `claude-goblin export -o output.png` - Specify output file (path)
 
 ### Hooks (Advanced)
-- `claude-goblin --setup-hooks usage` - Auto-update database on Claude `Stop` hook.
-- `claude-goblin --setup-hooks audio` - Play sound on Claude Code `Stop` hook.
-- `claude-goblin --setup-hooks png` - Generate PNG on Claude Code `Stop` hook.
-- `claude-goblin --remove-hooks` - Remove all hooks
+- `claude-goblin setup-hooks usage` - Auto-update database on Claude `Stop` hook
+- `claude-goblin setup-hooks audio` - Play sounds on completion (`Stop`) and permission requests (`Notification`)
+- `claude-goblin setup-hooks png` - Generate PNG on Claude Code `Stop` hook
+- `claude-goblin remove-hooks` - Remove all hooks
 
 ## Data Source
 
@@ -166,20 +167,20 @@ graph TD
 
 ### Command Behavior
 
-**`claude-goblin --usage`** (Display + Ingestion)
+**`claude-goblin usage`** (Display + Ingestion)
 1. **Ingestion**: Reads JSONL files from `~/.claude/projects/*.jsonl` and saves to DB
 2. **Display**: Reads data from DB and renders dashboard
 
-**`claude-goblin --export`** (Display only)
+**`claude-goblin export`** (Display only)
 1. Reads data from DB at `~/.claude/usage/usage_history.db`
 2. Generates yearly heatmap
 3. Exports to current directory as `claude-usage-<timestamp>.png` (or specify with `-o`)
 
-**`claude-goblin --stats`** (Display + Ingestion)
+**`claude-goblin stats`** (Display + Ingestion)
 1. **Ingestion**: Reads JSONL files from `~/.claude/projects/*.jsonl` and saves to DB
 2. **Display**: Reads data from DB and displays comprehensive statistics
 
-**`claude-goblin --update-usage`** (Ingestion only)
+**`claude-goblin update-usage`** (Ingestion only)
 1. Reads JSONL files from `~/.claude/projects/*.jsonl`
 2. Saves to DB at `~/.claude/usage/usage_history.db` (with automatic deduplication)
 3. Fills in missing dates with empty records (ensures continuous heatmap)
@@ -204,7 +205,7 @@ Example TUI:
 Export a GitHub-style yearly activity heatmap:
 
 ```bash
-claude-goblin --export --open
+claude-goblin export --open
 ```
 
 Example heatmap:
@@ -213,7 +214,7 @@ Example heatmap:
 
 ### --export Formats
 
-- **PNG** (default): `claude-goblin --export`
+- **PNG** (default): `claude-goblin export`
 
 ## --status-bar (macOS only)
 
@@ -221,20 +222,20 @@ Launch a menu bar app showing your Claude Code usage limits:
 
 ```bash
 # Show weekly usage (default)
-claude-goblin --status-bar weekly
+claude-goblin status-bar weekly
 
 # Show session usage
-claude-goblin --status-bar session
+claude-goblin status-bar session
 
 # Show Opus weekly usage
-claude-goblin --status-bar opus
+claude-goblin status-bar opus
 ```
 
 The menu bar displays "CC: XX%" and clicking it shows all three limits (Session, Weekly, Opus) with reset times.
 
 **Running in background:**
-- Use `&` to run in background: `claude-goblin --status-bar weekly &`
-- Use `nohup` to persist after terminal closes: `nohup claude-goblin --status-bar weekly > /dev/null 2>&1 &`
+- Use `&` to run in background: `claude-goblin status-bar weekly &`
+- Use `nohup` to persist after terminal closes: `nohup claude-goblin status-bar weekly > /dev/null 2>&1 &`
 
 Example:
 
@@ -242,17 +243,17 @@ Example:
 
 ## Historical Data
 
-Claude Goblin automatically saves data every time you run `--usage`. To manually manage:
+Claude Goblin automatically saves data every time you run `usage`. To manually manage:
 
 ```bash
 # View historical stats
-claude-goblin --stats
+claude-goblin stats
 
 # Update database with latest data and fill date gaps
-claude-goblin --update-usage
+claude-goblin update-usage
 
 # Delete all history
-claude-goblin --delete-usage -f
+claude-goblin delete-usage -f
 ```
 
 ## What It Tracks
@@ -317,8 +318,8 @@ I don't have much time but I'll review PRs when I can.
 - For PNG: requires Pillow and CairoSVG
 
 ### Database errors
-- Try deleting and recreating: `claude-goblin --delete-usage --force`
-- Then run: `claude-goblin --usage` to rebuild from current data
+- Try deleting and recreating: `claude-goblin delete-usage --force`
+- Then run: `claude-goblin usage` to rebuild from current data
 
 ## **AI Tools Disclaimer**: 
 This project was developed with assistance from Claude Code.

@@ -26,7 +26,7 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
         # Show menu
         console.print("[bold cyan]Available hooks to set up:[/bold cyan]\n")
         console.print("  [bold]usage[/bold]  - Auto-track usage after each response")
-        console.print("  [bold]audio[/bold]  - Play sound when Claude is ready for input")
+        console.print("  [bold]audio[/bold]  - Play sounds for completion & permission requests")
         console.print("  [bold]png[/bold]    - Auto-update usage PNG after each response\n")
         console.print("Usage: claude-goblin --setup-hooks <type>")
         console.print("Example: claude-goblin --setup-hooks usage")
@@ -48,6 +48,9 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
 
         if "Stop" not in settings["hooks"]:
             settings["hooks"]["Stop"] = []
+
+        if "Notification" not in settings["hooks"]:
+            settings["hooks"]["Notification"] = []
 
         # Delegate to specific hook module
         if hook_type == "usage":
@@ -95,11 +98,18 @@ def remove_hooks(console: Console, hook_type: Optional[str] = None) -> None:
         with open(settings_path, "r") as f:
             settings = json.load(f)
 
-        if "hooks" not in settings or "Stop" not in settings["hooks"]:
+        if "hooks" not in settings:
             console.print("[yellow]No hooks configured.[/yellow]")
             return
 
-        original_count = len(settings["hooks"]["Stop"])
+        # Initialize hook lists if they don't exist
+        if "Stop" not in settings["hooks"]:
+            settings["hooks"]["Stop"] = []
+        if "Notification" not in settings["hooks"]:
+            settings["hooks"]["Notification"] = []
+
+        original_stop_count = len(settings["hooks"]["Stop"])
+        original_notification_count = len(settings["hooks"]["Notification"])
 
         # Remove hooks based on type
         if hook_type == "usage":
@@ -111,6 +121,10 @@ def remove_hooks(console: Console, hook_type: Optional[str] = None) -> None:
         elif hook_type == "audio":
             settings["hooks"]["Stop"] = [
                 hook for hook in settings["hooks"]["Stop"]
+                if not audio.is_hook(hook)
+            ]
+            settings["hooks"]["Notification"] = [
+                hook for hook in settings["hooks"]["Notification"]
                 if not audio.is_hook(hook)
             ]
             removed_type = "audio notification"
@@ -126,9 +140,14 @@ def remove_hooks(console: Console, hook_type: Optional[str] = None) -> None:
                 hook for hook in settings["hooks"]["Stop"]
                 if not (usage.is_hook(hook) or audio.is_hook(hook) or png.is_hook(hook))
             ]
+            settings["hooks"]["Notification"] = [
+                hook for hook in settings["hooks"]["Notification"]
+                if not (usage.is_hook(hook) or audio.is_hook(hook) or png.is_hook(hook))
+            ]
             removed_type = "all claude-goblin"
 
-        removed_count = original_count - len(settings["hooks"]["Stop"])
+        removed_count = (original_stop_count - len(settings["hooks"]["Stop"])) + \
+                       (original_notification_count - len(settings["hooks"]["Notification"]))
 
         if removed_count == 0:
             console.print(f"[yellow]No {removed_type} hooks found to remove.[/yellow]")

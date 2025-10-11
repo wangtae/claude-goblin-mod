@@ -206,12 +206,12 @@ def setup_hooks_command(
 
     Available hooks:
     - usage: Auto-track usage after each Claude response
-    - audio: Play sound when Claude is ready for input
+    - audio: Play sounds for completion and permission requests
     - png: Auto-update usage PNG after each Claude response
 
     Examples:
         claude-goblin setup-hooks usage    Enable automatic usage tracking
-        claude-goblin setup-hooks audio    Enable audio notifications
+        claude-goblin setup-hooks audio    Enable audio notifications (2 sounds)
         claude-goblin setup-hooks png      Enable automatic PNG exports
     """
     setup_hooks(console, hook_type)

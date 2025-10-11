@@ -41,6 +41,7 @@ def run(console: Console, live: bool = False, fast: bool = False) -> None:
     """
     # Check sys.argv for backward compatibility (hooks still use old style)
     run_live = live or "--live" in sys.argv
+    skip_limits = fast or "--fast" in sys.argv
 
     try:
         with console.status("[bold #ff8800]Loading Claude Code usage data...", spinner="dots", spinner_style="#ff8800"):
@@ -57,9 +58,9 @@ def run(console: Console, live: bool = False, fast: bool = False) -> None:
 
         # Run with or without live refresh
         if run_live:
-            _run_live_dashboard(jsonl_files, console)
+            _run_live_dashboard(jsonl_files, console, skip_limits)
         else:
-            _display_dashboard(jsonl_files, console)
+            _display_dashboard(jsonl_files, console, skip_limits)
 
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -74,13 +75,14 @@ def run(console: Console, live: bool = False, fast: bool = False) -> None:
         sys.exit(1)
 
 
-def _run_live_dashboard(jsonl_files: list[Path], console: Console) -> None:
+def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False) -> None:
     """
     Run dashboard with auto-refresh.
 
     Args:
         jsonl_files: List of JSONL files to parse
         console: Rich console for output
+        skip_limits: Skip limits fetching for faster rendering
     """
     console.print(
         f"[dim]Auto-refreshing every {DEFAULT_REFRESH_INTERVAL} seconds. "
@@ -89,13 +91,13 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console) -> None:
 
     while True:
         try:
-            _display_dashboard(jsonl_files, console)
+            _display_dashboard(jsonl_files, console, skip_limits)
             time.sleep(DEFAULT_REFRESH_INTERVAL)
         except KeyboardInterrupt:
             raise
 
 
-def _display_dashboard(jsonl_files: list[Path], console: Console) -> None:
+def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False) -> None:
     """
     Ingest JSONL data and display dashboard.
 
@@ -106,6 +108,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console) -> None:
     Args:
         jsonl_files: List of JSONL files to parse
         console: Rich console for output
+        skip_limits: Skip limits fetching for faster rendering
     """
     # Step 1: Ingestion - parse JSONL and save to DB
     with console.status("[bold #ff8800]Ingesting session data...", spinner="dots", spinner_style="#ff8800"):
@@ -137,9 +140,6 @@ def _display_dashboard(jsonl_files: list[Path], console: Console) -> None:
 
     # Aggregate statistics
     stats = aggregate_all(all_records)
-
-    # Check for --fast flag to skip limits (faster rendering)
-    skip_limits = fast or "--fast" in sys.argv
 
     # Render dashboard
     render_dashboard(stats, all_records, console, skip_limits=skip_limits, clear_screen=False, date_range=date_range)
