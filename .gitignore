@@ -1,0 +1,48 @@
+# Python-generated files
+__pycache__/
+*.py[cod]
+*$py.class
+build/
+dist/
+wheels/
+*.egg-info
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE & AI tools
+.claude/
+CLAUDE.md
+AGENTS.md
+.cursor/
+.codex/
+.gemini/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+tests/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project-specific
+*.svg
+*.db
+*.db-journal
+main.py
+test_*.py

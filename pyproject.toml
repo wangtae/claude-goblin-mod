@@ -1,0 +1,67 @@
+[project]
+name = "claude-goblin-usage"
+version = "0.1.0"
+description = "Track and visualize Claude Code usage with a modern TUI dashboard and GitHub-style activity heatmaps"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Kurt Buhler"}
+]
+keywords = ["claude", "claude-code", "usage", "analytics", "tui", "dashboard", "visualization"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "rich>=13.7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/data-goblin/claude-goblin"
+Repository = "https://github.com/data-goblin/claude-goblin"
+Issues = "https://github.com/data-goblin/claude-goblin/issues"
+
+[project.optional-dependencies]
+export = [
+    "pillow>=10.0.0",
+    "cairosvg>=2.7.0",
+]
+
+[project.scripts]
+claude-goblin = "claude_goblin_usage.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-faker>=2.0.0",
+    "mypy>=1.7.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --strict-markers"
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
