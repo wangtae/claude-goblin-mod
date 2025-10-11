@@ -24,20 +24,23 @@ from claude_goblin_usage.visualization.dashboard import render_dashboard
 #region Functions
 
 
-def run(console: Console) -> None:
+def run(console: Console, live: bool = False, fast: bool = False) -> None:
     """
-    Handle the --usage command.
+    Handle the usage command.
 
     Loads Claude Code usage data and displays a dashboard with GitHub-style
-    activity graph and statistics. Supports live refresh mode with --live flag.
+    activity graph and statistics. Supports live refresh mode.
 
     Args:
         console: Rich console for output
+        live: Enable auto-refresh mode (default: False)
+        fast: Skip limits fetching for faster rendering (default: False)
 
     Exit:
         Exits with status 0 on success, 1 on error
     """
-    run_live = "--live" in sys.argv
+    # Check sys.argv for backward compatibility (hooks still use old style)
+    run_live = live or "--live" in sys.argv
 
     try:
         with console.status("[bold #ff8800]Loading Claude Code usage data...", spinner="dots", spinner_style="#ff8800"):
@@ -136,7 +139,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console) -> None:
     stats = aggregate_all(all_records)
 
     # Check for --fast flag to skip limits (faster rendering)
-    skip_limits = "--fast" in sys.argv
+    skip_limits = fast or "--fast" in sys.argv
 
     # Render dashboard
     render_dashboard(stats, all_records, console, skip_limits=skip_limits, clear_screen=False, date_range=date_range)

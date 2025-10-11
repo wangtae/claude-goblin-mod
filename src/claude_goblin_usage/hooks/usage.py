@@ -52,7 +52,7 @@ def setup(console: Console, settings: dict, settings_path: Path) -> None:
         console.print("\n[yellow]Cancelled[/yellow]")
         return
 
-    hook_command = "claude-goblin --update-usage > /dev/null 2>&1 &"
+    hook_command = "claude-goblin update-usage > /dev/null 2>&1 &"
 
     # Check if already exists
     hook_exists = any(is_hook(hook) for hook in settings["hooks"]["Stop"])
@@ -138,6 +138,8 @@ def is_hook(hook) -> bool:
     """
     Check if a hook is a usage tracking hook.
 
+    Recognizes both old-style (--update-usage) and new-style (update-usage) commands.
+
     Args:
         hook: Hook configuration dictionary
 
@@ -147,7 +149,9 @@ def is_hook(hook) -> bool:
     if not isinstance(hook, dict) or "hooks" not in hook:
         return False
     for h in hook.get("hooks", []):
-        if "claude-goblin --update-usage" in h.get("command", ""):
+        command = h.get("command", "")
+        # Support both old-style (--update-usage) and new-style (update-usage)
+        if "claude-goblin --update-usage" in command or "claude-goblin update-usage" in command:
             return True
     return False
 

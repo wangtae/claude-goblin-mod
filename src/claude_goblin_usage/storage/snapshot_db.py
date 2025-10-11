@@ -214,27 +214,53 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH, s
 
         # Update daily snapshots (aggregate by date)
         if storage_mode == "full":
-            # In full mode, recalculate from usage_records table
-            cursor.execute("""
-                INSERT OR REPLACE INTO daily_snapshots (
-                    date, total_prompts, total_responses, total_sessions, total_tokens,
-                    input_tokens, output_tokens, cache_creation_tokens,
-                    cache_read_tokens, snapshot_timestamp
-                )
-                SELECT
+            # In full mode, only update dates that have records in usage_records
+            # IMPORTANT: Never use REPLACE - it would delete old data when JSONL files age out
+            # Instead, recalculate only for dates that currently have records
+            timestamp = datetime.now().isoformat()
+
+            # Get all dates that currently have usage_records
+            cursor.execute("SELECT DISTINCT date FROM usage_records")
+            dates_with_records = [row[0] for row in cursor.fetchall()]
+
+            for date in dates_with_records:
+                # Calculate totals for this date from usage_records
+                cursor.execute("""
+                    SELECT
+                        SUM(CASE WHEN message_type = 'user' THEN 1 ELSE 0 END) as total_prompts,
+                        SUM(CASE WHEN message_type = 'assistant' THEN 1 ELSE 0 END) as total_responses,
+                        COUNT(DISTINCT session_id) as total_sessions,
+                        SUM(total_tokens) as total_tokens,
+                        SUM(input_tokens) as input_tokens,
+                        SUM(output_tokens) as output_tokens,
+                        SUM(cache_creation_tokens) as cache_creation_tokens,
+                        SUM(cache_read_tokens) as cache_read_tokens
+                    FROM usage_records
+                    WHERE date = ?
+                """, (date,))
+
+                row = cursor.fetchone()
+
+                # Use INSERT OR REPLACE only for dates that currently have data
+                # This preserves historical daily_snapshots for dates no longer in usage_records
+                cursor.execute("""
+                    INSERT OR REPLACE INTO daily_snapshots (
+                        date, total_prompts, total_responses, total_sessions, total_tokens,
+                        input_tokens, output_tokens, cache_creation_tokens,
+                        cache_read_tokens, snapshot_timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
                     date,
-                    SUM(CASE WHEN message_type = 'user' THEN 1 ELSE 0 END) as total_prompts,
-                    SUM(CASE WHEN message_type = 'assistant' THEN 1 ELSE 0 END) as total_responses,
-                    COUNT(DISTINCT session_id) as total_sessions,
-                    SUM(total_tokens) as total_tokens,
-                    SUM(input_tokens) as input_tokens,
-                    SUM(output_tokens) as output_tokens,
-                    SUM(cache_creation_tokens) as cache_creation_tokens,
-                    SUM(cache_read_tokens) as cache_read_tokens,
-                    ? as snapshot_timestamp
-                FROM usage_records
-                GROUP BY date
-            """, (datetime.now().isoformat(),))
+                    row[0] or 0,
+                    row[1] or 0,
+                    row[2] or 0,
+                    row[3] or 0,
+                    row[4] or 0,
+                    row[5] or 0,
+                    row[6] or 0,
+                    row[7] or 0,
+                    timestamp,
+                ))
         else:
             # In aggregate mode, compute from incoming records
             from collections import defaultdict

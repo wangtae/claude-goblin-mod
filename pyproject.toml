@@ -1,7 +1,7 @@
 [project]
 name = "claude-goblin"
-version = "0.1.0"
-description = "Track and visualize Claude Code usage with a modern TUI dashboard and GitHub-style activity heatmaps"
+version = "0.1.1"
+description = "Python CLI for Claude Code utilities and usage tracking/analytics"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -23,6 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "rich>=13.7.0",
+    "typer>=0.9.0",
     "rumps>=0.4.0; sys_platform == 'darwin'",
 ]
 
