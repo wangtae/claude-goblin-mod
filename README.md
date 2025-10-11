@@ -99,6 +99,7 @@ For most users, just run `--usage` regularly and it will handle data tracking au
 - `claude-goblin --usage --fast` - Skip live limits for faster rendering
 - `claude-goblin --limits` - Show current usage limits (session, week, Opus)
 - `claude-goblin --stats` - Show detailed statistics and cost analysis
+- `claude-goblin --status-bar [session|weekly|opus]` - Launch macOS menu bar app (macOS only)
 
 ### Export
 - `claude-goblin --export` - Export yearly heatmap as PNG (default)
