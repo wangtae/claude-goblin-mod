@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] - 2025-10-12
+
+### Added
+- Added `--anon` flag to `usage` command to anonymize project names (displays as project-001, project-002, etc., ranked by token usage)
+- Added `PreCompact` hook support for audio notifications (plays sound before conversation compaction)
+- Added multi-hook selection for `audio-tts` setup (choose between Notification, Stop, PreCompact, or combinations)
+- Audio hook now supports three sounds: completion, permission requests, and conversation compaction
+
+### Changed
+- `audio-tts` hook now supports configurable hook types (Notification only by default, with 7 selection options)
+- Audio hook setup now prompts for three sounds instead of two (added compaction sound)
+- TTS hook script intelligently handles different hook types with appropriate messages
+- Enhanced hook removal to properly clean up PreCompact hooks
+
+### Fixed
+- Fixed `AttributeError` in `--anon` flag where `total_tokens` was accessed incorrectly on UsageRecord objects
+
 ## [0.1.3] - 2025-10-12
 
 ### Fixed
