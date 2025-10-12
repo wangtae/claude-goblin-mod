@@ -37,6 +37,7 @@ console = Console()
 def usage_command(
     live: bool = typer.Option(False, "--live", help="Auto-refresh dashboard every 5 seconds"),
     fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
+    anon: bool = typer.Option(False, "--anon", help="Anonymize project names to project-001, project-002, etc"),
 ):
     """
     Show usage dashboard with KPI cards and breakdowns.
@@ -49,8 +50,9 @@ def usage_command(
 
     Use --live for auto-refreshing dashboard.
     Use --fast to skip all updates and read from database only (requires existing database).
+    Use --anon to anonymize project names (ranked by usage, project-001 is highest).
     """
-    usage.run(console, live=live, fast=fast)
+    usage.run(console, live=live, fast=fast, anon=anon)
 
 
 @app.command(name="stats")
@@ -100,11 +102,11 @@ def export_command(
     Use --fast to skip all updates and read from database only (requires existing database).
 
     Examples:
-        claude-goblin export --open                  Export current year as PNG and open it
-        claude-goblin export --svg                   Export as SVG instead
-        claude-goblin export --fast                  Export from database without updating
-        claude-goblin export -y 2024                 Export specific year
-        claude-goblin export -o ~/usage.png          Specify output path
+        ccg export --open                  Export current year as PNG and open it
+        ccg export --svg                   Export as SVG instead
+        ccg export --fast                  Export from database without updating
+        ccg export -y 2024                 Export specific year
+        ccg export -o ~/usage.png          Specify output path
     """
     # Pass parameters via sys.argv for backward compatibility with export command
     import sys
@@ -152,7 +154,7 @@ def delete_usage_command(
     A backup is automatically created before deletion.
 
     Example:
-        claude-goblin delete-usage --force
+        ccg delete-usage --force
     """
     # Pass force flag via command module's own sys.argv check for backward compatibility
     import sys
@@ -188,12 +190,12 @@ def status_bar_command(
         limit_type: Which limit to display (session, weekly, or opus). Defaults to weekly.
 
     Examples:
-        claude-goblin status-bar weekly    Show weekly usage (default)
-        claude-goblin status-bar session   Show session usage
-        claude-goblin status-bar opus      Show Opus weekly usage
+        ccg status-bar weekly    Show weekly usage (default)
+        ccg status-bar session   Show session usage
+        ccg status-bar opus      Show Opus weekly usage
 
     Running in background:
-        nohup claude-goblin status-bar weekly > /dev/null 2>&1 &
+        nohup ccg status-bar weekly > /dev/null 2>&1 &
     """
     if limit_type not in ["session", "weekly", "opus"]:
         console.print(f"[red]Error: Invalid limit type '{limit_type}'[/red]")
@@ -205,36 +207,39 @@ def status_bar_command(
 
 @app.command(name="setup-hooks")
 def setup_hooks_command(
-    hook_type: Optional[str] = typer.Argument(None, help="Hook type: usage, audio, or png"),
+    hook_type: Optional[str] = typer.Argument(None, help="Hook type: usage, audio, audio-tts, or png"),
 ):
     """
     Setup Claude Code hooks for automation.
 
     Available hooks:
     - usage: Auto-track usage after each Claude response
-    - audio: Play sounds for completion and permission requests
+    - audio: Play sounds for completion, permission, and compaction (3 sounds)
+    - audio-tts: Speak messages using TTS with hook selection (macOS only)
     - png: Auto-update usage PNG after each Claude response
 
     Examples:
-        claude-goblin setup-hooks usage    Enable automatic usage tracking
-        claude-goblin setup-hooks audio    Enable audio notifications (2 sounds)
-        claude-goblin setup-hooks png      Enable automatic PNG exports
+        ccg setup-hooks usage      Enable automatic usage tracking
+        ccg setup-hooks audio      Enable audio notifications (3 sounds)
+        ccg setup-hooks audio-tts  Enable TTS (choose which hooks)
+        ccg setup-hooks png        Enable automatic PNG exports
     """
     setup_hooks(console, hook_type)
 
 
 @app.command(name="remove-hooks")
 def remove_hooks_command(
-    hook_type: Optional[str] = typer.Argument(None, help="Hook type to remove: usage, audio, png, or leave empty for all"),
+    hook_type: Optional[str] = typer.Argument(None, help="Hook type to remove: usage, audio, audio-tts, png, or leave empty for all"),
 ):
     """
     Remove Claude Code hooks configured by this tool.
 
     Examples:
-        claude-goblin remove-hooks         Remove all hooks
-        claude-goblin remove-hooks usage   Remove only usage tracking hook
-        claude-goblin remove-hooks audio   Remove only audio notification hook
-        claude-goblin remove-hooks png     Remove only PNG export hook
+        ccg remove-hooks           Remove all hooks
+        ccg remove-hooks usage     Remove only usage tracking hook
+        ccg remove-hooks audio     Remove only audio notification hook
+        ccg remove-hooks audio-tts Remove only audio TTS hook
+        ccg remove-hooks png       Remove only PNG export hook
     """
     remove_hooks(console, hook_type)
 
@@ -261,11 +266,11 @@ def main() -> None:
     analyzing, and exporting usage statistics.
 
     Usage:
-        claude-goblin --help              Show available commands
-        claude-goblin usage               Show usage dashboard
-        claude-goblin usage --live        Show dashboard with auto-refresh
-        claude-goblin stats               Show detailed statistics
-        claude-goblin export              Export yearly heatmap
+        ccg --help              Show available commands
+        ccg usage               Show usage dashboard
+        ccg usage --live        Show dashboard with auto-refresh
+        ccg stats               Show detailed statistics
+        ccg export              Export yearly heatmap
 
     Exit:
         Press Ctrl+C to exit

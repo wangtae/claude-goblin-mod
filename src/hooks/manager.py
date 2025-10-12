@@ -5,7 +5,7 @@ from typing import Optional
 
 from rich.console import Console
 
-from src.hooks import usage, audio, png
+from src.hooks import usage, audio, png, audio_tts
 #endregion
 
 
@@ -25,9 +25,10 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
     if hook_type is None:
         # Show menu
         console.print("[bold cyan]Available hooks to set up:[/bold cyan]\n")
-        console.print("  [bold]usage[/bold]  - Auto-track usage after each response")
-        console.print("  [bold]audio[/bold]  - Play sounds for completion & permission requests")
-        console.print("  [bold]png[/bold]    - Auto-update usage PNG after each response\n")
+        console.print("  [bold]usage[/bold]     - Auto-track usage after each response")
+        console.print("  [bold]audio[/bold]     - Play sounds for completion & permission requests")
+        console.print("  [bold]audio-tts[/bold] - Speak permission requests using TTS (macOS only)")
+        console.print("  [bold]png[/bold]       - Auto-update usage PNG after each response\n")
         console.print("Usage: claude-goblin setup-hooks <type>")
         console.print("Example: claude-goblin setup-hooks usage")
         return
@@ -57,11 +58,13 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
             usage.setup(console, settings, settings_path)
         elif hook_type == "audio":
             audio.setup(console, settings, settings_path)
+        elif hook_type == "audio-tts":
+            audio_tts.setup(console, settings, settings_path)
         elif hook_type == "png":
             png.setup(console, settings, settings_path)
         else:
             console.print(f"[red]Unknown hook type: {hook_type}[/red]")
-            console.print("Valid types: usage, audio, png")
+            console.print("Valid types: usage, audio, audio-tts, png")
             return
 
         # Write settings back
@@ -128,6 +131,12 @@ def remove_hooks(console: Console, hook_type: Optional[str] = None) -> None:
                 if not audio.is_hook(hook)
             ]
             removed_type = "audio notification"
+        elif hook_type == "audio-tts":
+            settings["hooks"]["Notification"] = [
+                hook for hook in settings["hooks"]["Notification"]
+                if not audio_tts.is_hook(hook)
+            ]
+            removed_type = "audio TTS"
         elif hook_type == "png":
             settings["hooks"]["Stop"] = [
                 hook for hook in settings["hooks"]["Stop"]
@@ -142,7 +151,7 @@ def remove_hooks(console: Console, hook_type: Optional[str] = None) -> None:
             ]
             settings["hooks"]["Notification"] = [
                 hook for hook in settings["hooks"]["Notification"]
-                if not (usage.is_hook(hook) or audio.is_hook(hook) or png.is_hook(hook))
+                if not (usage.is_hook(hook) or audio.is_hook(hook) or png.is_hook(hook) or audio_tts.is_hook(hook))
             ]
             removed_type = "all claude-goblin"
 
