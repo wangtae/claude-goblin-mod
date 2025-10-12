@@ -26,7 +26,7 @@ from src.visualization.dashboard import render_dashboard
 #region Functions
 
 
-def run(console: Console, live: bool = False, fast: bool = False) -> None:
+def run(console: Console, live: bool = False, fast: bool = False, anon: bool = False) -> None:
     """
     Handle the usage command.
 
@@ -37,6 +37,7 @@ def run(console: Console, live: bool = False, fast: bool = False) -> None:
         console: Rich console for output
         live: Enable auto-refresh mode (default: False)
         fast: Skip limits fetching for faster rendering (default: False)
+        anon: Anonymize project names to project-001, project-002, etc (default: False)
 
     Exit:
         Exits with status 0 on success, 1 on error
@@ -44,6 +45,7 @@ def run(console: Console, live: bool = False, fast: bool = False) -> None:
     # Check sys.argv for backward compatibility (hooks still use old style)
     run_live = live or "--live" in sys.argv
     skip_limits = fast or "--fast" in sys.argv
+    anonymize = anon or "--anon" in sys.argv
 
     try:
         with console.status("[bold #ff8800]Loading Claude Code usage data...", spinner="dots", spinner_style="#ff8800"):
@@ -60,9 +62,9 @@ def run(console: Console, live: bool = False, fast: bool = False) -> None:
 
         # Run with or without live refresh
         if run_live:
-            _run_live_dashboard(jsonl_files, console, skip_limits)
+            _run_live_dashboard(jsonl_files, console, skip_limits, anonymize)
         else:
-            _display_dashboard(jsonl_files, console, skip_limits)
+            _display_dashboard(jsonl_files, console, skip_limits, anonymize)
 
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -77,7 +79,7 @@ def run(console: Console, live: bool = False, fast: bool = False) -> None:
         sys.exit(1)
 
 
-def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False) -> None:
+def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False) -> None:
     """
     Run dashboard with auto-refresh.
 
@@ -85,6 +87,7 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
         jsonl_files: List of JSONL files to parse
         console: Rich console for output
         skip_limits: Skip limits fetching for faster rendering
+        anonymize: Anonymize project names
     """
     console.print(
         f"[dim]Auto-refreshing every {DEFAULT_REFRESH_INTERVAL} seconds. "
@@ -93,13 +96,13 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
 
     while True:
         try:
-            _display_dashboard(jsonl_files, console, skip_limits)
+            _display_dashboard(jsonl_files, console, skip_limits, anonymize)
             time.sleep(DEFAULT_REFRESH_INTERVAL)
         except KeyboardInterrupt:
             raise
 
 
-def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False) -> None:
+def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False) -> None:
     """
     Ingest JSONL data and display dashboard.
 
@@ -111,6 +114,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         jsonl_files: List of JSONL files to parse
         console: Rich console for output
         skip_limits: Skip ALL updates, read directly from DB (fast mode)
+        anonymize: Anonymize project names to project-001, project-002, etc
     """
     from src.storage.snapshot_db import get_latest_limits, DEFAULT_DB_PATH, get_database_stats
 
@@ -118,7 +122,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     if skip_limits and not DEFAULT_DB_PATH.exists():
         console.clear()
         console.print("[red]Error: Cannot use --fast flag without existing database.[/red]")
-        console.print("[yellow]Run 'claude-goblin usage' (without --fast) first to create the database.[/yellow]")
+        console.print("[yellow]Run 'ccg usage' (without --fast) first to create the database.[/yellow]")
         return
 
     # Update data unless in fast mode
@@ -169,11 +173,52 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     if dates:
         date_range = f"{dates[0]} to {dates[-1]}"
 
+    # Anonymize project names if requested
+    if anonymize:
+        all_records = _anonymize_projects(all_records)
+
     # Aggregate statistics
     stats = aggregate_all(all_records)
 
     # Render dashboard with limits from DB (no live fetch needed)
     render_dashboard(stats, all_records, console, skip_limits=True, clear_screen=False, date_range=date_range, limits_from_db=limits_from_db, fast_mode=skip_limits)
+
+
+def _anonymize_projects(records: list) -> list:
+    """
+    Anonymize project folder names by ranking them by total tokens and replacing
+    with project-001, project-002, etc (where project-001 is the highest usage).
+
+    Args:
+        records: List of UsageRecord objects
+
+    Returns:
+        List of UsageRecord objects with anonymized folder names
+    """
+    from collections import defaultdict
+    from dataclasses import replace
+
+    # Calculate total tokens per project
+    project_totals = defaultdict(int)
+    for record in records:
+        if record.token_usage:
+            project_totals[record.folder] += record.token_usage.total_tokens
+
+    # Sort projects by total tokens (descending) and create mapping
+    sorted_projects = sorted(project_totals.items(), key=lambda x: x[1], reverse=True)
+    project_mapping = {
+        folder: f"project-{str(i+1).zfill(3)}"
+        for i, (folder, _) in enumerate(sorted_projects)
+    }
+
+    # Replace folder names in records
+    anonymized_records = []
+    for record in records:
+        anonymized_records.append(
+            replace(record, folder=project_mapping.get(record.folder, record.folder))
+        )
+
+    return anonymized_records
 
 
 #endregion
