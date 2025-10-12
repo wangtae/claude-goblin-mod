@@ -58,19 +58,28 @@ def run(console: Console) -> None:
 
     # Determine output path
     output_file = None
+    custom_output = False
     for i, arg in enumerate(sys.argv):
         if arg in ["-o", "--output"] and i + 1 < len(sys.argv):
             output_file = sys.argv[i + 1]
+            custom_output = True
             break
 
     if not output_file:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         output_file = f"claude-usage-{timestamp}.{format_type}"
 
-    # Use absolute path or resolve relative to current working directory
+    # Use absolute path, or resolve based on whether -o flag was used
     output_path = Path(output_file)
     if not output_path.is_absolute():
-        output_path = Path.cwd() / output_path
+        if custom_output:
+            # If -o flag was used, resolve relative to current working directory
+            output_path = Path.cwd() / output_path
+        else:
+            # Default location: ~/.claude/usage/
+            default_dir = Path.home() / ".claude" / "usage"
+            default_dir.mkdir(parents=True, exist_ok=True)
+            output_path = default_dir / output_file
 
     try:
         console.print(f"[cyan]Loading usage data for {year_filter}...[/cyan]")
