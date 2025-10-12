@@ -13,19 +13,19 @@ Python command line tool to help with Claude Code utilities and usage tracking/a
 
 **TUI Dashboard:**
 
-![Example TUI dashboard](dashboard.png)
+![Example TUI dashboard](docs/images/dashboard.png)
 
 ---
 
 **MacOS status bar for usage limits:**
 
-![Example status bar](status-bar.png)
+![Example status bar](docs/images/status-bar.png)
 
 ---
 
 **GitHub activity-style heatmap of annual usage:**
 
-![Example heatmap](heatmap.png)
+![Example heatmap](docs/images/heatmap.png)
 
 --- 
 
@@ -197,7 +197,7 @@ graph TD
 
 Example TUI:
 
-![Example TUI dashboard](dashboard.png)
+![Example TUI dashboard](docs/images/dashboard.png)
 
 ## --export Heatmap
 
@@ -209,7 +209,7 @@ claude-goblin export --open
 
 Example heatmap:
 
-![Yearly activity heatmap](heatmap.png)
+![Yearly activity heatmap](docs/images/heatmap.png)
 
 ### --export Formats
 
@@ -238,7 +238,7 @@ The menu bar displays "CC: XX%" and clicking it shows all three limits (Session,
 
 Example:
 
-![example status bar](status-bar.png)
+![example status bar](docs/images/status-bar.png)
 
 ## Historical Data
 

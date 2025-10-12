@@ -46,3 +46,4 @@ Thumbs.db
 *.db-journal
 main.py
 test_*.py
+RELEASING.md
