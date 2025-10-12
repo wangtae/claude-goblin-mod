@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2025-10-12
+
+### Fixed
+- Fixed audio `Notification` hook format to properly trigger on permission requests (removed incorrect `matcher` field)
+- Fixed missing limits data in heatmap exports - `usage` command now automatically saves limits to database
+- Fixed double `claude` command execution - dashboard now uses cached limits from database instead of fetching live
+
+### Changed
+- Improved status messages to show three distinct steps: "Updating usage data", "Updating usage limits", "Preparing dashboard"
+- Dashboard now displays limits from database after initial fetch, eliminating redundant API calls
+
+### Added
+- Added `get_latest_limits()` function to retrieve most recent limits from database
+
 ## [0.1.2] - 2025-10-11
 
 ### Added
