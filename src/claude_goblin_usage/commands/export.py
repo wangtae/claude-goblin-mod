@@ -6,8 +6,18 @@ from pathlib import Path
 from rich.console import Console
 
 from claude_goblin_usage.aggregation.daily_stats import aggregate_all
-from claude_goblin_usage.config.user_config import get_tracking_mode
-from claude_goblin_usage.storage.snapshot_db import load_historical_records, get_limits_data
+from claude_goblin_usage.commands.limits import capture_limits
+from claude_goblin_usage.config.settings import get_claude_jsonl_files
+from claude_goblin_usage.config.user_config import get_tracking_mode, get_storage_mode
+from claude_goblin_usage.data.jsonl_parser import parse_all_jsonl_files
+from claude_goblin_usage.storage.snapshot_db import (
+    load_historical_records,
+    get_limits_data,
+    save_limits_snapshot,
+    save_snapshot,
+    get_database_stats,
+    DEFAULT_DB_PATH,
+)
 from claude_goblin_usage.utils._system import open_file
 #endregion
 
@@ -28,10 +38,14 @@ def run(console: Console) -> None:
     Flags:
         svg: Export as SVG instead of PNG
         --open: Open file after export
+        --fast: Skip updates, read directly from database (faster)
         --year YYYY or -y YYYY: Filter by year (default: current year)
         -o FILE or --output FILE: Specify output file path
     """
     from claude_goblin_usage.visualization.export import export_heatmap_svg, export_heatmap_png
+
+    # Check for --fast flag
+    fast_mode = "--fast" in sys.argv
 
     # Determine format from arguments (PNG is default)
     format_type = "png"
@@ -82,20 +96,65 @@ def run(console: Console) -> None:
             output_path = default_dir / output_file
 
     try:
-        console.print(f"[cyan]Loading usage data for {year_filter}...[/cyan]")
-
-        # Read from database only (single source of truth)
-        all_records = load_historical_records()
-
-        if not all_records:
-            console.print("[yellow]No usage data found in database. Run --usage to ingest data first.[/yellow]")
+        # Check if database exists when using --fast
+        if fast_mode and not DEFAULT_DB_PATH.exists():
+            console.print("[red]Error: Cannot use --fast flag without existing database.[/red]")
+            console.print("[yellow]Run 'claude-goblin usage' or 'claude-goblin update-usage' first to create the database.[/yellow]")
             return
 
-        stats = aggregate_all(all_records)
+        # If fast mode, show warning with last update timestamp
+        if fast_mode:
+            db_stats = get_database_stats()
+            if db_stats.get("newest_timestamp"):
+                # Format ISO timestamp to be more readable
+                timestamp_str = db_stats["newest_timestamp"]
+                try:
+                    dt = datetime.fromisoformat(timestamp_str)
+                    formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+                    console.print(f"[bold red]⚠ Fast mode: Reading from last update ({formatted_time})[/bold red]")
+                except (ValueError, AttributeError):
+                    console.print(f"[bold red]⚠ Fast mode: Reading from last update ({timestamp_str})[/bold red]")
+            else:
+                console.print("[bold red]⚠ Fast mode: Reading from database (no timestamp available)[/bold red]")
 
-        # Load limits data and tracking mode
-        limits_data = get_limits_data()
-        tracking_mode = get_tracking_mode()
+        # Update data unless in fast mode
+        if not fast_mode:
+            # Step 1: Update usage data
+            with console.status("[bold #ff8800]Updating usage data...", spinner="dots", spinner_style="#ff8800"):
+                jsonl_files = get_claude_jsonl_files()
+                if jsonl_files:
+                    current_records = parse_all_jsonl_files(jsonl_files)
+                    if current_records:
+                        save_snapshot(current_records, storage_mode=get_storage_mode())
+
+            # Step 2: Update limits data (if enabled)
+            tracking_mode = get_tracking_mode()
+            if tracking_mode in ["both", "limits"]:
+                with console.status("[bold #ff8800]Updating usage limits...", spinner="dots", spinner_style="#ff8800"):
+                    limits = capture_limits()
+                    if limits and "error" not in limits:
+                        save_limits_snapshot(
+                            session_pct=limits["session_pct"],
+                            week_pct=limits["week_pct"],
+                            opus_pct=limits["opus_pct"],
+                            session_reset=limits["session_reset"],
+                            week_reset=limits["week_reset"],
+                            opus_reset=limits["opus_reset"],
+                        )
+
+        # Load data from database
+        with console.status(f"[bold #ff8800]Loading data for {year_filter}...", spinner="dots", spinner_style="#ff8800"):
+            all_records = load_historical_records()
+
+            if not all_records:
+                console.print("[yellow]No usage data found in database. Run 'claude-goblin usage' to ingest data first.[/yellow]")
+                return
+
+            stats = aggregate_all(all_records)
+
+            # Load limits data and tracking mode
+            limits_data = get_limits_data()
+            tracking_mode = get_tracking_mode()
 
         console.print(f"[cyan]Exporting to {format_type.upper()}...[/cyan]")
 

@@ -110,38 +110,48 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     Args:
         jsonl_files: List of JSONL files to parse
         console: Rich console for output
-        skip_limits: Skip limits fetching for faster rendering
+        skip_limits: Skip ALL updates, read directly from DB (fast mode)
     """
-    # Step 1: Update usage data
-    with console.status("[bold #ff8800]Updating usage data...", spinner="dots", spinner_style="#ff8800"):
-        current_records = parse_all_jsonl_files(jsonl_files)
+    from claude_goblin_usage.storage.snapshot_db import get_latest_limits, DEFAULT_DB_PATH, get_database_stats
 
-        # Save to database (with automatic deduplication via UNIQUE constraint)
-        if current_records:
-            save_snapshot(current_records, storage_mode=get_storage_mode())
+    # Check if database exists when using --fast
+    if skip_limits and not DEFAULT_DB_PATH.exists():
+        console.clear()
+        console.print("[red]Error: Cannot use --fast flag without existing database.[/red]")
+        console.print("[yellow]Run 'claude-goblin usage' (without --fast) first to create the database.[/yellow]")
+        return
 
-    # Step 2: Update limits data (if enabled)
-    tracking_mode = get_tracking_mode()
-    if tracking_mode in ["both", "limits"] and not skip_limits:
-        with console.status("[bold #ff8800]Updating usage limits...", spinner="dots", spinner_style="#ff8800"):
-            limits = capture_limits()
-            if limits and "error" not in limits:
-                save_limits_snapshot(
-                    session_pct=limits["session_pct"],
-                    week_pct=limits["week_pct"],
-                    opus_pct=limits["opus_pct"],
-                    session_reset=limits["session_reset"],
-                    week_reset=limits["week_reset"],
-                    opus_reset=limits["opus_reset"],
-                )
+    # Update data unless in fast mode
+    if not skip_limits:
+        # Step 1: Update usage data
+        with console.status("[bold #ff8800]Updating usage data...", spinner="dots", spinner_style="#ff8800"):
+            current_records = parse_all_jsonl_files(jsonl_files)
+
+            # Save to database (with automatic deduplication via UNIQUE constraint)
+            if current_records:
+                save_snapshot(current_records, storage_mode=get_storage_mode())
+
+        # Step 2: Update limits data (if enabled)
+        tracking_mode = get_tracking_mode()
+        if tracking_mode in ["both", "limits"]:
+            with console.status("[bold #ff8800]Updating usage limits...", spinner="dots", spinner_style="#ff8800"):
+                limits = capture_limits()
+                if limits and "error" not in limits:
+                    save_limits_snapshot(
+                        session_pct=limits["session_pct"],
+                        week_pct=limits["week_pct"],
+                        opus_pct=limits["opus_pct"],
+                        session_reset=limits["session_reset"],
+                        week_reset=limits["week_reset"],
+                        opus_reset=limits["opus_reset"],
+                    )
 
     # Step 3: Prepare dashboard from database
     with console.status("[bold #ff8800]Preparing dashboard...", spinner="dots", spinner_style="#ff8800"):
         all_records = load_historical_records()
 
-        # Get latest limits from DB (if we saved them above)
-        from claude_goblin_usage.storage.snapshot_db import get_latest_limits
-        limits_from_db = get_latest_limits() if not skip_limits else None
+        # Get latest limits from DB (if we saved them above or if they exist)
+        limits_from_db = get_latest_limits()
 
     if not all_records:
         console.clear()
@@ -163,7 +173,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     stats = aggregate_all(all_records)
 
     # Render dashboard with limits from DB (no live fetch needed)
-    render_dashboard(stats, all_records, console, skip_limits=True, clear_screen=False, date_range=date_range, limits_from_db=limits_from_db)
+    render_dashboard(stats, all_records, console, skip_limits=True, clear_screen=False, date_range=date_range, limits_from_db=limits_from_db, fast_mode=skip_limits)
 
 
 #endregion

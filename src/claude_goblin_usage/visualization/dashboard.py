@@ -72,7 +72,7 @@ def _create_bar(value: int, max_value: int, width: int = BAR_WIDTH, color: str =
     return bar
 
 
-def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None) -> None:
+def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None, fast_mode: bool = False) -> None:
     """
     Render a concise, modern dashboard with KPI cards and breakdowns.
 
@@ -84,6 +84,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         clear_screen: If True, clear the screen before rendering (default True)
         date_range: Optional date range string to display in footer
         limits_from_db: Pre-fetched limits from database (avoids live fetch)
+        fast_mode: If True, show warning that data is from last update
     """
     # Create KPI cards with limits (shows spinner if loading limits)
     kpi_section = _create_kpi_section(stats.overall_totals, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db)
@@ -93,7 +94,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     project_breakdown = _create_project_breakdown(records)
 
     # Create footer with export info and date range
-    footer = _create_footer(date_range)
+    footer = _create_footer(date_range, fast_mode=fast_mode)
 
     # Optionally clear screen and render all components
     if clear_screen:
@@ -465,17 +466,36 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     )
 
 
-def _create_footer(date_range: str = None) -> Text:
+def _create_footer(date_range: str = None, fast_mode: bool = False) -> Text:
     """
     Create footer with export command info and date range.
 
     Args:
         date_range: Optional date range string to display
+        fast_mode: If True, show warning about fast mode
 
     Returns:
         Text with export instructions and date range
     """
     footer = Text()
+
+    # Add fast mode warning if enabled
+    if fast_mode:
+        from claude_goblin_usage.storage.snapshot_db import get_database_stats
+        db_stats = get_database_stats()
+        if db_stats.get("newest_timestamp"):
+            # Format ISO timestamp to be more readable
+            timestamp_str = db_stats["newest_timestamp"]
+            try:
+                dt = datetime.fromisoformat(timestamp_str)
+                formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+                footer.append("⚠ Fast mode: Reading from last update (", style="bold red")
+                footer.append(f"{formatted_time}", style="bold red")
+                footer.append(")\n\n", style="bold red")
+            except (ValueError, AttributeError):
+                footer.append(f"⚠ Fast mode: Reading from last update ({timestamp_str})\n\n", style="bold red")
+        else:
+            footer.append("⚠ Fast mode: Reading from database (no timestamp available)\n\n", style="bold red")
 
     # Add date range if provided
     if date_range:

@@ -678,7 +678,7 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
 
     Returns:
         Dictionary with statistics including:
-        - total_records, total_days, oldest_date, newest_date
+        - total_records, total_days, oldest_date, newest_date, newest_timestamp
         - total_tokens, total_prompts, total_sessions
         - tokens_by_model: dict of model -> token count
         - avg_tokens_per_session, avg_tokens_per_prompt
@@ -689,6 +689,7 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
             "total_days": 0,
             "oldest_date": None,
             "newest_date": None,
+            "newest_timestamp": None,
             "total_tokens": 0,
             "total_prompts": 0,
             "total_responses": 0,
@@ -716,6 +717,10 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
 
         cursor.execute("SELECT MIN(date), MAX(date) FROM usage_records")
         oldest_date, newest_date = cursor.fetchone()
+
+        # Get newest snapshot timestamp
+        cursor.execute("SELECT MAX(snapshot_timestamp) FROM daily_snapshots")
+        newest_timestamp = cursor.fetchone()[0]
 
         # Aggregate statistics from daily_snapshots
         cursor.execute("""
@@ -800,6 +805,7 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
             "total_days": total_days,
             "oldest_date": oldest_date,
             "newest_date": newest_date,
+            "newest_timestamp": newest_timestamp,
             "total_tokens": total_tokens,
             "total_prompts": total_prompts,
             "total_responses": total_responses,

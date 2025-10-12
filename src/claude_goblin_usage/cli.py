@@ -36,7 +36,7 @@ console = Console()
 @app.command(name="usage")
 def usage_command(
     live: bool = typer.Option(False, "--live", help="Auto-refresh dashboard every 5 seconds"),
-    fast: bool = typer.Option(False, "--fast", help="Skip live limits for faster rendering"),
+    fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
 ):
     """
     Show usage dashboard with KPI cards and breakdowns.
@@ -48,7 +48,7 @@ def usage_command(
     - Token breakdown by project
 
     Use --live for auto-refreshing dashboard.
-    Use --fast to skip limits fetching for faster rendering.
+    Use --fast to skip all updates and read from database only (requires existing database).
     """
     usage.run(console, live=live, fast=fast)
 
@@ -87,6 +87,7 @@ def limits_command():
 def export_command(
     svg: bool = typer.Option(False, "--svg", help="Export as SVG instead of PNG"),
     open_file: bool = typer.Option(False, "--open", help="Open file after export"),
+    fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
     year: Optional[int] = typer.Option(None, "--year", "-y", help="Filter by year (default: current year)"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path"),
 ):
@@ -96,9 +97,12 @@ def export_command(
     Generates a GitHub-style activity heatmap showing your Claude Code usage
     throughout the year. By default exports as PNG for the current year.
 
+    Use --fast to skip all updates and read from database only (requires existing database).
+
     Examples:
         claude-goblin export --open                  Export current year as PNG and open it
         claude-goblin export --svg                   Export as SVG instead
+        claude-goblin export --fast                  Export from database without updating
         claude-goblin export -y 2024                 Export specific year
         claude-goblin export -o ~/usage.png          Specify output path
     """
@@ -108,6 +112,8 @@ def export_command(
         sys.argv.append("svg")
     if open_file and "--open" not in sys.argv:
         sys.argv.append("--open")
+    if fast and "--fast" not in sys.argv:
+        sys.argv.append("--fast")
     if year is not None:
         if "--year" not in sys.argv and "-y" not in sys.argv:
             sys.argv.extend(["--year", str(year)])

@@ -18,6 +18,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Added `get_latest_limits()` function to retrieve most recent limits from database
+- Added `--fast` flag to `usage` command for faster dashboard rendering (skips all updates, reads directly from database)
+- Added `--fast` flag to `export` command for faster exports (skips all updates, reads directly from database)
+- Added database existence check for `--fast` mode with helpful error message
+- Added timestamp warning when using `--fast` mode showing last database update date
 
 ## [0.1.2] - 2025-10-11
 
