@@ -89,31 +89,30 @@ For most users, just run `usage` regularly and it will handle data tracking auto
 
 ## Commands
 
-### Data Management
-- `claude-goblin update-usage` - Update historical database with latest data
-- `claude-goblin delete-usage --force` - Delete historical database (requires --force)
-- `claude-goblin restore-backup` - Restore from backup
-
-### Dashboard & Analytics
-- `claude-goblin usage` - Show usage dashboard with KPI cards and breakdowns
-- `claude-goblin usage --live` - Auto-refresh dashboard every 5 seconds
-- `claude-goblin usage --fast` - Skip live limits for faster rendering
-- `claude-goblin limits` - Show current usage limits (session, week, Opus)
-- `claude-goblin stats` - Show detailed statistics and cost analysis
-- `claude-goblin status-bar [session|weekly|opus]` - Launch macOS menu bar app (macOS only)
-
-### Export
-- `claude-goblin export` - Export yearly heatmap as PNG (default)
-- `claude-goblin export --svg` - Export as SVG image
-- `claude-goblin export --open` - Export and open the image
-- `claude-goblin export -y 2024` - Export specific year
-- `claude-goblin export -o output.png` - Specify output file (path)
-
-### Hooks (Advanced)
-- `claude-goblin setup-hooks usage` - Auto-update database on Claude `Stop` hook
-- `claude-goblin setup-hooks audio` - Play sounds on completion (`Stop`) and permission requests (`Notification`)
-- `claude-goblin setup-hooks png` - Generate PNG on Claude Code `Stop` hook
-- `claude-goblin remove-hooks` - Remove all hooks
+| Command | Description |
+|---------|-------------|
+| **Dashboard & Analytics** | |
+| `claude-goblin usage` | Show usage dashboard with KPI cards and breakdowns |
+| `claude-goblin usage --live` | Auto-refresh dashboard every 5 seconds |
+| `claude-goblin usage --fast` | Skip live limits for faster rendering |
+| `claude-goblin limits` | Show current usage limits (session, week, Opus) |
+| `claude-goblin stats` | Show detailed statistics and cost analysis |
+| `claude-goblin status-bar [type]` | Launch macOS menu bar app (session\|weekly\|opus) |
+| **Export** | |
+| `claude-goblin export` | Export yearly heatmap as PNG (default) |
+| `claude-goblin export --svg` | Export as SVG image |
+| `claude-goblin export --open` | Export and open the image |
+| `claude-goblin export -y 2024` | Export specific year |
+| `claude-goblin export -o output.png` | Specify output file path |
+| **Data Management** | |
+| `claude-goblin update-usage` | Update historical database with latest data |
+| `claude-goblin delete-usage --force` | Delete historical database (requires --force) |
+| `claude-goblin restore-backup` | Restore from backup |
+| **Hooks (Advanced)** | |
+| `claude-goblin setup-hooks usage` | Auto-track usage after each Claude response |
+| `claude-goblin setup-hooks audio` | Play sounds for completion & permission requests |
+| `claude-goblin setup-hooks png` | Auto-generate PNG after each response |
+| `claude-goblin remove-hooks [type]` | Remove hooks (usage\|audio\|png, or all) |
 
 ## Data Source
 
@@ -191,7 +190,7 @@ graph TD
 |------|----------|---------|
 | **JSONL logs** | `~/.claude/projects/*.jsonl` | Current 30-day usage data from Claude Code |
 | **SQLite DB** | `~/.claude/usage/usage_history.db` | Historical usage data preserved indefinitely |
-| **Manual exports** | `./claude-usage-<timestamp>.png` | PNG/SVG heatmaps in current directory (or specify with `-o`) |
+| **Default exports** | `~/.claude/usage/claude-usage-<timestamp>.png` | PNG/SVG heatmaps (default location unless `-o` is used) |
 | **Hook exports** | `~/.claude/usage/claude-usage.png` | Default location for PNG hook auto-updates |
 
 ## --usage TUI dashboard
