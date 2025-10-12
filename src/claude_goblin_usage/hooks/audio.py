@@ -136,7 +136,6 @@ def setup(console: Console, settings: dict, settings_path: Path) -> None:
     })
 
     settings["hooks"]["Notification"].append({
-        "matcher": "*",
         "hooks": [{
             "type": "command",
             "command": permission_command
