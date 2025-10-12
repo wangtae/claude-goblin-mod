@@ -616,6 +616,59 @@ def get_limits_data(db_path: Path = DEFAULT_DB_PATH) -> dict[str, dict[str, int]
         conn.close()
 
 
+def get_latest_limits(db_path: Path = DEFAULT_DB_PATH) -> dict | None:
+    """
+    Get the most recent limits snapshot from the database.
+
+    Returns a dictionary with the latest limits data:
+    {
+        "session_pct": 14,
+        "week_pct": 18,
+        "opus_pct": 8,
+        "session_reset": "Oct 16, 10:59am (Europe/Brussels)",
+        "week_reset": "Oct 18, 3pm (Europe/Brussels)",
+        "opus_reset": "Oct 18, 3pm (Europe/Brussels)",
+    }
+
+    Args:
+        db_path: Path to the SQLite database file
+
+    Returns:
+        Dictionary with latest limits, or None if no data exists
+    """
+    if not db_path.exists():
+        return None
+
+    conn = sqlite3.connect(db_path)
+
+    try:
+        cursor = conn.cursor()
+
+        # Get most recent limits snapshot
+        cursor.execute("""
+            SELECT session_pct, week_pct, opus_pct,
+                   session_reset, week_reset, opus_reset
+            FROM limits_snapshots
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """)
+
+        row = cursor.fetchone()
+        if not row:
+            return None
+
+        return {
+            "session_pct": row[0] or 0,
+            "week_pct": row[1] or 0,
+            "opus_pct": row[2] or 0,
+            "session_reset": row[3] or "",
+            "week_reset": row[4] or "",
+            "opus_reset": row[5] or "",
+        }
+    finally:
+        conn.close()
+
+
 def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
     """
     Get statistics about the historical database.

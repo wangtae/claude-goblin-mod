@@ -72,7 +72,7 @@ def _create_bar(value: int, max_value: int, width: int = BAR_WIDTH, color: str =
     return bar
 
 
-def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None) -> None:
+def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None) -> None:
     """
     Render a concise, modern dashboard with KPI cards and breakdowns.
 
@@ -83,9 +83,10 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         skip_limits: If True, skip fetching current limits for faster display
         clear_screen: If True, clear the screen before rendering (default True)
         date_range: Optional date range string to display in footer
+        limits_from_db: Pre-fetched limits from database (avoids live fetch)
     """
     # Create KPI cards with limits (shows spinner if loading limits)
-    kpi_section = _create_kpi_section(stats.overall_totals, skip_limits=skip_limits, console=console)
+    kpi_section = _create_kpi_section(stats.overall_totals, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db)
 
     # Create breakdowns
     model_breakdown = _create_model_breakdown(records)
@@ -106,7 +107,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     console.print(footer)
 
 
-def _create_kpi_section(overall, skip_limits: bool = False, console: Console = None) -> Group:
+def _create_kpi_section(overall, skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None) -> Group:
     """
     Create KPI cards with individual limit boxes beneath each.
 
@@ -114,13 +115,14 @@ def _create_kpi_section(overall, skip_limits: bool = False, console: Console = N
         overall: Overall statistics
         skip_limits: If True, skip fetching current limits (faster)
         console: Console instance for showing spinner
+        limits_from_db: Pre-fetched limits from database (avoids live fetch)
 
     Returns:
         Group containing KPI cards and limit boxes
     """
-    # Get current limits unless skipped
-    limits = None
-    if not skip_limits:
+    # Use limits from DB if provided, otherwise fetch live (unless skipped)
+    limits = limits_from_db
+    if limits is None and not skip_limits:
         from claude_goblin_usage.commands.limits import capture_limits
         if console:
             with console.status(f"[bold {ORANGE}]Loading usage limits...", spinner="dots", spinner_style=ORANGE):
@@ -483,7 +485,7 @@ def _create_footer(date_range: str = None) -> Text:
     # Add export tip
     footer.append("Tip: ", style=DIM)
     footer.append("View yearly heatmap with ", style=DIM)
-    footer.append("claude-goblin --export --open", style=f"bold {CYAN}")
+    footer.append("claude-goblin export --open", style=f"bold {CYAN}")
 
     return footer
 

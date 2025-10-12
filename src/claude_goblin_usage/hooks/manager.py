@@ -28,8 +28,8 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
         console.print("  [bold]usage[/bold]  - Auto-track usage after each response")
         console.print("  [bold]audio[/bold]  - Play sounds for completion & permission requests")
         console.print("  [bold]png[/bold]    - Auto-update usage PNG after each response\n")
-        console.print("Usage: claude-goblin --setup-hooks <type>")
-        console.print("Example: claude-goblin --setup-hooks usage")
+        console.print("Usage: claude-goblin setup-hooks <type>")
+        console.print("Example: claude-goblin setup-hooks usage")
         return
 
     console.print(f"[bold cyan]Setting up {hook_type} hook[/bold cyan]\n")
@@ -69,7 +69,7 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
             json.dump(settings, f, indent=2)
 
         console.print("\n[dim]Hook location: ~/.claude/settings.json[/dim]")
-        console.print(f"[dim]To remove: claude-goblin --remove-hooks {hook_type}[/dim]")
+        console.print(f"[dim]To remove: claude-goblin remove-hooks {hook_type}[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error setting up hooks: {e}[/red]")

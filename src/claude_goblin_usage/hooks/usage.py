@@ -87,7 +87,7 @@ def setup(console: Console, settings: dict, settings_path: Path) -> None:
                 if DEFAULT_DB_PATH.exists():
                     shutil.copy2(DEFAULT_DB_PATH, backup_path)
                     console.print(f"[green]✓ Backup created: {backup_path}[/green]")
-                    console.print(f"[dim]To restore: claude-goblin --restore-backup[/dim]")
+                    console.print(f"[dim]To restore: claude-goblin restore-backup[/dim]")
                 else:
                     console.print("[yellow]No database file found to backup[/yellow]")
         except (EOFError, KeyboardInterrupt):

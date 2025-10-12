@@ -6,15 +6,17 @@ from pathlib import Path
 from rich.console import Console
 
 from claude_goblin_usage.aggregation.daily_stats import aggregate_all
+from claude_goblin_usage.commands.limits import capture_limits
 from claude_goblin_usage.config.settings import (
     DEFAULT_REFRESH_INTERVAL,
     get_claude_jsonl_files,
 )
-from claude_goblin_usage.config.user_config import get_storage_mode
+from claude_goblin_usage.config.user_config import get_storage_mode, get_tracking_mode
 from claude_goblin_usage.data.jsonl_parser import parse_all_jsonl_files
 from claude_goblin_usage.storage.snapshot_db import (
     get_database_stats,
     load_historical_records,
+    save_limits_snapshot,
     save_snapshot,
 )
 from claude_goblin_usage.visualization.dashboard import render_dashboard
@@ -110,17 +112,36 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         console: Rich console for output
         skip_limits: Skip limits fetching for faster rendering
     """
-    # Step 1: Ingestion - parse JSONL and save to DB
-    with console.status("[bold #ff8800]Ingesting session data...", spinner="dots", spinner_style="#ff8800"):
+    # Step 1: Update usage data
+    with console.status("[bold #ff8800]Updating usage data...", spinner="dots", spinner_style="#ff8800"):
         current_records = parse_all_jsonl_files(jsonl_files)
 
         # Save to database (with automatic deduplication via UNIQUE constraint)
         if current_records:
             save_snapshot(current_records, storage_mode=get_storage_mode())
 
-    # Step 2: Display - read from database only
-    with console.status("[bold #ff8800]Loading data from database...", spinner="dots", spinner_style="#ff8800"):
+    # Step 2: Update limits data (if enabled)
+    tracking_mode = get_tracking_mode()
+    if tracking_mode in ["both", "limits"] and not skip_limits:
+        with console.status("[bold #ff8800]Updating usage limits...", spinner="dots", spinner_style="#ff8800"):
+            limits = capture_limits()
+            if limits and "error" not in limits:
+                save_limits_snapshot(
+                    session_pct=limits["session_pct"],
+                    week_pct=limits["week_pct"],
+                    opus_pct=limits["opus_pct"],
+                    session_reset=limits["session_reset"],
+                    week_reset=limits["week_reset"],
+                    opus_reset=limits["opus_reset"],
+                )
+
+    # Step 3: Prepare dashboard from database
+    with console.status("[bold #ff8800]Preparing dashboard...", spinner="dots", spinner_style="#ff8800"):
         all_records = load_historical_records()
+
+        # Get latest limits from DB (if we saved them above)
+        from claude_goblin_usage.storage.snapshot_db import get_latest_limits
+        limits_from_db = get_latest_limits() if not skip_limits else None
 
     if not all_records:
         console.clear()
@@ -141,8 +162,8 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     # Aggregate statistics
     stats = aggregate_all(all_records)
 
-    # Render dashboard
-    render_dashboard(stats, all_records, console, skip_limits=skip_limits, clear_screen=False, date_range=date_range)
+    # Render dashboard with limits from DB (no live fetch needed)
+    render_dashboard(stats, all_records, console, skip_limits=True, clear_screen=False, date_range=date_range, limits_from_db=limits_from_db)
 
 
 #endregion
