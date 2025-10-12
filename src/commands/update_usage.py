@@ -4,11 +4,11 @@ import sqlite3
 
 from rich.console import Console
 
-from claude_goblin_usage.commands.limits import capture_limits
-from claude_goblin_usage.config.settings import get_claude_jsonl_files
-from claude_goblin_usage.config.user_config import get_storage_mode, get_tracking_mode
-from claude_goblin_usage.data.jsonl_parser import parse_all_jsonl_files
-from claude_goblin_usage.storage.snapshot_db import (
+from src.commands.limits import capture_limits
+from src.config.settings import get_claude_jsonl_files
+from src.config.user_config import get_storage_mode, get_tracking_mode
+from src.data.jsonl_parser import parse_all_jsonl_files
+from src.storage.snapshot_db import (
     DEFAULT_DB_PATH,
     get_database_stats,
     init_database,

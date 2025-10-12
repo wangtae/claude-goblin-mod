@@ -64,7 +64,7 @@ def run(console: Console, limit_type: Literal["session", "weekly", "opus"]) -> N
         sys.exit(1)
 
     # Import the capture function from limits
-    from claude_goblin_usage.commands.limits import capture_limits
+    from src.commands.limits import capture_limits
 
     class ClaudeStatusApp(rumps.App):
         """

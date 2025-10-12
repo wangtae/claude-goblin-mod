@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from claude_goblin_usage.aggregation.daily_stats import AggregatedStats, DailyStats
+from src.aggregation.daily_stats import AggregatedStats, DailyStats
 #endregion
 
 
@@ -417,7 +417,7 @@ def export_heatmap_png(
     opus_reset_info = None
     if limits_data:
         # Get the most recent limits snapshot to extract reset times
-        from claude_goblin_usage.storage.snapshot_db import DEFAULT_DB_PATH
+        from src.storage.snapshot_db import DEFAULT_DB_PATH
         import sqlite3
         try:
             conn = sqlite3.connect(DEFAULT_DB_PATH)

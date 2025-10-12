@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from claude_goblin_usage.models.usage_record import UsageRecord
+from src.models.usage_record import UsageRecord
 #endregion
 
 
@@ -455,7 +455,7 @@ def load_historical_records(
             # Row columns: id, date, timestamp, session_id, message_uuid, message_type,
             #              model, folder, git_branch, version,
             #              input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, total_tokens
-            from claude_goblin_usage.models.usage_record import TokenUsage
+            from src.models.usage_record import TokenUsage
 
             # Only create TokenUsage if tokens exist (assistant messages)
             token_usage = None
@@ -492,9 +492,9 @@ def get_text_analysis_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
     Returns:
         Dictionary with text analysis statistics
     """
-    from claude_goblin_usage.config.settings import get_claude_jsonl_files
-    from claude_goblin_usage.data.jsonl_parser import parse_all_jsonl_files
-    from claude_goblin_usage.utils.text_analysis import (
+    from src.config.settings import get_claude_jsonl_files
+    from src.data.jsonl_parser import parse_all_jsonl_files
+    from src.utils.text_analysis import (
         count_swears,
         count_perfect_phrases,
         count_absolutely_right_phrases,

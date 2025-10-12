@@ -5,7 +5,7 @@ from datetime import datetime
 
 from rich.console import Console
 
-from claude_goblin_usage.storage.snapshot_db import (
+from src.storage.snapshot_db import (
     DEFAULT_DB_PATH,
     get_database_stats,
 )

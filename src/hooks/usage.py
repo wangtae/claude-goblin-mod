@@ -4,8 +4,8 @@ from pathlib import Path
 
 from rich.console import Console
 
-from claude_goblin_usage.config.user_config import get_storage_mode, set_storage_mode
-from claude_goblin_usage.storage.snapshot_db import DEFAULT_DB_PATH
+from src.config.user_config import get_storage_mode, set_storage_mode
+from src.storage.snapshot_db import DEFAULT_DB_PATH
 #endregion
 
 

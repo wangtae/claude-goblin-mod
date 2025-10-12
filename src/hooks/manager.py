@@ -5,7 +5,7 @@ from typing import Optional
 
 from rich.console import Console
 
-from claude_goblin_usage.hooks import usage, audio, png
+from src.hooks import usage, audio, png
 #endregion
 
 

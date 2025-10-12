@@ -5,21 +5,21 @@ from pathlib import Path
 
 from rich.console import Console
 
-from claude_goblin_usage.aggregation.daily_stats import aggregate_all
-from claude_goblin_usage.commands.limits import capture_limits
-from claude_goblin_usage.config.settings import (
+from src.aggregation.daily_stats import aggregate_all
+from src.commands.limits import capture_limits
+from src.config.settings import (
     DEFAULT_REFRESH_INTERVAL,
     get_claude_jsonl_files,
 )
-from claude_goblin_usage.config.user_config import get_storage_mode, get_tracking_mode
-from claude_goblin_usage.data.jsonl_parser import parse_all_jsonl_files
-from claude_goblin_usage.storage.snapshot_db import (
+from src.config.user_config import get_storage_mode, get_tracking_mode
+from src.data.jsonl_parser import parse_all_jsonl_files
+from src.storage.snapshot_db import (
     get_database_stats,
     load_historical_records,
     save_limits_snapshot,
     save_snapshot,
 )
-from claude_goblin_usage.visualization.dashboard import render_dashboard
+from src.visualization.dashboard import render_dashboard
 #endregion
 
 
@@ -112,7 +112,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         console: Rich console for output
         skip_limits: Skip ALL updates, read directly from DB (fast mode)
     """
-    from claude_goblin_usage.storage.snapshot_db import get_latest_limits, DEFAULT_DB_PATH, get_database_stats
+    from src.storage.snapshot_db import get_latest_limits, DEFAULT_DB_PATH, get_database_stats
 
     # Check if database exists when using --fast
     if skip_limits and not DEFAULT_DB_PATH.exists():

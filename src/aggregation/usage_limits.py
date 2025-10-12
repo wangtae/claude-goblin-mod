@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from dataclasses import dataclass
 
-from claude_goblin_usage.models.usage_record import UsageRecord
+from src.models.usage_record import UsageRecord
 #endregion
 
 

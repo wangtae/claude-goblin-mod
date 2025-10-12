@@ -7,7 +7,7 @@ from typing import Optional
 import typer
 from rich.console import Console
 
-from claude_goblin_usage.commands import (
+from src.commands import (
     usage,
     update_usage,
     stats,
@@ -18,7 +18,7 @@ from claude_goblin_usage.commands import (
     limits,
     status_bar,
 )
-from claude_goblin_usage.hooks.manager import setup_hooks, remove_hooks
+from src.hooks.manager import setup_hooks, remove_hooks
 
 
 # Create typer app

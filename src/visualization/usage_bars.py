@@ -2,7 +2,7 @@
 from datetime import datetime
 from rich.console import Console
 
-from claude_goblin_usage.aggregation.usage_limits import UsageLimits
+from src.aggregation.usage_limits import UsageLimits
 #endregion
 
 

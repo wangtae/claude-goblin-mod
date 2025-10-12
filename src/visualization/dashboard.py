@@ -10,9 +10,9 @@ from rich.layout import Layout
 from rich.progress import Progress, BarColumn, TextColumn
 from rich.spinner import Spinner
 
-from claude_goblin_usage.aggregation.daily_stats import AggregatedStats
-from claude_goblin_usage.models.usage_record import UsageRecord
-from claude_goblin_usage.storage.snapshot_db import get_limits_data
+from src.aggregation.daily_stats import AggregatedStats
+from src.models.usage_record import UsageRecord
+from src.storage.snapshot_db import get_limits_data
 #endregion
 
 
@@ -124,7 +124,7 @@ def _create_kpi_section(overall, skip_limits: bool = False, console: Console = N
     # Use limits from DB if provided, otherwise fetch live (unless skipped)
     limits = limits_from_db
     if limits is None and not skip_limits:
-        from claude_goblin_usage.commands.limits import capture_limits
+        from src.commands.limits import capture_limits
         if console:
             with console.status(f"[bold {ORANGE}]Loading usage limits...", spinner="dots", spinner_style=ORANGE):
                 limits = capture_limits()
@@ -283,7 +283,7 @@ def _create_limits_bars() -> Panel | None:
         Panel with limit progress bars, or None if no limits data
     """
     # Try to capture current limits
-    from claude_goblin_usage.commands.limits import capture_limits
+    from src.commands.limits import capture_limits
 
     limits = capture_limits()
     if not limits or "error" in limits:
@@ -481,7 +481,7 @@ def _create_footer(date_range: str = None, fast_mode: bool = False) -> Text:
 
     # Add fast mode warning if enabled
     if fast_mode:
-        from claude_goblin_usage.storage.snapshot_db import get_database_stats
+        from src.storage.snapshot_db import get_database_stats
         db_stats = get_database_stats()
         if db_stats.get("newest_timestamp"):
             # Format ISO timestamp to be more readable

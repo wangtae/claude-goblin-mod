@@ -5,7 +5,7 @@ from typing import Optional
 
 from rich.console import Console
 
-from claude_goblin_usage.utils._system import get_sound_command
+from src.utils._system import get_sound_command
 #endregion
 
 

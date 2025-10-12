@@ -7,7 +7,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from claude_goblin_usage.aggregation.daily_stats import AggregatedStats, DailyStats
+from src.aggregation.daily_stats import AggregatedStats, DailyStats
 #endregion
 
 

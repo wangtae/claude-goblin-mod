@@ -39,14 +39,14 @@ export = [
 ]
 
 [project.scripts]
-claude-goblin = "claude_goblin_usage.cli:main"
+claude-goblin = "src.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/claude_goblin_usage"]
+packages = ["src"]
 
 [dependency-groups]
 dev = [

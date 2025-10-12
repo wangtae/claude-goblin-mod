@@ -3,10 +3,10 @@ from datetime import datetime
 
 from rich.console import Console
 
-from claude_goblin_usage.config.settings import get_claude_jsonl_files
-from claude_goblin_usage.config.user_config import get_storage_mode
-from claude_goblin_usage.data.jsonl_parser import parse_all_jsonl_files
-from claude_goblin_usage.storage.snapshot_db import (
+from src.config.settings import get_claude_jsonl_files
+from src.config.user_config import get_storage_mode
+from src.data.jsonl_parser import parse_all_jsonl_files
+from src.storage.snapshot_db import (
     get_database_stats,
     get_text_analysis_stats,
     save_snapshot,

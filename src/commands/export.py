@@ -5,12 +5,12 @@ from pathlib import Path
 
 from rich.console import Console
 
-from claude_goblin_usage.aggregation.daily_stats import aggregate_all
-from claude_goblin_usage.commands.limits import capture_limits
-from claude_goblin_usage.config.settings import get_claude_jsonl_files
-from claude_goblin_usage.config.user_config import get_tracking_mode, get_storage_mode
-from claude_goblin_usage.data.jsonl_parser import parse_all_jsonl_files
-from claude_goblin_usage.storage.snapshot_db import (
+from src.aggregation.daily_stats import aggregate_all
+from src.commands.limits import capture_limits
+from src.config.settings import get_claude_jsonl_files
+from src.config.user_config import get_tracking_mode, get_storage_mode
+from src.data.jsonl_parser import parse_all_jsonl_files
+from src.storage.snapshot_db import (
     load_historical_records,
     get_limits_data,
     save_limits_snapshot,
@@ -18,7 +18,7 @@ from claude_goblin_usage.storage.snapshot_db import (
     get_database_stats,
     DEFAULT_DB_PATH,
 )
-from claude_goblin_usage.utils._system import open_file
+from src.utils._system import open_file
 #endregion
 
 
@@ -42,7 +42,7 @@ def run(console: Console) -> None:
         --year YYYY or -y YYYY: Filter by year (default: current year)
         -o FILE or --output FILE: Specify output file path
     """
-    from claude_goblin_usage.visualization.export import export_heatmap_svg, export_heatmap_png
+    from src.visualization.export import export_heatmap_svg, export_heatmap_png
 
     # Check for --fast flag
     fast_mode = "--fast" in sys.argv

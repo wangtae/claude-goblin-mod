@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import DefaultDict
 
-from claude_goblin_usage.models.usage_record import UsageRecord
+from src.models.usage_record import UsageRecord
 #endregion
 
 

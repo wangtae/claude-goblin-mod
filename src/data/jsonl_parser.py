@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
-from claude_goblin_usage.models.usage_record import TokenUsage, UsageRecord
+from src.models.usage_record import TokenUsage, UsageRecord
 #endregion
 
 
