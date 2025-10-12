@@ -1,15 +1,19 @@
-# Claude Goblin
+# Claude Code Goblin
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude%20Code-required-orange?logo=anthropic)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-Python command line tool to help with Claude Code utilities and usage tracking/analytics.
+Python command line tool to help with Claude Code utilities and Claude Code usage analytics and long-term tracking.
 
-**Quick Start:** Install with `pip install claude-goblin` and use `claude-goblin --help` for commands or `claude-goblin usage` to start tracking. Below are some examples of outputs that this command line can give you.
 
----
+**Quick Start:** Install with `pip install claude-goblin` and use `ccg --help` for commands or `ccg usage` to start tracking. Below are some examples of outputs that this command line can give you.
+
+> [!NOTE]
+> Both `claude-goblin` and `ccg` work interchangeably as command aliases.
+
+## Example outputs
 
 **TUI Dashboard:**
 
@@ -40,8 +44,10 @@ Python command line tool to help with Claude Code utilities and usage tracking/a
 - Local snapshotting of Claude Code logs for analytics
 - Local snapshotting of usage limits from the Claude Code `/usage` command
 - Dashboard and stats of usage and limit history
+- Project anonymization for sharing screenshots (`--anon` flag)
 - Hook setup to automate data logging or analysis of Claude Code
-- Audio notifications for Claude Code completion and permission requests
+- Audio notifications for Claude Code completion, permission requests, and conversation compaction
+- Text-to-speech (TTS) notifications with customizable hook selection (macOS only)
 
 ## Installation
 
@@ -73,10 +79,10 @@ After installation, start tracking your Claude Code usage:
 
 ```bash
 # View your current usage dashboard
-claude-goblin usage
+ccg usage
 
 # (Optional) Enable automatic tracking with hooks
-claude-goblin setup-hooks usage
+ccg setup-hooks usage
 ```
 
 **Note**: The `usage` command automatically saves your data to the historical database every time you run it. No manual setup required.
@@ -92,27 +98,29 @@ For most users, just run `usage` regularly and it will handle data tracking auto
 | Command | Description |
 |---------|-------------|
 | **Dashboard & Analytics** | |
-| `claude-goblin usage` | Show usage dashboard with KPI cards and breakdowns |
-| `claude-goblin usage --live` | Auto-refresh dashboard every 5 seconds |
-| `claude-goblin usage --fast` | Skip live limits for faster rendering |
-| `claude-goblin limits` | Show current usage limits (session, week, Opus) |
-| `claude-goblin stats` | Show detailed statistics and cost analysis |
-| `claude-goblin status-bar [type]` | Launch macOS menu bar app (session\|weekly\|opus) |
+| `ccg usage` | Show usage dashboard with KPI cards and breakdowns |
+| `ccg usage --live` | Auto-refresh dashboard every 5 seconds |
+| `ccg usage --fast` | Skip live limits for faster rendering |
+| `ccg usage --anon` | Anonymize project names (project-001, project-002, etc.) |
+| `ccg limits` | Show current usage limits (session, week, Opus) |
+| `ccg stats` | Show detailed statistics and cost analysis |
+| `ccg status-bar [type]` | Launch macOS menu bar app (session\|weekly\|opus) |
 | **Export** | |
-| `claude-goblin export` | Export yearly heatmap as PNG (default) |
-| `claude-goblin export --svg` | Export as SVG image |
-| `claude-goblin export --open` | Export and open the image |
-| `claude-goblin export -y 2024` | Export specific year |
-| `claude-goblin export -o output.png` | Specify output file path |
+| `ccg export` | Export yearly heatmap as PNG (default) |
+| `ccg export --svg` | Export as SVG image |
+| `ccg export --open` | Export and open the image |
+| `ccg export -y 2024` | Export specific year |
+| `ccg export -o output.png` | Specify output file path |
 | **Data Management** | |
-| `claude-goblin update-usage` | Update historical database with latest data |
-| `claude-goblin delete-usage --force` | Delete historical database (requires --force) |
-| `claude-goblin restore-backup` | Restore from backup |
+| `ccg update-usage` | Update historical database with latest data |
+| `ccg delete-usage --force` | Delete historical database (requires --force) |
+| `ccg restore-backup` | Restore from backup |
 | **Hooks (Advanced)** | |
-| `claude-goblin setup-hooks usage` | Auto-track usage after each Claude response |
-| `claude-goblin setup-hooks audio` | Play sounds for completion & permission requests |
-| `claude-goblin setup-hooks png` | Auto-generate PNG after each response |
-| `claude-goblin remove-hooks [type]` | Remove hooks (usage\|audio\|png, or all) |
+| `ccg setup-hooks usage` | Auto-track usage after each Claude response |
+| `ccg setup-hooks audio` | Play sounds for completion, permission & compaction |
+| `ccg setup-hooks audio-tts` | Speak notifications using TTS (macOS, multi-hook) |
+| `ccg setup-hooks png` | Auto-generate PNG after each response |
+| `ccg remove-hooks [type]` | Remove hooks (usage\|audio\|audio-tts\|png, or all) |
 
 ## Data Source
 
@@ -166,20 +174,20 @@ graph TD
 
 ### Command Behavior
 
-**`claude-goblin usage`** (Display + Ingestion)
+**`ccg usage`** (Display + Ingestion)
 1. **Ingestion**: Reads JSONL files from `~/.claude/projects/*.jsonl` and saves to DB
 2. **Display**: Reads data from DB and renders dashboard
 
-**`claude-goblin export`** (Display only)
+**`ccg export`** (Display only)
 1. Reads data from DB at `~/.claude/usage/usage_history.db`
 2. Generates yearly heatmap
 3. Exports to current directory as `claude-usage-<timestamp>.png` (or specify with `-o`)
 
-**`claude-goblin stats`** (Display + Ingestion)
+**`ccg stats`** (Display + Ingestion)
 1. **Ingestion**: Reads JSONL files from `~/.claude/projects/*.jsonl` and saves to DB
 2. **Display**: Reads data from DB and displays comprehensive statistics
 
-**`claude-goblin update-usage`** (Ingestion only)
+**`ccg update-usage`** (Ingestion only)
 1. Reads JSONL files from `~/.claude/projects/*.jsonl`
 2. Saves to DB at `~/.claude/usage/usage_history.db` (with automatic deduplication)
 3. Fills in missing dates with empty records (ensures continuous heatmap)
@@ -204,7 +212,7 @@ Example TUI:
 Export a GitHub-style yearly activity heatmap:
 
 ```bash
-claude-goblin export --open
+ccg export --open
 ```
 
 Example heatmap:
@@ -213,7 +221,7 @@ Example heatmap:
 
 ### --export Formats
 
-- **PNG** (default): `claude-goblin export`
+- **PNG** (default): `ccg export`
 
 ## --status-bar (macOS only)
 
@@ -221,24 +229,105 @@ Launch a menu bar app showing your Claude Code usage limits:
 
 ```bash
 # Show weekly usage (default)
-claude-goblin status-bar weekly
+ccg status-bar weekly
 
 # Show session usage
-claude-goblin status-bar session
+ccg status-bar session
 
 # Show Opus weekly usage
-claude-goblin status-bar opus
+ccg status-bar opus
 ```
 
 The menu bar displays "CC: XX%" and clicking it shows all three limits (Session, Weekly, Opus) with reset times.
 
 **Running in background:**
-- Use `&` to run in background: `claude-goblin status-bar weekly &`
-- Use `nohup` to persist after terminal closes: `nohup claude-goblin status-bar weekly > /dev/null 2>&1 &`
+- Use `&` to run in background: `ccg status-bar weekly &`
+- Use `nohup` to persist after terminal closes: `nohup ccg status-bar weekly > /dev/null 2>&1 &`
 
 Example:
 
 ![example status bar](docs/images/status-bar.png)
+
+## Hooks
+
+Claude Goblin can integrate with Claude Code's hook system to automate various tasks. Hooks trigger automatically based on Claude Code events.
+
+### Available Hook Types
+
+#### Usage Hook
+Automatically tracks usage data after each Claude response:
+```bash
+ccg setup-hooks usage
+```
+
+This adds a hook that runs `ccg update-usage --fast` after each Claude response, keeping your historical database up-to-date.
+
+#### Audio Hook
+Plays system sounds for three different events:
+```bash
+ccg setup-hooks audio
+```
+
+You'll be prompted to select three sounds:
+1. **Completion sound**: Plays when Claude finishes responding
+2. **Permission sound**: Plays when Claude requests permission
+3. **Compaction sound**: Plays before conversation compaction
+
+Supports macOS (10 built-in sounds), Windows, and Linux.
+
+#### Audio TTS Hook (macOS only)
+Speaks notifications aloud using macOS text-to-speech:
+```bash
+ccg setup-hooks audio-tts
+```
+
+**Multi-hook selection** - Choose which events to speak:
+1. Notification only (permission requests) - **[recommended]**
+2. Stop only (when Claude finishes responding)
+3. PreCompact only (before conversation compaction)
+4. Notification + Stop
+5. Notification + PreCompact
+6. Stop + PreCompact
+7. All three (Notification + Stop + PreCompact)
+
+You can also select from 7 different voices (Samantha, Alex, Daniel, Karen, Moira, Fred, Zarvox).
+
+**Example messages:**
+- Notification: Speaks the permission request message
+- Stop: "Claude finished responding"
+- PreCompact: "Auto compacting conversation" or "Manually compacting conversation"
+
+#### PNG Hook
+Auto-generates usage heatmap PNG after each Claude response:
+```bash
+ccg setup-hooks png
+```
+
+Requires export dependencies: `pip install "claude-goblin[export]"`
+
+### Removing Hooks
+
+```bash
+# Remove specific hook type
+ccg remove-hooks usage
+ccg remove-hooks audio
+ccg remove-hooks audio-tts
+ccg remove-hooks png
+
+# Remove all Claude Goblin hooks
+ccg remove-hooks
+```
+
+## Project Anonymization
+
+The `--anon` flag anonymizes project names when displaying usage data, perfect for sharing screenshots:
+
+```bash
+ccg usage --anon
+ccg stats --anon
+```
+
+Projects are renamed to `project-001`, `project-002`, etc., ranked by total token usage (project-001 has the highest usage).
 
 ## Historical Data
 
@@ -246,13 +335,13 @@ Claude Goblin automatically saves data every time you run `usage`. To manually m
 
 ```bash
 # View historical stats
-claude-goblin stats
+ccg stats
 
 # Update database with latest data and fill date gaps
-claude-goblin update-usage
+ccg update-usage
 
 # Delete all history
-claude-goblin delete-usage -f
+ccg delete-usage -f
 ```
 
 ## What It Tracks
@@ -317,8 +406,8 @@ I don't have much time but I'll review PRs when I can.
 - For PNG: requires Pillow and CairoSVG
 
 ### Database errors
-- Try deleting and recreating: `claude-goblin delete-usage --force`
-- Then run: `claude-goblin usage` to rebuild from current data
+- Try deleting and recreating: `ccg delete-usage --force`
+- Then run: `ccg usage` to rebuild from current data
 
 ## **AI Tools Disclaimer**: 
 This project was developed with assistance from Claude Code.
