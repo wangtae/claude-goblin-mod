@@ -29,8 +29,8 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
         console.print("  [bold]audio[/bold]     - Play sounds for completion & permission requests")
         console.print("  [bold]audio-tts[/bold] - Speak permission requests using TTS (macOS only)")
         console.print("  [bold]png[/bold]       - Auto-update usage PNG after each response\n")
-        console.print("Usage: claude-goblin setup-hooks <type>")
-        console.print("Example: claude-goblin setup-hooks usage")
+        console.print("Usage: ccg setup-hooks <type>")
+        console.print("Example: ccg setup-hooks usage")
         return
 
     console.print(f"[bold cyan]Setting up {hook_type} hook[/bold cyan]\n")
@@ -72,7 +72,7 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
             json.dump(settings, f, indent=2)
 
         console.print("\n[dim]Hook location: ~/.claude/settings.json[/dim]")
-        console.print(f"[dim]To remove: claude-goblin remove-hooks {hook_type}[/dim]")
+        console.print(f"[dim]To remove: ccg remove-hooks {hook_type}[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error setting up hooks: {e}[/red]")
@@ -110,9 +110,12 @@ def remove_hooks(console: Console, hook_type: Optional[str] = None) -> None:
             settings["hooks"]["Stop"] = []
         if "Notification" not in settings["hooks"]:
             settings["hooks"]["Notification"] = []
+        if "PreCompact" not in settings["hooks"]:
+            settings["hooks"]["PreCompact"] = []
 
         original_stop_count = len(settings["hooks"]["Stop"])
         original_notification_count = len(settings["hooks"]["Notification"])
+        original_precompact_count = len(settings["hooks"]["PreCompact"])
 
         # Remove hooks based on type
         if hook_type == "usage":
@@ -130,10 +133,22 @@ def remove_hooks(console: Console, hook_type: Optional[str] = None) -> None:
                 hook for hook in settings["hooks"]["Notification"]
                 if not audio.is_hook(hook)
             ]
+            settings["hooks"]["PreCompact"] = [
+                hook for hook in settings["hooks"]["PreCompact"]
+                if not audio.is_hook(hook)
+            ]
             removed_type = "audio notification"
         elif hook_type == "audio-tts":
             settings["hooks"]["Notification"] = [
                 hook for hook in settings["hooks"]["Notification"]
+                if not audio_tts.is_hook(hook)
+            ]
+            settings["hooks"]["Stop"] = [
+                hook for hook in settings["hooks"]["Stop"]
+                if not audio_tts.is_hook(hook)
+            ]
+            settings["hooks"]["PreCompact"] = [
+                hook for hook in settings["hooks"]["PreCompact"]
                 if not audio_tts.is_hook(hook)
             ]
             removed_type = "audio TTS"
@@ -153,10 +168,15 @@ def remove_hooks(console: Console, hook_type: Optional[str] = None) -> None:
                 hook for hook in settings["hooks"]["Notification"]
                 if not (usage.is_hook(hook) or audio.is_hook(hook) or png.is_hook(hook) or audio_tts.is_hook(hook))
             ]
+            settings["hooks"]["PreCompact"] = [
+                hook for hook in settings["hooks"]["PreCompact"]
+                if not (audio.is_hook(hook) or audio_tts.is_hook(hook))
+            ]
             removed_type = "all claude-goblin"
 
         removed_count = (original_stop_count - len(settings["hooks"]["Stop"])) + \
-                       (original_notification_count - len(settings["hooks"]["Notification"]))
+                       (original_notification_count - len(settings["hooks"]["Notification"])) + \
+                       (original_precompact_count - len(settings["hooks"]["PreCompact"]))
 
         if removed_count == 0:
             console.print(f"[yellow]No {removed_type} hooks found to remove.[/yellow]")
