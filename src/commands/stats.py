@@ -1,14 +1,18 @@
 #region Imports
+import sys
 from datetime import datetime
 
 from rich.console import Console
 
+from src.commands.limits import capture_limits
 from src.config.settings import get_claude_jsonl_files
-from src.config.user_config import get_storage_mode
+from src.config.user_config import get_storage_mode, get_tracking_mode
 from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import (
+    DEFAULT_DB_PATH,
     get_database_stats,
     get_text_analysis_stats,
+    save_limits_snapshot,
     save_snapshot,
 )
 #endregion
@@ -17,7 +21,7 @@ from src.storage.snapshot_db import (
 #region Functions
 
 
-def run(console: Console) -> None:
+def run(console: Console, fast: bool = False) -> None:
     """
     Show statistics about the historical database.
 
@@ -30,20 +34,62 @@ def run(console: Console) -> None:
 
     Args:
         console: Rich console for output
+        fast: Skip updates, read directly from database (default: False)
     """
-    # Step 1: Ingestion - parse JSONL and save to DB
-    with console.status("[bold #ff8800]Updating database...", spinner="dots", spinner_style="#ff8800"):
-        jsonl_files = get_claude_jsonl_files()
-        if jsonl_files:
-            current_records = parse_all_jsonl_files(jsonl_files)
-            if current_records:
-                save_snapshot(current_records, storage_mode=get_storage_mode())
+    # Check for --fast flag in sys.argv for backward compatibility
+    fast_mode = fast or "--fast" in sys.argv
 
-    # Step 2: Display stats from DB
+    # Check if database exists when using --fast
+    if fast_mode and not DEFAULT_DB_PATH.exists():
+        console.print("[red]Error: Cannot use --fast flag without existing database.[/red]")
+        console.print("[yellow]Run 'ccg stats' (without --fast) first to create the database.[/yellow]")
+        return
+
+    # If fast mode, show warning with last update timestamp
+    if fast_mode:
+        db_stats_temp = get_database_stats()
+        if db_stats_temp.get("newest_timestamp"):
+            # Format ISO timestamp to be more readable
+            timestamp_str = db_stats_temp["newest_timestamp"]
+            try:
+                dt = datetime.fromisoformat(timestamp_str)
+                formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")
+                console.print(f"[bold red]⚠ Fast mode: Reading from last update ({formatted_time})[/bold red]\n")
+            except (ValueError, AttributeError):
+                console.print(f"[bold red]⚠ Fast mode: Reading from last update ({timestamp_str})[/bold red]\n")
+        else:
+            console.print("[bold red]⚠ Fast mode: Reading from database (no timestamp available)[/bold red]\n")
+
+    # Update data unless in fast mode
+    if not fast_mode:
+        # Step 1: Ingestion - parse JSONL and save to DB
+        with console.status("[bold #ff8800]Updating database...", spinner="dots", spinner_style="#ff8800"):
+            jsonl_files = get_claude_jsonl_files()
+            if jsonl_files:
+                current_records = parse_all_jsonl_files(jsonl_files)
+                if current_records:
+                    save_snapshot(current_records, storage_mode=get_storage_mode())
+
+        # Step 2: Update limits data (if enabled)
+        tracking_mode = get_tracking_mode()
+        if tracking_mode in ["both", "limits"]:
+            with console.status("[bold #ff8800]Updating usage limits...", spinner="dots", spinner_style="#ff8800"):
+                limits = capture_limits()
+                if limits and "error" not in limits:
+                    save_limits_snapshot(
+                        session_pct=limits["session_pct"],
+                        week_pct=limits["week_pct"],
+                        opus_pct=limits["opus_pct"],
+                        session_reset=limits["session_reset"],
+                        week_reset=limits["week_reset"],
+                        opus_reset=limits["opus_reset"],
+                    )
+
+    # Step 3: Display stats from DB
     db_stats = get_database_stats()
 
     if db_stats["total_records"] == 0 and db_stats["total_prompts"] == 0:
-        console.print("[yellow]No historical data found. Run claude-goblin to start tracking.[/yellow]")
+        console.print("[yellow]No historical data found. Run ccg usage to start tracking.[/yellow]")
         return
 
     console.print("[bold cyan]Claude Code Usage Statistics[/bold cyan]\n")

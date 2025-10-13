@@ -56,7 +56,9 @@ def usage_command(
 
 
 @app.command(name="stats")
-def stats_command():
+def stats_command(
+    fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
+):
     """
     Show detailed statistics and cost analysis.
 
@@ -66,8 +68,10 @@ def stats_command():
     - Averages: tokens per session/response, cost per session/response
     - Text analysis: prompt length, politeness markers, phrase counts
     - Usage by model: token distribution across different models
+
+    Use --fast to skip all updates and read from database only (requires existing database).
     """
-    stats.run(console)
+    stats.run(console, fast=fast)
 
 
 @app.command(name="limits")
