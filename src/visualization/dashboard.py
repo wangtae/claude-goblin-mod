@@ -505,7 +505,7 @@ def _create_footer(date_range: str = None, fast_mode: bool = False) -> Text:
     # Add export tip
     footer.append("Tip: ", style=DIM)
     footer.append("View yearly heatmap with ", style=DIM)
-    footer.append("claude-goblin export --open", style=f"bold {CYAN}")
+    footer.append("ccg export --open", style=f"bold {CYAN}")
 
     return footer
 

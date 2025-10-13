@@ -26,24 +26,24 @@ Track and visualize your Claude Code usage with GitHub-style activity graphs.
 Automatically saves historical snapshots to preserve data beyond the 30-day rolling window.
 
 [bold]Usage:[/bold]
-  claude-goblin                      Show this help message
-  claude-goblin limits               Show usage percentages (session, week, opus)
-  claude-goblin status-bar [type]    Launch macOS menu bar app (session|weekly|opus)
+  ccg                                Show this help message
+  ccg limits                         Show usage percentages (session, week, opus)
+  ccg status-bar [type]              Launch macOS menu bar app (session|weekly|opus)
                                      Defaults to weekly if type not specified
-  claude-goblin usage                Show usage stats (single shot)
-  claude-goblin usage --live         Show usage with auto-refresh
-  claude-goblin update-usage         Update historical database with latest data
-  claude-goblin setup-hooks <type>   Configure Claude Code hooks (usage|audio|png)
-  claude-goblin remove-hooks [type]  Remove hooks (usage|audio|png, or all if not specified)
-  claude-goblin export               Export heatmap as PNG image (default)
+  ccg usage                          Show usage stats (single shot)
+  ccg usage --live                   Show usage with auto-refresh
+  ccg update-usage                   Update historical database with latest data
+  ccg setup-hooks <type>             Configure Claude Code hooks (usage|audio|png)
+  ccg remove-hooks [type]            Remove hooks (usage|audio|png, or all if not specified)
+  ccg export                         Export heatmap as PNG image (default)
                                      Use --svg for SVG format
                                      Use --open to open after export
                                      Use -o FILE to specify output path
                                      Use --year YYYY to select year (default: current)
-  claude-goblin stats                Show historical database statistics
-  claude-goblin restore-backup       Restore database from backup (.db.bak file)
-  claude-goblin delete-usage -f      Delete all historical data (requires --force)
-  claude-goblin help                 Show this help message
+  ccg stats                          Show historical database statistics
+  ccg restore-backup                 Restore database from backup (.db.bak file)
+  ccg delete-usage -f                Delete all historical data (requires --force)
+  ccg help                           Show this help message
 
 [bold]Features:[/bold]
   • GitHub-style 365-day activity heatmap
@@ -59,11 +59,11 @@ Automatically saves historical snapshots to preserve data beyond the 30-day roll
   Historical: ~/.claude/usage/usage_history.db
 
 [bold]Recommended Setup:[/bold]
-  1. Run: claude-goblin usage
+  1. Run: ccg usage
      (View your dashboard and save initial snapshot)
-  2. Optional: claude-goblin setup-hooks usage
+  2. Optional: ccg setup-hooks usage
      (Configure automatic tracking after each Claude response)
-  3. Optional: claude-goblin setup-hooks audio
+  3. Optional: ccg setup-hooks audio
      (Play sound when Claude is ready for input)
 
 [bold]Exit:[/bold]

@@ -99,7 +99,7 @@ def run(console: Console) -> None:
         # Check if database exists when using --fast
         if fast_mode and not DEFAULT_DB_PATH.exists():
             console.print("[red]Error: Cannot use --fast flag without existing database.[/red]")
-            console.print("[yellow]Run 'claude-goblin usage' or 'claude-goblin update-usage' first to create the database.[/yellow]")
+            console.print("[yellow]Run 'ccg usage' or 'ccg update-usage' first to create the database.[/yellow]")
             return
 
         # If fast mode, show warning with last update timestamp
@@ -147,7 +147,7 @@ def run(console: Console) -> None:
             all_records = load_historical_records()
 
             if not all_records:
-                console.print("[yellow]No usage data found in database. Run 'claude-goblin usage' to ingest data first.[/yellow]")
+                console.print("[yellow]No usage data found in database. Run 'ccg usage' to ingest data first.[/yellow]")
                 return
 
             stats = aggregate_all(all_records)

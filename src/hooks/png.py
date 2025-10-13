@@ -34,7 +34,7 @@ def setup(console: Console, settings: dict, settings_path: Path) -> None:
     output_dir = Path(output_path).parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    hook_command = f"claude-goblin export -o {output_path} > /dev/null 2>&1 &"
+    hook_command = f"ccg export -o {output_path} > /dev/null 2>&1 &"
 
     # Remove existing PNG hooks
     original_count = len(settings["hooks"]["Stop"])
@@ -80,7 +80,9 @@ def is_hook(hook) -> bool:
     for h in hook.get("hooks", []):
         cmd = h.get("command", "")
         # Support both old-style (--export) and new-style (export)
-        if ("claude-goblin --export" in cmd or "claude-goblin export" in cmd) and "-o" in cmd:
+        # Also support both claude-goblin and ccg aliases
+        if (("claude-goblin --export" in cmd or "claude-goblin export" in cmd or
+             "ccg --export" in cmd or "ccg export" in cmd) and "-o" in cmd):
             return True
     return False
 
