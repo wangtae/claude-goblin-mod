@@ -104,6 +104,7 @@ For most users, just run `usage` regularly and it will handle data tracking auto
 | `ccg usage --anon` | Anonymize project names (project-001, project-002, etc.) |
 | `ccg limits` | Show current usage limits (session, week, Opus) |
 | `ccg stats` | Show detailed statistics and cost analysis |
+| `ccg stats --fast` | Skip live limits for faster rendering |
 | `ccg status-bar [type]` | Launch macOS menu bar app (session\|weekly\|opus) |
 | **Export** | |
 | `ccg export` | Export yearly heatmap as PNG (default) |
