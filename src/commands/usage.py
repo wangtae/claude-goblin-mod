@@ -158,6 +158,15 @@ def run(console: Console, live: bool = False, watch: bool = False, fast: bool = 
     Exit:
         Exits with status 0 on success, 1 on error
     """
+    import termios
+
+    # Save terminal settings at the very start
+    original_terminal_settings = None
+    try:
+        original_terminal_settings = termios.tcgetattr(sys.stdin)
+    except:
+        pass  # Not a TTY or stdin not available
+
     # Check sys.argv for backward compatibility (hooks still use old style)
     run_live = live or "--live" in sys.argv
     run_watch = watch or "--watch" in sys.argv
@@ -196,6 +205,13 @@ def run(console: Console, live: bool = False, watch: bool = False, fast: bool = 
         import traceback
         traceback.print_exc()
         sys.exit(1)
+    finally:
+        # Always restore terminal settings before exiting
+        if original_terminal_settings is not None:
+            try:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, original_terminal_settings)
+            except:
+                pass
 
 
 def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False) -> None:
@@ -243,8 +259,8 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
     watcher = watch_claude_files(on_file_change, debounce_seconds=10.0)
     watcher.start()
 
-    # Start keyboard listener thread
-    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=True)
+    # Start keyboard listener thread (NOT daemon so we can clean up properly)
+    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=False)
     keyboard_thread.start()
 
     try:
@@ -265,6 +281,10 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
         stop_event.set()
         watcher.stop()
         raise
+    finally:
+        # Ensure keyboard listener thread finishes and restores terminal
+        stop_event.set()
+        keyboard_thread.join(timeout=1.0)
 
 
 def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False) -> None:
@@ -296,8 +316,8 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
     view_mode_ref = {'mode': VIEW_MODE_MONTHLY, 'changed': False}
     stop_event = threading.Event()
 
-    # Start keyboard listener thread
-    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=True)
+    # Start keyboard listener thread (NOT daemon so we can clean up properly)
+    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=False)
     keyboard_thread.start()
 
     try:
@@ -316,6 +336,10 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
     except KeyboardInterrupt:
         stop_event.set()
         raise
+    finally:
+        # Ensure keyboard listener thread finishes and restores terminal
+        stop_event.set()
+        keyboard_thread.join(timeout=1.0)
 
 
 def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False, view_mode: str = VIEW_MODE_MONTHLY) -> None:

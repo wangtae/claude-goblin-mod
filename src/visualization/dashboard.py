@@ -138,10 +138,20 @@ def _create_kpi_section(overall, records: list[UsageRecord], skip_limits: bool =
     """
     from src.models.pricing import calculate_cost, format_cost
 
-    # Calculate total cost from records (including cache tokens)
+    # Calculate total cost and token breakdown from records
     total_cost = 0.0
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_cache_creation = 0
+    total_cache_read = 0
+
     for record in records:
         if record.model and record.token_usage and record.model != "<synthetic>":
+            total_input_tokens += record.token_usage.input_tokens
+            total_output_tokens += record.token_usage.output_tokens
+            total_cache_creation += record.token_usage.cache_creation_tokens
+            total_cache_read += record.token_usage.cache_read_tokens
+
             cost = calculate_cost(
                 record.token_usage.input_tokens,
                 record.token_usage.output_tokens,
@@ -151,115 +161,72 @@ def _create_kpi_section(overall, records: list[UsageRecord], skip_limits: bool =
             )
             total_cost += cost
 
-    # Use limits from DB if provided, otherwise fetch live (unless skipped)
-    limits = limits_from_db
-    if limits is None and not skip_limits:
-        from src.commands.limits import capture_limits
-        if console:
-            with console.status(f"[bold {ORANGE}]Loading usage limits...", spinner="dots", spinner_style=ORANGE):
-                limits = capture_limits()
-        else:
-            limits = capture_limits()
-
-    # Create KPI cards - now with 4 columns
+    # Create KPI cards in 2 rows
+    # Row 1: cost, prompts, sessions
+    # Row 2: input, output, cache write, cache read tokens
     kpi_grid = Table.grid(padding=(0, 2), expand=False)
     kpi_grid.add_column(justify="center")
     kpi_grid.add_column(justify="center")
     kpi_grid.add_column(justify="center")
     kpi_grid.add_column(justify="center")
 
-    # Total Tokens card
-    tokens_card = Panel(
-        Text(_format_number(overall.total_tokens), style=f"bold {ORANGE}"),
-        title="Total Tokens",
-        border_style="white",
-        width=22,
-    )
-
-    # Total Cost card
+    # Row 1 - Main metrics
     cost_card = Panel(
         Text(format_cost(total_cost), style="bold green"),
-        title="Total Cost",
+        title="비용",
         border_style="white",
-        width=22,
+        width=24,
     )
 
-    # Total Prompts card
     prompts_card = Panel(
         Text(_format_number(overall.total_prompts), style="bold white"),
-        title="Prompts Sent",
+        title="메시지 수",
         border_style="white",
-        width=22,
+        width=24,
     )
 
-    # Total Sessions card
     sessions_card = Panel(
         Text(_format_number(overall.total_sessions), style="bold white"),
-        title="Active Sessions",
+        title="세션 수",
         border_style="white",
-        width=22,
+        width=24,
     )
 
-    kpi_grid.add_row(tokens_card, cost_card, prompts_card, sessions_card)
+    kpi_grid.add_row(cost_card, prompts_card, sessions_card, Text(""))
 
-    # Create individual limit boxes if available
-    if limits and "error" not in limits:
-        limit_grid = Table.grid(padding=(0, 2), expand=False)
-        limit_grid.add_column(justify="center")
-        limit_grid.add_column(justify="center")
-        limit_grid.add_column(justify="center")
+    # Row 2 - Token breakdown
+    input_card = Panel(
+        Text(_format_number(total_input_tokens), style="bold cyan"),
+        title="입력 토큰",
+        border_style="white",
+        width=24,
+    )
 
-        # Remove timezone info from reset dates
-        session_reset = limits['session_reset'].split(' (')[0] if '(' in limits['session_reset'] else limits['session_reset']
-        week_reset = limits['week_reset'].split(' (')[0] if '(' in limits['week_reset'] else limits['week_reset']
-        opus_reset = limits['opus_reset'].split(' (')[0] if '(' in limits['opus_reset'] else limits['opus_reset']
+    output_card = Panel(
+        Text(_format_number(total_output_tokens), style="bold cyan"),
+        title="출력 토큰",
+        border_style="white",
+        width=24,
+    )
 
-        # Session limit box
-        session_bar = _create_bar(limits["session_pct"], 100, width=16, color="red")
-        session_content = Text()
-        session_content.append(f"{limits['session_pct']}% ", style="bold red")
-        session_content.append(session_bar)
-        session_content.append(f"\nResets: {session_reset}", style="white")
-        session_box = Panel(
-            session_content,
-            title="[red]Session Limit",
-            border_style="white",
-            width=28,
-        )
+    cache_write_card = Panel(
+        Text(_format_number(total_cache_creation), style="bold magenta"),
+        title="캐시 생성",
+        border_style="white",
+        width=24,
+    )
 
-        # Week limit box
-        week_bar = _create_bar(limits["week_pct"], 100, width=16, color="red")
-        week_content = Text()
-        week_content.append(f"{limits['week_pct']}% ", style="bold red")
-        week_content.append(week_bar)
-        week_content.append(f"\nResets: {week_reset}", style="white")
-        week_box = Panel(
-            week_content,
-            title="[red]Weekly Limit",
-            border_style="white",
-            width=28,
-        )
+    cache_read_card = Panel(
+        Text(_format_number(total_cache_read), style="bold magenta"),
+        title="캐시 읽기",
+        border_style="white",
+        width=24,
+    )
 
-        # Opus limit box
-        opus_bar = _create_bar(limits["opus_pct"], 100, width=16, color="red")
-        opus_content = Text()
-        opus_content.append(f"{limits['opus_pct']}% ", style="bold red")
-        opus_content.append(opus_bar)
-        opus_content.append(f"\nResets: {opus_reset}", style="white")
-        opus_box = Panel(
-            opus_content,
-            title="[red]Opus Limit",
-            border_style="white",
-            width=28,
-        )
+    kpi_grid.add_row(input_card, output_card, cache_write_card, cache_read_card)
 
-        limit_grid.add_row(session_box, week_box, opus_box)
-
-        # Add spacing between KPI cards and limits with a simple newline
-        spacing = Text("\n")
-        return Group(kpi_grid, spacing, limit_grid)
-    else:
-        return Group(kpi_grid)
+    # Return only KPI cards (limits removed)
+    return Group(kpi_grid)
 
 
 def _create_kpi_cards(overall) -> Table:
