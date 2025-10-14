@@ -142,9 +142,10 @@ def _calculate_session_cost(records: list[UsageRecord]) -> float:
         Total cost for session period
     """
     from src.models.pricing import calculate_cost
-    from datetime import timedelta
+    from datetime import timedelta, timezone
 
-    now = datetime.now()
+    # Use timezone-aware datetime to match record.timestamp
+    now = datetime.now(timezone.utc)
     five_hours_ago = now - timedelta(hours=5)
 
     session_cost = 0.0
@@ -173,9 +174,10 @@ def _calculate_weekly_sonnet_cost(records: list[UsageRecord]) -> float:
         Total cost for weekly sonnet usage
     """
     from src.models.pricing import calculate_cost
-    from datetime import timedelta
+    from datetime import timedelta, timezone
 
-    now = datetime.now()
+    # Use timezone-aware datetime to match record.timestamp
+    now = datetime.now(timezone.utc)
     seven_days_ago = now - timedelta(days=7)
 
     weekly_cost = 0.0
@@ -206,9 +208,10 @@ def _calculate_weekly_opus_cost(records: list[UsageRecord]) -> float:
         Total cost for weekly opus usage
     """
     from src.models.pricing import calculate_cost
-    from datetime import timedelta
+    from datetime import timedelta, timezone
 
-    now = datetime.now()
+    # Use timezone-aware datetime to match record.timestamp
+    now = datetime.now(timezone.utc)
     seven_days_ago = now - timedelta(days=7)
 
     weekly_cost = 0.0
