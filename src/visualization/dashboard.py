@@ -116,8 +116,13 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     console.print()  # Blank line between sections
     console.print(model_breakdown, end="")
 
-    # Only show project breakdown in monthly mode
-    if view_mode == "monthly":
+    # Show hourly usage table in weekly mode
+    if view_mode == "weekly":
+        hourly_breakdown = _create_hourly_breakdown(records)
+        console.print()  # Blank line between sections
+        console.print(hourly_breakdown, end="")
+    # Show project breakdown in monthly mode
+    elif view_mode == "monthly":
         project_breakdown = _create_project_breakdown(records)
         console.print()  # Blank line between sections
         console.print(project_breakdown, end="")
@@ -254,12 +259,13 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
             week_reset = limits['week_reset'].split(' (')[0] if '(' in limits['week_reset'] else limits['week_reset']
             opus_reset = limits['opus_reset'].split(' (')[0] if '(' in limits['opus_reset'] else limits['opus_reset']
 
-            # Session limit box
+            # Session limit box (with cost)
             session_bar = _create_bar(limits["session_pct"], 100, width=16, color="red")
             session_content = Text()
             session_content.append(f"{limits['session_pct']}% ", style="bold red")
             session_content.append(session_bar)
             session_content.append(f"\nResets: {session_reset}", style="white")
+            session_content.append(f"\n{format_cost(total_cost)}", style="bold green")
             session_box = Panel(
                 session_content,
                 title="[red]Session Limit",
@@ -267,12 +273,13 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
                 width=28,
             )
 
-            # Week limit box
+            # Week limit box (with cost)
             week_bar = _create_bar(limits["week_pct"], 100, width=16, color="red")
             week_content = Text()
             week_content.append(f"{limits['week_pct']}% ", style="bold red")
             week_content.append(week_bar)
             week_content.append(f"\nResets: {week_reset}", style="white")
+            week_content.append(f"\n{format_cost(total_cost)}", style="bold green")
             week_box = Panel(
                 week_content,
                 title="[red]Weekly Limit",
@@ -280,12 +287,13 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
                 width=28,
             )
 
-            # Opus limit box
+            # Opus limit box (with cost)
             opus_bar = _create_bar(limits["opus_pct"], 100, width=16, color="red")
             opus_content = Text()
             opus_content.append(f"{limits['opus_pct']}% ", style="bold red")
             opus_content.append(opus_bar)
             opus_content.append(f"\nResets: {opus_reset}", style="white")
+            opus_content.append(f"\n{format_cost(total_cost)}", style="bold green")
             opus_box = Panel(
                 opus_content,
                 title="[red]Opus Limit",
@@ -574,6 +582,87 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     return Panel(
         table,
         title="[bold]Tokens by Project",
+        border_style="white",
+    )
+
+
+def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
+    """
+    Create table showing hourly usage breakdown for weekly mode.
+
+    Args:
+        records: List of usage records
+
+    Returns:
+        Panel with hourly breakdown table
+    """
+    from src.models.pricing import calculate_cost, format_cost
+
+    # Aggregate by hour (format: "HH:00")
+    hourly_data: dict[str, dict] = defaultdict(lambda: {
+        "cost": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation": 0,
+        "cache_read": 0,
+        "messages": 0
+    })
+
+    for record in records:
+        if record.token_usage:
+            # Extract hour from timestamp
+            hour = record.timestamp.strftime("%H:00")
+
+            hourly_data[hour]["input_tokens"] += record.token_usage.input_tokens
+            hourly_data[hour]["output_tokens"] += record.token_usage.output_tokens
+            hourly_data[hour]["cache_creation"] += record.token_usage.cache_creation_tokens
+            hourly_data[hour]["cache_read"] += record.token_usage.cache_read_tokens
+            hourly_data[hour]["messages"] += 1
+
+            if record.model and record.model != "<synthetic>":
+                cost = calculate_cost(
+                    record.token_usage.input_tokens,
+                    record.token_usage.output_tokens,
+                    record.model,
+                    record.token_usage.cache_creation_tokens,
+                    record.token_usage.cache_read_tokens,
+                )
+                hourly_data[hour]["cost"] += cost
+
+    if not hourly_data:
+        return Panel(
+            Text("No hourly data available", style=DIM),
+            title="[bold]시간별 사용량",
+            border_style="white",
+        )
+
+    # Sort by hour
+    sorted_hours = sorted(hourly_data.items())
+
+    # Create table with Korean column names matching the screenshot
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("시간", style="purple", justify="left", width=8)
+    table.add_column("비용", style="green", justify="right", width=10)
+    table.add_column("입력 토큰", style=CYAN, justify="right", width=12)
+    table.add_column("출력 토큰", style=CYAN, justify="right", width=12)
+    table.add_column("캐시 생성", style="magenta", justify="right", width=14)
+    table.add_column("캐시 읽기", style="magenta", justify="right", width=14)
+    table.add_column("메시지 수", style="white", justify="right", width=10)
+
+    for hour, data in sorted_hours:
+        table.add_row(
+            hour,
+            format_cost(data["cost"]),
+            _format_number(data["input_tokens"]),
+            _format_number(data["output_tokens"]),
+            _format_number(data["cache_creation"]),
+            _format_number(data["cache_read"]),
+            str(data["messages"]),
+        )
+
+    return Panel(
+        table,
+        title="[bold]시간별 사용량",
         border_style="white",
     )
 
