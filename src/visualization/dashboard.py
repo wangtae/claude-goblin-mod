@@ -107,7 +107,6 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
     # Create breakdowns
     model_breakdown = _create_model_breakdown(records)
-    project_breakdown = _create_project_breakdown(records)
 
     # Create footer with export info, date range, and view mode
     footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
@@ -116,8 +115,13 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     console.print(kpi_section, end="")
     console.print()  # Blank line between sections
     console.print(model_breakdown, end="")
-    console.print()  # Blank line between sections
-    console.print(project_breakdown, end="")
+
+    # Only show project breakdown in monthly mode
+    if view_mode == "monthly":
+        project_breakdown = _create_project_breakdown(records)
+        console.print()  # Blank line between sections
+        console.print(project_breakdown, end="")
+
     console.print()  # Blank line before footer
     console.print(footer)
 
