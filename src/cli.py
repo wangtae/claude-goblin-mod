@@ -15,6 +15,7 @@ from src.commands import (
     heatmap,
     delete_usage,
     restore_backup,
+    reset_db,
     help as help_cmd,
     limits,
     status_bar,
@@ -28,91 +29,57 @@ app = typer.Typer(
     name="claude-goblin",
     help="Python CLI for Claude Code utilities and usage tracking/analytics",
     add_completion=False,
-    no_args_is_help=True,
+    no_args_is_help=False,  # Changed to False to allow callback
 )
 
 # Create console for commands
 console = Console()
 
 
-@app.command(name="usage")
+@app.callback(invoke_without_command=True)
+def default_callback(ctx: typer.Context):
+    """
+    Default callback when no command is provided.
+    Runs 'usage' command by default.
+    """
+    if ctx.invoked_subcommand is None:
+        # No command provided, run usage command
+        usage.run(console, refresh=None, anon=False)
+
+
+@app.command(name="usage", hidden=True)
 def usage_command(
-    live: bool = typer.Option(False, "--live", help="Auto-refresh dashboard every 5 seconds (polling)"),
-    watch: bool = typer.Option(False, "--watch", help="Auto-refresh only when files change (efficient)"),
-    fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
+    refresh: Optional[int] = typer.Option(None, "--refresh", help="Refresh interval in seconds (e.g., --refresh=30). Watches file changes if not specified."),
     anon: bool = typer.Option(False, "--anon", help="Anonymize project names to project-001, project-002, etc"),
 ):
-    """
-    Show usage dashboard with KPI cards and breakdowns.
-
-    Displays comprehensive usage statistics including:
-    - Total tokens, prompts, and sessions
-    - Current usage limits (session, weekly, Opus)
-    - Token breakdown by model
-    - Token breakdown by project
-
-    Use --watch for file-change-based auto-refresh (most efficient).
-    Use --live for time-based auto-refresh every 5 seconds.
-    Use --fast to skip all updates and read from database only (requires existing database).
-    Use --anon to anonymize project names (ranked by usage, project-001 is highest).
-    """
-    usage.run(console, live=live, watch=watch, fast=fast, anon=anon)
+    """Show interactive usage dashboard (hidden, use 'ccu' instead)."""
+    usage.run(console, refresh=refresh, anon=anon)
 
 
-@app.command(name="stats")
+@app.command(name="stats", hidden=True)
 def stats_command(
     fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
 ):
-    """
-    Show detailed statistics and cost analysis.
-
-    Displays comprehensive statistics including:
-    - Summary: total tokens, prompts, responses, sessions, days tracked
-    - Cost analysis: estimated API costs vs Max Plan costs
-    - Averages: tokens per session/response, cost per session/response
-    - Text analysis: prompt length, politeness markers, phrase counts
-    - Usage by model: token distribution across different models
-
-    Use --fast to skip all updates and read from database only (requires existing database).
-    """
+    """Show detailed statistics and cost analysis (hidden)."""
     stats.run(console, fast=fast)
 
 
-@app.command(name="limits")
+@app.command(name="limits", hidden=True)
 def limits_command():
-    """
-    Show current usage limits (session, week, Opus).
-
-    Displays current usage percentages and reset times for:
-    - Session limit (resets after inactivity)
-    - Weekly limit for all models (resets weekly)
-    - Weekly Opus limit (resets weekly)
-
-    Note: Must be run from a trusted folder where Claude Code has been used.
-    """
+    """Show current usage limits (hidden)."""
     limits.run(console)
 
 
-@app.command(name="heatmap")
+@app.command(name="heatmap", hidden=True)
 def heatmap_command(
     year: Optional[int] = typer.Option(None, "--year", "-y", help="Year to display (default: current year)"),
     fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
 ):
-    """
-    Show GitHub-style activity heatmap in the terminal.
-
-    Displays your Claude Code activity for the year in a color-coded calendar grid,
-    using the same visual design as PNG export but rendered directly in the terminal.
-
-    Examples:
-        ccu heatmap              Show current year heatmap
-        ccu heatmap -y 2024      Show 2024 heatmap
-        ccu heatmap --fast       Skip data collection, use cached data
-    """
+    """Show GitHub-style activity heatmap in the terminal (hidden)."""
     heatmap.run(console, year=year, fast=fast)
 
 
-@app.command(name="export")
+@app.command(name="export", hidden=True)
 def export_command(
     svg: bool = typer.Option(False, "--svg", help="Export as SVG instead of PNG"),
     open_file: bool = typer.Option(False, "--open", help="Open file after export"),
@@ -120,23 +87,7 @@ def export_command(
     year: Optional[int] = typer.Option(None, "--year", "-y", help="Filter by year (default: current year)"),
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path"),
 ):
-    """
-    Export yearly heatmap as PNG or SVG file.
-
-    Generates a high-resolution GitHub-style activity heatmap showing your
-    Claude Code usage throughout the year. By default exports as PNG for the current year.
-
-    Use --fast to skip all updates and read from database only (requires existing database).
-
-    Examples:
-        ccu export --open                  Export current year as PNG and open it
-        ccu export --svg                   Export as SVG instead
-        ccu export --fast                  Export from database without updating
-        ccu export -y 2024                 Export specific year
-        ccu export -o ~/usage.png          Specify output path
-
-    Tip: Use 'ccu heatmap' to view in terminal without creating a file.
-    """
+    """Export yearly heatmap as PNG or SVG file (hidden)."""
     # Pass parameters via sys.argv for backward compatibility with export command
     import sys
     if svg and "svg" not in sys.argv:
@@ -155,36 +106,17 @@ def export_command(
     export.run(console)
 
 
-@app.command(name="update-usage")
+@app.command(name="update-usage", hidden=True)
 def update_usage_command():
-    """
-    Update historical database with latest data.
-
-    This command:
-    1. Saves current usage data from JSONL files
-    2. Fills in missing days with zero-usage records
-    3. Ensures complete date coverage from earliest record to today
-
-    Useful for ensuring continuous heatmap data without gaps.
-    """
+    """Update historical database with latest data (hidden)."""
     update_usage.run(console)
 
 
-@app.command(name="delete-usage")
+@app.command(name="delete-usage", hidden=True)
 def delete_usage_command(
     force: bool = typer.Option(False, "--force", "-f", help="Force deletion without confirmation"),
 ):
-    """
-    Delete historical usage database.
-
-    WARNING: This will permanently delete all historical usage data!
-
-    Requires --force flag to prevent accidental deletion.
-    A backup is automatically created before deletion.
-
-    Example:
-        ccu delete-usage --force
-    """
+    """Delete historical usage database (hidden)."""
     # Pass force flag via command module's own sys.argv check for backward compatibility
     import sys
     if force and "--force" not in sys.argv:
@@ -192,40 +124,31 @@ def delete_usage_command(
     delete_usage.run(console)
 
 
-@app.command(name="restore-backup")
+@app.command(name="restore-backup", hidden=True)
 def restore_backup_command():
-    """
-    Restore database from backup file.
-
-    Restores the usage history database from a backup file (.db.bak).
-    Creates a safety backup of the current database before restoring.
-
-    Expected backup location: ~/.claude/usage/usage_history.db.bak
-    """
+    """Restore database from backup file (hidden)."""
     restore_backup.run(console)
 
 
-@app.command(name="status-bar")
+@app.command(name="reset-db", hidden=True)
+def reset_db_command(
+    force: bool = typer.Option(False, "--force", help="Force reset without confirmation"),
+    keep_backups: bool = typer.Option(False, "--keep-backups", help="Keep backup files"),
+):
+    """Reset database (delete and start fresh) (hidden)."""
+    import sys
+    if force and "--force" not in sys.argv:
+        sys.argv.append("--force")
+    if keep_backups and "--keep-backups" not in sys.argv:
+        sys.argv.append("--keep-backups")
+    reset_db.run(console)
+
+
+@app.command(name="status-bar", hidden=True)
 def status_bar_command(
     limit_type: str = typer.Argument("weekly", help="Type of limit to display: session, weekly, or opus"),
 ):
-    """
-    Launch macOS menu bar app (macOS only).
-
-    Displays "CC: XX%" in your menu bar, showing current usage percentage.
-    Updates automatically every 5 minutes.
-
-    Arguments:
-        limit_type: Which limit to display (session, weekly, or opus). Defaults to weekly.
-
-    Examples:
-        ccu status-bar weekly    Show weekly usage (default)
-        ccu status-bar session   Show session usage
-        ccu status-bar opus      Show Opus weekly usage
-
-    Running in background:
-        nohup ccu status-bar weekly > /dev/null 2>&1 &
-    """
+    """Launch macOS menu bar app (hidden)."""
     if limit_type not in ["session", "weekly", "opus"]:
         console.print(f"[red]Error: Invalid limit type '{limit_type}'[/red]")
         console.print("[yellow]Valid types: session, weekly, opus[/yellow]")
@@ -234,66 +157,28 @@ def status_bar_command(
     status_bar.run(console, limit_type)
 
 
-@app.command(name="setup-hooks")
+@app.command(name="setup-hooks", hidden=True)
 def setup_hooks_command(
     hook_type: Optional[str] = typer.Argument(None, help="Hook type: usage, audio, audio-tts, or png"),
 ):
-    """
-    Setup Claude Code hooks for automation.
-
-    Available hooks:
-    - usage: Auto-track usage after each Claude response
-    - audio: Play sounds for completion, permission, and compaction (3 sounds)
-    - audio-tts: Speak messages using TTS with hook selection (macOS only)
-    - png: Auto-update usage PNG after each Claude response
-
-    Examples:
-        ccu setup-hooks usage      Enable automatic usage tracking
-        ccu setup-hooks audio      Enable audio notifications (3 sounds)
-        ccu setup-hooks audio-tts  Enable TTS (choose which hooks)
-        ccu setup-hooks png        Enable automatic PNG exports
-    """
+    """Setup Claude Code hooks for automation (hidden)."""
     setup_hooks(console, hook_type)
 
 
-@app.command(name="remove-hooks")
+@app.command(name="remove-hooks", hidden=True)
 def remove_hooks_command(
     hook_type: Optional[str] = typer.Argument(None, help="Hook type to remove: usage, audio, audio-tts, png, or leave empty for all"),
 ):
-    """
-    Remove Claude Code hooks configured by this tool.
-
-    Examples:
-        ccu remove-hooks           Remove all hooks
-        ccu remove-hooks usage     Remove only usage tracking hook
-        ccu remove-hooks audio     Remove only audio notification hook
-        ccu remove-hooks audio-tts Remove only audio TTS hook
-        ccu remove-hooks png       Remove only PNG export hook
-    """
+    """Remove Claude Code hooks configured by this tool (hidden)."""
     remove_hooks(console, hook_type)
 
 
-@app.command(name="config")
+@app.command(name="config", hidden=True)
 def config_command(
     action: str = typer.Argument(..., help="Action: show, set-db-path, clear-db-path, set-machine-name, clear-machine-name"),
     value: Optional[str] = typer.Argument(None, help="Value for set actions"),
 ):
-    """
-    Manage Claude Goblin configuration.
-
-    Actions:
-        show                    Display all current settings
-        set-db-path <path>      Set custom database path (e.g., /mnt/d/OneDrive/.claude-goblin/usage_history.db)
-        clear-db-path           Clear custom path and use auto-detect
-        set-machine-name <name> Set friendly machine name (e.g., "Home-Desktop")
-        clear-machine-name      Clear custom name and use hostname
-
-    Examples:
-        ccu config show
-        ccu config set-db-path /mnt/d/OneDrive/.claude-goblin/usage_history.db
-        ccu config set-machine-name "Home-Desktop"
-        ccu config clear-db-path
-    """
+    """Manage Claude Goblin configuration (hidden)."""
     config_cmd.run(console, action, value)
 
 
@@ -320,13 +205,13 @@ def main() -> None:
 
     Usage:
         ccu --help              Show available commands
-        ccu usage               Show usage dashboard
-        ccu usage --live        Show dashboard with auto-refresh
+        ccu usage               Interactive dashboard with file watching
+        ccu usage --refresh=30  Update every 30 seconds
         ccu stats               Show detailed statistics
         ccu export              Export yearly heatmap
 
     Exit:
-        Press Ctrl+C to exit
+        Press Ctrl+C or [q] to exit
     """
     app()
 

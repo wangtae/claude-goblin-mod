@@ -196,15 +196,28 @@ def clear_db_path() -> None:
     save_config(config)
 
 
-def get_machine_name() -> Optional[str]:
+def get_machine_name() -> str:
     """
-    Get the custom machine name from config.
+    Get the machine name for this device.
 
     Returns:
-        Custom machine name or None if not set (use hostname)
+        Custom machine name if set, otherwise hostname
     """
+    import socket
+
     config = load_config()
-    return config.get("machine_name")
+    custom_name = config.get("machine_name")
+
+    # Use custom name if set, otherwise fallback to hostname
+    if custom_name:
+        return custom_name
+
+    # Get hostname
+    try:
+        hostname = socket.gethostname()
+        return hostname
+    except:
+        return "unknown"
 
 
 def set_machine_name(name: str) -> None:

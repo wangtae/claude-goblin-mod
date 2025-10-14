@@ -11,6 +11,7 @@ from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import (
     DEFAULT_DB_PATH,
     get_database_stats,
+    get_device_statistics,
     get_text_analysis_stats,
     save_limits_snapshot,
     save_snapshot,
@@ -166,6 +167,25 @@ def run(console: Console, fast: bool = False) -> None:
                 console.print(f"  {model:30s} {tokens:>15,} ({percentage:5.1f}%) ${cost:>10,.2f}")
             else:
                 console.print(f"  {model:30s} {tokens:>15,} ({percentage:5.1f}%)")
+
+    # Device Statistics
+    device_stats = get_device_statistics()
+    if device_stats:
+        console.print(f"\n[bold]Usage by Device[/bold]")
+        for device in device_stats:
+            machine_name = device["machine_name"]
+            total_messages = device["total_messages"]
+            total_tokens = device["total_tokens"]
+            total_cost = device["total_cost"]
+            date_range = f"{device['oldest_date']} to {device['newest_date']}"
+
+            percentage = (total_tokens / db_stats['total_tokens'] * 100) if db_stats['total_tokens'] > 0 else 0
+
+            if total_cost > 0:
+                console.print(f"  {machine_name:30s} {total_messages:>6,} msgs {total_tokens:>15,} ({percentage:5.1f}%) ${total_cost:>10,.2f}")
+            else:
+                console.print(f"  {machine_name:30s} {total_messages:>6,} msgs {total_tokens:>15,} ({percentage:5.1f}%)")
+            console.print(f"    [dim]{date_range}[/dim]")
 
     # Database Info
     console.print(f"\n[dim]Database: ~/.claude/usage/usage_history.db[/dim]")

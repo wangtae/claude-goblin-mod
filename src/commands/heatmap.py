@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
@@ -38,7 +39,7 @@ def run(console: Console, year: Optional[int] = None, fast: bool = False) -> Non
     try:
         # Load and update data (unless fast mode)
         if not fast:
-            with console.status("[bold #ff8800]Loading Claude Code usage data...", spinner="dots", spinner_style="#ff8800"):
+            with console.status("[bold #ffffff]Loading Claude Code usage data...", spinner="dots", spinner_style="#ffffff"):
                 jsonl_files = get_claude_jsonl_files()
 
             if not jsonl_files:
@@ -49,13 +50,13 @@ def run(console: Console, year: Optional[int] = None, fast: bool = False) -> Non
                 return
 
             # Update data
-            with console.status("[bold #ff8800]Updating usage data...", spinner="dots", spinner_style="#ff8800"):
+            with console.status("[bold #ffffff]Updating usage data...", spinner="dots", spinner_style="#ffffff"):
                 current_records = parse_all_jsonl_files(jsonl_files)
                 if current_records:
                     save_snapshot(current_records, storage_mode=get_storage_mode())
 
         # Load from database
-        with console.status("[bold #ff8800]Preparing heatmap...", spinner="dots", spinner_style="#ff8800"):
+        with console.status("[bold #ffffff]Preparing heatmap...", spinner="dots", spinner_style="#ffffff"):
             all_records = load_historical_records()
 
         if not all_records:
@@ -153,10 +154,10 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
     # Day names
     day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
-    # Helper function to display one heatmap
-    def display_single_heatmap(heatmap_title: str, color_func, legend_colors, legend_left: str, legend_right: str):
-        console.print(f"[dim]{heatmap_title}[/dim]")
-        console.print()
+    # Helper function to create one heatmap panel
+    def create_single_heatmap_panel(heatmap_title: str, color_func, legend_colors, legend_left: str, legend_right: str) -> Panel:
+        # Create content group
+        content_lines = []
 
         # Build month label line with numbers (1, 2, 3...)
         month_line = "    "  # Space for day labels
@@ -174,7 +175,7 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
             if not month_added:
                 month_line += " "  # 1 space to match cell width
 
-        console.print(Text(month_line, style="dim"))
+        content_lines.append(Text(month_line, style="dim"))
 
         # Display 7 rows (one per day of week)
         for day_idx in range(7):
@@ -191,9 +192,10 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
                     color_style = color_func(day_stats, date)
                     line.append("■", style=color_style)  # BLACK SQUARE with built-in padding
 
-            console.print(line)
+            content_lines.append(line)
 
-        console.print()
+        # Blank line before legend
+        content_lines.append(Text(""))
 
         # Legend
         legend = Text()
@@ -202,9 +204,18 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
             legend.append("■", style=color)
         legend.append(" " + legend_right, style="dim")
 
-        console.print(legend)
-        console.print()
-        console.print()  # Extra blank line for spacing between heatmaps
+        content_lines.append(legend)
+
+        # Create panel with content
+        from rich.console import Group
+        panel_content = Group(*content_lines)
+
+        return Panel(
+            panel_content,
+            title=f"[bold]{heatmap_title}",
+            border_style="white",
+            expand=True,
+        )
 
     # 1. Token Usage heatmap
     def tokens_color_func(day_stats, date):
@@ -219,7 +230,7 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
         "#D2A089",  # 80% orange
         "#CB7B5D",  # Full orange
     ]
-    display_single_heatmap("Token Usage", tokens_color_func, token_legend_colors, "Less", "More")
+    token_panel = create_single_heatmap_panel("Token Usage", tokens_color_func, token_legend_colors, "Less", "More")
 
     # 2. Week Limit % heatmap (blue → red gradient)
     def week_color_func(day_stats, date):
@@ -234,7 +245,7 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
         "#CB5D5D",  # Red (100%)
         "#782850",  # Dark red (>100%)
     ]
-    display_single_heatmap("Week Limit %", week_color_func, week_legend_colors, "0%", "100%+")
+    week_panel = create_single_heatmap_panel("Week Limit %", week_color_func, week_legend_colors, "0%", "100%+")
 
     # 3. Opus Limit % heatmap (green → red gradient)
     def opus_color_func(day_stats, date):
@@ -249,7 +260,15 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
         "#CB5D5D",  # Red (100%)
         "#782850",  # Dark red (>100%)
     ]
-    display_single_heatmap("Opus Limit %", opus_color_func, opus_legend_colors, "0%", "100%+")
+    opus_panel = create_single_heatmap_panel("Opus Limit %", opus_color_func, opus_legend_colors, "0%", "100%+")
+
+    # Display all 3 panels
+    console.print(token_panel, end="")
+    console.print()
+    console.print(week_panel, end="")
+    console.print()
+    console.print(opus_panel, end="")
+    console.print()
 
     # Summary stats
     total_days = sum(1 for s in stats.daily_stats.values() if s.total_tokens > 0)

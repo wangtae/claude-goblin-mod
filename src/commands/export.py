@@ -127,7 +127,7 @@ def run(console: Console) -> None:
         # Update data unless in fast mode
         if not fast_mode:
             # Step 1: Update usage data
-            with console.status("[bold #ff8800]Updating usage data...", spinner="dots", spinner_style="#ff8800"):
+            with console.status("[bold #ffffff]Updating usage data...", spinner="dots", spinner_style="#ffffff"):
                 jsonl_files = get_claude_jsonl_files()
                 if jsonl_files:
                     current_records = parse_all_jsonl_files(jsonl_files)
@@ -137,7 +137,7 @@ def run(console: Console) -> None:
             # Step 2: Update limits data (if enabled)
             tracking_mode = get_tracking_mode()
             if tracking_mode in ["both", "limits"]:
-                with console.status("[bold #ff8800]Updating usage limits...", spinner="dots", spinner_style="#ff8800"):
+                with console.status("[bold #ffffff]Updating usage limits...", spinner="dots", spinner_style="#ffffff"):
                     limits = capture_limits()
                     if limits and "error" not in limits:
                         save_limits_snapshot(
@@ -150,7 +150,7 @@ def run(console: Console) -> None:
                         )
 
         # Load data from database
-        with console.status(f"[bold #ff8800]Loading data for {year_filter}...", spinner="dots", spinner_style="#ff8800"):
+        with console.status(f"[bold #ffffff]Loading data for {year_filter}...", spinner="dots", spinner_style="#ffffff"):
             all_records = load_historical_records()
 
             if not all_records:

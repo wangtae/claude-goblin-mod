@@ -171,14 +171,9 @@ def format_cost(cost: float) -> str:
         cost: Cost in USD
 
     Returns:
-        Formatted string (e.g., "$1.23", "$0.05", "$123.45")
+        Formatted string with 2 decimal places (e.g., "$0.00", "$1.23", "$123.45")
     """
-    if cost < 0.01:
-        return f"${cost:.4f}"  # Show more precision for very small amounts
-    elif cost < 1.0:
-        return f"${cost:.3f}"
-    else:
-        return f"${cost:.2f}"
+    return f"${cost:.2f}"
 
 
 #endregion

@@ -32,6 +32,7 @@ VIEW_MODE_WEEKLY = "weekly"
 VIEW_MODE_MONTHLY = "monthly"
 VIEW_MODE_YEARLY = "yearly"
 VIEW_MODE_HEATMAP = "heatmap"
+VIEW_MODE_DEVICES = "devices"
 #endregion
 
 
@@ -123,19 +124,64 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
             # Check if input is available (non-blocking with timeout)
             import select
             if select.select([sys.stdin], [], [], 0.1)[0]:
-                key = sys.stdin.read(1).lower()
+                key = sys.stdin.read(1)
 
-                if key == 'w':
+                # Check for arrow keys (escape sequences)
+                if key == '\x1b':  # ESC
+                    # Read the rest of the escape sequence
+                    # Arrow keys send: ESC [ A/B/C/D
+                    remaining = []
+                    for _ in range(2):  # Read next 2 characters
+                        if select.select([sys.stdin], [], [], 0.05)[0]:
+                            remaining.append(sys.stdin.read(1))
+
+                    # Check if it's an arrow key
+                    if len(remaining) == 2 and remaining[0] == '[':
+                        arrow = remaining[1]
+                        if arrow == 'D':  # Left arrow
+                            # Go to previous period
+                            if view_mode_ref['mode'] in [VIEW_MODE_MONTHLY, VIEW_MODE_YEARLY]:
+                                view_mode_ref['offset'] = view_mode_ref.get('offset', 0) - 1
+                                view_mode_ref['changed'] = True
+                        elif arrow == 'C':  # Right arrow
+                            # Go to next period (don't go beyond current)
+                            if view_mode_ref['mode'] in [VIEW_MODE_MONTHLY, VIEW_MODE_YEARLY]:
+                                current_offset = view_mode_ref.get('offset', 0)
+                                if current_offset < 0:  # Only allow if we're in the past
+                                    view_mode_ref['offset'] = current_offset + 1
+                                    view_mode_ref['changed'] = True
+                    continue
+
+                key = key.lower()
+
+                # Flush any remaining characters in the input buffer
+                # to prevent stale input from affecting future reads
+                while select.select([sys.stdin], [], [], 0)[0]:
+                    sys.stdin.read(1)
+
+                if key == 'u':
+                    view_mode_ref['mode'] = "usage"
+                    view_mode_ref['offset'] = 0  # Reset offset when changing mode
+                    view_mode_ref['changed'] = True
+                elif key == 'w':
                     view_mode_ref['mode'] = VIEW_MODE_WEEKLY
+                    view_mode_ref['offset'] = 0  # Reset offset when changing mode
                     view_mode_ref['changed'] = True
                 elif key == 'm':
                     view_mode_ref['mode'] = VIEW_MODE_MONTHLY
+                    view_mode_ref['offset'] = 0  # Reset offset when changing mode
                     view_mode_ref['changed'] = True
                 elif key == 'y':
                     view_mode_ref['mode'] = VIEW_MODE_YEARLY
+                    view_mode_ref['offset'] = 0  # Reset offset when changing mode
                     view_mode_ref['changed'] = True
                 elif key == 'h':
                     view_mode_ref['mode'] = VIEW_MODE_HEATMAP
+                    view_mode_ref['offset'] = 0  # Reset offset when changing mode
+                    view_mode_ref['changed'] = True
+                elif key == 'd':
+                    view_mode_ref['mode'] = VIEW_MODE_DEVICES
+                    view_mode_ref['offset'] = 0  # Reset offset when changing mode
                     view_mode_ref['changed'] = True
                 elif key == 'q':
                     stop_event.set()
@@ -145,18 +191,19 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
 
 
-def run(console: Console, live: bool = False, watch: bool = False, fast: bool = False, anon: bool = False) -> None:
+def run(console: Console, refresh: int | None = None, anon: bool = False) -> None:
     """
     Handle the usage command.
 
-    Loads Claude Code usage data and displays a dashboard with GitHub-style
-    activity graph and statistics. Supports live refresh and file watching modes.
+    Loads Claude Code usage data and displays an interactive dashboard with:
+    - Real-time file watching (updates when Claude Code creates new logs) - default
+    - Or periodic refresh at specified interval (if --refresh is provided)
+    - Keyboard shortcuts to switch between different views
+    - GitHub-style activity visualization
 
     Args:
         console: Rich console for output
-        live: Enable auto-refresh mode with 5-second polling (default: False)
-        watch: Enable file watching mode - updates only when files change (default: False)
-        fast: Skip limits fetching for faster rendering (default: False)
+        refresh: Refresh interval in seconds (None = file watching mode)
         anon: Anonymize project names to project-001, project-002, etc (default: False)
 
     Exit:
@@ -172,10 +219,16 @@ def run(console: Console, live: bool = False, watch: bool = False, fast: bool = 
         pass  # Not a TTY or stdin not available
 
     # Check sys.argv for backward compatibility (hooks still use old style)
-    run_live = live or "--live" in sys.argv
-    run_watch = watch or "--watch" in sys.argv
-    skip_limits = fast or "--fast" in sys.argv
     anonymize = anon or "--anon" in sys.argv
+
+    # Check for --refresh in sys.argv if not passed as parameter
+    if refresh is None:
+        for arg in sys.argv:
+            if arg.startswith("--refresh="):
+                try:
+                    refresh = int(arg.split("=")[1])
+                except:
+                    pass
 
     try:
         with console.status("[bold #ff8800]Loading Claude Code usage data...", spinner="dots", spinner_style="#ff8800"):
@@ -190,13 +243,11 @@ def run(console: Console, live: bool = False, watch: bool = False, fast: bool = 
 
         console.print(f"[dim]Found {len(jsonl_files)} session files[/dim]", end="")
 
-        # Run with watch mode, live mode, or single display
-        if run_watch:
-            _run_watch_dashboard(jsonl_files, console, skip_limits, anonymize)
-        elif run_live:
-            _run_live_dashboard(jsonl_files, console, skip_limits, anonymize)
+        # Choose between refresh mode (polling) or watch mode (file events)
+        if refresh is not None:
+            _run_refresh_dashboard(jsonl_files, console, refresh_interval=refresh, anonymize=anonymize)
         else:
-            _display_dashboard(jsonl_files, console, skip_limits, anonymize)
+            _run_watch_dashboard(jsonl_files, console, skip_limits=False, anonymize=anonymize)
 
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -216,6 +267,72 @@ def run(console: Console, live: bool = False, watch: bool = False, fast: bool = 
                 termios.tcsetattr(sys.stdin, termios.TCSADRAIN, original_terminal_settings)
             except:
                 pass
+
+
+def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, refresh_interval: int = 30, anonymize: bool = False) -> None:
+    """
+    Run dashboard with periodic refresh - updates at fixed intervals.
+
+    Simpler than watch mode, just polls every N seconds. Good for environments where
+    file watching might not work reliably.
+
+    Keyboard shortcuts:
+        w - Switch to weekly mode (default, current week limit period)
+        m - Switch to monthly mode
+        y - Switch to yearly mode (monthly statistics)
+        h - Switch to heatmap view
+        d - Switch to devices view
+        q - Quit
+
+    Args:
+        jsonl_files: List of JSONL files to parse
+        console: Rich console for output
+        refresh_interval: Seconds between updates (default: 30)
+        anonymize: Anonymize project names
+    """
+    console.print(
+        f"\n[white]Refreshing every {refresh_interval} seconds... "
+        f"Dashboard will update automatically.[/white]"
+    )
+
+    # Track current view mode and time offset
+    view_mode_ref = {'mode': "usage", 'changed': False, 'offset': 0}
+    stop_event = threading.Event()
+
+    # Start keyboard listener thread
+    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=False)
+    keyboard_thread.start()
+
+    # Display initial dashboard
+    _display_dashboard(jsonl_files, console, skip_limits=False, anonymize=anonymize, view_mode=view_mode_ref['mode'], view_mode_ref=view_mode_ref)
+
+    try:
+        # Keep refreshing at intervals
+        last_refresh = time.time()
+        while not stop_event.is_set():
+            # Check for view mode changes frequently
+            if view_mode_ref.get('changed', False):
+                view_mode_ref['changed'] = False
+                updated_files = get_claude_jsonl_files()
+                # Use skip_limits=True for faster response on view mode changes
+                _display_dashboard(updated_files, console, skip_limits=True, anonymize=anonymize, view_mode=view_mode_ref['mode'], view_mode_ref=view_mode_ref)
+                last_refresh = time.time()  # Reset timer after manual refresh
+
+            # Periodic refresh
+            elif time.time() - last_refresh >= refresh_interval:
+                updated_files = get_claude_jsonl_files()
+                _display_dashboard(updated_files, console, skip_limits=False, anonymize=anonymize, view_mode=view_mode_ref['mode'], view_mode_ref=view_mode_ref)
+                last_refresh = time.time()
+
+            time.sleep(0.05)  # Check frequently for keyboard input
+
+    except KeyboardInterrupt:
+        stop_event.set()
+        raise
+    finally:
+        # Ensure keyboard listener thread finishes
+        stop_event.set()
+        keyboard_thread.join(timeout=1.0)
 
 
 def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False) -> None:
@@ -241,23 +358,22 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
     from src.utils.file_watcher import watch_claude_files
 
     console.print(
-        "[dim]Watching for file changes... "
-        "Dashboard will update when Claude Code creates or modifies log files.[/dim]\n"
-        "[dim]Keyboard shortcuts: [w] Weekly | [m] Monthly | [y] Yearly | [h] Heatmap | [q] Quit[/dim]\n"
+        "\n[white]Watching for file changes... "
+        "Dashboard will update when Claude Code creates or modifies log files.[/white]"
     )
 
-    # Track current view mode
-    view_mode_ref = {'mode': VIEW_MODE_WEEKLY, 'changed': False}
+    # Track current view mode and time offset
+    view_mode_ref = {'mode': "usage", 'changed': False, 'offset': 0}
     stop_event = threading.Event()
 
     # Display initial dashboard
-    _display_dashboard(jsonl_files, console, skip_limits, anonymize, view_mode=view_mode_ref['mode'])
+    _display_dashboard(jsonl_files, console, skip_limits, anonymize, view_mode=view_mode_ref['mode'], view_mode_ref=view_mode_ref)
 
     # Create callback that refreshes dashboard
     def on_file_change():
         # Re-fetch file list (in case new files were created)
         updated_files = get_claude_jsonl_files()
-        _display_dashboard(updated_files, console, skip_limits, anonymize, view_mode=view_mode_ref['mode'])
+        _display_dashboard(updated_files, console, skip_limits, anonymize, view_mode=view_mode_ref['mode'], view_mode_ref=view_mode_ref)
 
     # Start file watcher with 10-second debounce to prevent rapid-fire updates
     # when Claude Code generates multiple responses in succession
@@ -275,8 +391,9 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
                 # Refresh dashboard with new view mode
                 view_mode_ref['changed'] = False
                 updated_files = get_claude_jsonl_files()
-                _display_dashboard(updated_files, console, skip_limits, anonymize, view_mode=view_mode_ref['mode'])
-            time.sleep(0.2)  # Check more frequently for keyboard input
+                # Use skip_limits=True for faster response on view mode changes
+                _display_dashboard(updated_files, console, skip_limits=True, anonymize=anonymize, view_mode=view_mode_ref['mode'], view_mode_ref=view_mode_ref)
+            time.sleep(0.05)  # Check more frequently for keyboard input
 
         # Stop watcher if quit was pressed
         if stop_event.is_set():
@@ -292,63 +409,7 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
         keyboard_thread.join(timeout=1.0)
 
 
-def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False) -> None:
-    """
-    Run dashboard with auto-refresh (polling mode).
-
-    Updates every 5 seconds regardless of whether files changed.
-    Use --watch mode for more efficient file-change-based updates.
-
-    Keyboard shortcuts:
-        w - Switch to weekly mode (default, current week limit period)
-        m - Switch to monthly mode
-        y - Switch to yearly mode (monthly statistics)
-        h - Switch to heatmap view
-        q - Quit
-
-    Args:
-        jsonl_files: List of JSONL files to parse
-        console: Rich console for output
-        skip_limits: Skip limits fetching for faster rendering
-        anonymize: Anonymize project names
-    """
-    console.print(
-        f"[dim]Auto-refreshing every {DEFAULT_REFRESH_INTERVAL} seconds.[/dim]\n"
-        "[dim]Keyboard shortcuts: [w] Weekly | [m] Monthly | [y] Yearly | [h] Heatmap | [q] Quit[/dim]\n"
-        "[dim]Tip: Use --watch for more efficient file-change-based updates.[/dim]\n"
-    )
-
-    # Track current view mode
-    view_mode_ref = {'mode': VIEW_MODE_WEEKLY, 'changed': False}
-    stop_event = threading.Event()
-
-    # Start keyboard listener thread (NOT daemon so we can clean up properly)
-    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=False)
-    keyboard_thread.start()
-
-    try:
-        while not stop_event.is_set():
-            _display_dashboard(jsonl_files, console, skip_limits, anonymize, view_mode=view_mode_ref['mode'])
-
-            # Sleep in small intervals to check for keyboard input
-            for _ in range(int(DEFAULT_REFRESH_INTERVAL / 0.2)):
-                if stop_event.is_set() or view_mode_ref.get('changed', False):
-                    # If view changed, reset flag and refresh immediately
-                    if view_mode_ref.get('changed', False):
-                        view_mode_ref['changed'] = False
-                    break
-                time.sleep(0.2)
-
-    except KeyboardInterrupt:
-        stop_event.set()
-        raise
-    finally:
-        # Ensure keyboard listener thread finishes and restores terminal
-        stop_event.set()
-        keyboard_thread.join(timeout=1.0)
-
-
-def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False, view_mode: str = VIEW_MODE_WEEKLY) -> None:
+def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False, view_mode: str = "usage", view_mode_ref: dict | None = None) -> None:
     """
     Ingest JSONL data and display dashboard.
 
@@ -361,7 +422,8 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         console: Rich console for output
         skip_limits: Skip ALL updates, read directly from DB (fast mode)
         anonymize: Anonymize project names to project-001, project-002, etc
-        view_mode: Display mode - weekly (default), monthly, yearly, or heatmap
+        view_mode: Display mode - usage (default), weekly, monthly, yearly, or heatmap
+        view_mode_ref: Reference dict to check for view mode changes and time offset (for interruption)
     """
     from src.storage.snapshot_db import get_latest_limits, DEFAULT_DB_PATH, get_database_stats
 
@@ -385,8 +447,31 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         # Step 2: Update limits data (if enabled)
         tracking_mode = get_tracking_mode()
         if tracking_mode in ["both", "limits"]:
-            with console.status("[bold #ff8800]Updating usage limits...", spinner="dots", spinner_style="#ff8800"):
-                limits = capture_limits()
+            # Run limits capture in a thread so we can interrupt it if mode changes
+            limits_result = {'data': None, 'completed': False}
+
+            def capture_limits_thread():
+                try:
+                    limits_result['data'] = capture_limits()
+                    limits_result['completed'] = True
+                except Exception:
+                    limits_result['completed'] = True
+
+            limits_thread = threading.Thread(target=capture_limits_thread, daemon=True)
+            limits_thread.start()
+
+            # Show spinner while waiting, but check for interruption
+            with console.status("[bold #ff8800]Updating usage limits...", spinner="dots", spinner_style="#ff8800") as status:
+                while limits_thread.is_alive():
+                    # Check if mode changed - if so, abandon limits update
+                    if view_mode_ref and view_mode_ref.get('changed', False):
+                        # Mode changed - stop waiting and proceed without limits update
+                        break
+                    time.sleep(0.1)  # Poll every 100ms
+
+            # Save limits if capture completed successfully
+            if limits_result['completed']:
+                limits = limits_result['data']
                 if limits and "error" not in limits:
                     save_limits_snapshot(
                         session_pct=limits["session_pct"],
@@ -417,6 +502,9 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     # Clear screen before displaying dashboard
     console.clear()
 
+    # Get time offset from view_mode_ref
+    time_offset = view_mode_ref.get('offset', 0) if view_mode_ref else 0
+
     # Apply view mode filter
     display_records = all_records
     if view_mode == VIEW_MODE_WEEKLY and limits_from_db and limits_from_db.get("week_reset"):
@@ -428,12 +516,65 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
                 # Fall back to monthly if no data in weekly range
                 display_records = all_records
                 view_mode = VIEW_MODE_MONTHLY
+    elif view_mode == VIEW_MODE_MONTHLY:
+        # Filter by month with offset
+        now = datetime.now()
+        target_month = now.month + time_offset
+        target_year = now.year
+
+        # Adjust year if month goes out of bounds
+        while target_month <= 0:
+            target_month += 12
+            target_year -= 1
+        while target_month > 12:
+            target_month -= 12
+            target_year += 1
+
+        # Filter records for target month
+        filtered = []
+        for record in all_records:
+            try:
+                record_date = datetime.strptime(record.date_key, "%Y-%m-%d")
+                if record_date.year == target_year and record_date.month == target_month:
+                    filtered.append(record)
+            except Exception:
+                continue
+
+        display_records = filtered if filtered else all_records
+    elif view_mode == VIEW_MODE_YEARLY:
+        # Filter by year with offset
+        target_year = datetime.now().year + time_offset
+
+        # Filter records for target year
+        filtered = []
+        for record in all_records:
+            try:
+                record_date = datetime.strptime(record.date_key, "%Y-%m-%d")
+                if record_date.year == target_year:
+                    filtered.append(record)
+            except Exception:
+                continue
+
+        display_records = filtered if filtered else all_records
 
     # Get date range for footer
     dates = sorted(set(r.date_key for r in display_records))
     date_range = None
     if dates:
-        date_range = f"{dates[0]} to {dates[-1]}"
+        # Convert from "YYYY-MM-DD" to "YY/MM/DD"
+        def format_short_date(date_str: str) -> str:
+            """Convert YYYY-MM-DD to YY/MM/DD"""
+            parts = date_str.split("-")
+            if len(parts) == 3:
+                year = parts[0][-2:]  # Last 2 digits of year
+                month = parts[1]
+                day = parts[2]
+                return f"{year}/{month}/{day}"
+            return date_str
+
+        start_date = format_short_date(dates[0])
+        end_date = format_short_date(dates[-1])
+        date_range = f"{start_date} ~ {end_date}"
 
     # Anonymize project names if requested
     if anonymize:
@@ -443,7 +584,8 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     stats = aggregate_all(display_records)
 
     # Render dashboard with limits from DB (no live fetch needed)
-    render_dashboard(stats, display_records, console, skip_limits=True, clear_screen=False, date_range=date_range, limits_from_db=limits_from_db, fast_mode=skip_limits, view_mode=view_mode)
+    # Note: fast_mode is always False to avoid showing warning message
+    render_dashboard(stats, display_records, console, skip_limits=True, clear_screen=False, date_range=date_range, limits_from_db=limits_from_db, fast_mode=False, view_mode=view_mode)
 
 
 def _anonymize_projects(records: list) -> list:

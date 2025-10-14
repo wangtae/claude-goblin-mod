@@ -63,16 +63,16 @@ def _create_bar(value: int, max_value: int, width: int = BAR_WIDTH, color: str =
         Rich Text object with colored bar
     """
     if max_value == 0:
-        return Text("░" * width, style=DIM)
+        return Text("▬" * width, style=DIM)
 
     filled = int((value / max_value) * width)
     bar = Text()
-    bar.append("█" * filled, style=color)
-    bar.append("░" * (width - filled), style=DIM)
+    bar.append("▬" * filled, style=color)
+    bar.append("▬" * (width - filled), style=DIM)
     return bar
 
 
-def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None, fast_mode: bool = False, view_mode: str = "monthly") -> None:
+def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None, fast_mode: bool = False, view_mode: str = "usage") -> None:
     """
     Render a concise, modern dashboard with KPI cards and breakdowns.
 
@@ -85,11 +85,13 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         date_range: Optional date range string to display in footer
         limits_from_db: Pre-fetched limits from database (avoids live fetch)
         fast_mode: If True, show warning that data is from last update
-        view_mode: Display mode - "monthly", "weekly", "yearly", or "heatmap" (default: "monthly")
+        view_mode: Display mode - "usage", "weekly", "monthly", "yearly", "heatmap", or "devices" (default: "usage")
     """
-    # Optionally clear screen
+    # Optionally clear screen and reset cursor to top
     if clear_screen:
-        console.clear()
+        import os
+        # Use system clear command for complete terminal reset
+        os.system('clear')
 
     # For heatmap mode, show heatmap instead of dashboard
     if view_mode == "heatmap":
@@ -102,37 +104,129 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         console.print(footer)
         return
 
+    # For devices mode, show device statistics
+    if view_mode == "devices":
+        from src.visualization.device_stats import render_device_statistics
+        render_device_statistics(console)
+        # Show footer with keyboard shortcuts
+        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
+        console.print()
+        console.print(footer)
+        return
+
+    # For usage mode, show only Usage Limits
+    if view_mode == "usage":
+        from src.commands.limits import capture_limits
+        from src.models.pricing import format_cost
+
+        # Fetch limits
+        if console:
+            with console.status(f"[bold {ORANGE}]Loading usage limits...", spinner="dots", spinner_style=ORANGE):
+                limits = capture_limits()
+        else:
+            limits = capture_limits()
+
+        # Show Usage Limits if available
+        if limits and "error" not in limits:
+            # Remove timezone info from reset dates
+            session_reset = limits['session_reset'].split(' (')[0] if '(' in limits['session_reset'] else limits['session_reset']
+            week_reset = limits['week_reset'].split(' (')[0] if '(' in limits['week_reset'] else limits['week_reset']
+            opus_reset = limits['opus_reset'].split(' (')[0] if '(' in limits['opus_reset'] else limits['opus_reset']
+
+            # Calculate costs for each limit period
+            session_cost = _calculate_session_cost(records)  # Last 5 hours, all models
+            weekly_sonnet_cost = _calculate_weekly_sonnet_cost(records)  # Weekly, sonnet only
+            weekly_opus_cost = _calculate_weekly_opus_cost(records)  # Weekly, opus only
+
+            # Create table structure with 3 rows per limit
+            limits_table = Table(show_header=False, box=None, padding=(0, 2))
+            limits_table.add_column("Content", justify="left")
+
+            # Session limit (3 rows)
+            limits_table.add_row("Current session")
+            session_bar = _create_bar(limits["session_pct"], 100, width=50, color="red")
+            bar_text = Text()
+            bar_text.append(session_bar)
+            bar_text.append(f"  {limits['session_pct']}% used", style="bold white")
+            limits_table.add_row(bar_text)
+            limits_table.add_row(f"Resets {session_reset} ({format_cost(session_cost)})", style=DIM)
+            limits_table.add_row("")  # Blank line
+
+            # Week limit (3 rows)
+            limits_table.add_row("Current week (all models)")
+            week_bar = _create_bar(limits["week_pct"], 100, width=50, color="red")
+            bar_text = Text()
+            bar_text.append(week_bar)
+            bar_text.append(f"  {limits['week_pct']}% used", style="bold white")
+            limits_table.add_row(bar_text)
+            limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
+            limits_table.add_row("")  # Blank line
+
+            # Opus limit (3 rows)
+            limits_table.add_row("Current week (Opus)")
+            opus_bar = _create_bar(limits["opus_pct"], 100, width=50, color="red")
+            bar_text = Text()
+            bar_text.append(opus_bar)
+            bar_text.append(f"  {limits['opus_pct']}% used", style="bold white")
+            limits_table.add_row(bar_text)
+            limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+
+            # Wrap in outer "Usage Limits" panel (expand to fit terminal width)
+            limits_outer_panel = Panel(
+                limits_table,
+                title="[bold]Usage Limits",
+                border_style="white",
+                expand=True,
+            )
+
+            console.print(limits_outer_panel, end="")
+            console.print()
+
+        # Show footer
+        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
+        console.print(footer)
+        return
+
     # Create KPI cards with limits (shows spinner if loading limits)
     kpi_section = _create_kpi_section(stats.overall_totals, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db)
-
-    # Create breakdowns
-    model_breakdown = _create_model_breakdown(records)
 
     # Create footer with export info, date range, and view mode
     footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
 
-    # Render all components
+    # Always render Summary (and Usage Limits in weekly mode)
     console.print(kpi_section, end="")
     console.print()  # Blank line between sections
-    console.print(model_breakdown, end="")
 
-    # Show hourly usage table in weekly mode
+    # Create breakdowns for each view mode
+    sections_to_render = []
+
+    # Model breakdown is always important
+    model_breakdown = _create_model_breakdown(records)
+    sections_to_render.append(("model", model_breakdown))
+
+    # Add mode-specific breakdown
     if view_mode == "weekly":
+        daily_breakdown_weekly = _create_daily_breakdown_weekly(records)
+        sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
         hourly_breakdown = _create_hourly_breakdown(records)
-        console.print()  # Blank line between sections
-        console.print(hourly_breakdown, end="")
-    # Show project breakdown in monthly mode
+        sections_to_render.append(("hourly", hourly_breakdown))
     elif view_mode == "monthly":
         project_breakdown = _create_project_breakdown(records)
-        console.print()  # Blank line between sections
-        console.print(project_breakdown, end="")
-    # Show monthly breakdown in yearly mode
+        sections_to_render.append(("project", project_breakdown))
+        daily_breakdown = _create_daily_breakdown(records)
+        sections_to_render.append(("daily", daily_breakdown))
     elif view_mode == "yearly":
+        project_breakdown = _create_project_breakdown(records)
+        sections_to_render.append(("project", project_breakdown))
         monthly_breakdown = _create_monthly_breakdown(records)
-        console.print()  # Blank line between sections
-        console.print(monthly_breakdown, end="")
+        sections_to_render.append(("monthly", monthly_breakdown))
 
-    console.print()  # Blank line before footer
+    # Render sections
+    for section_type, section in sections_to_render:
+        console.print(section, end="")
+        console.print()  # Blank line between sections
+
+    # Always render footer
     console.print(footer)
 
 
@@ -276,69 +370,59 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
             )
             total_cost += cost
 
-    # Create KPI cards in 2 rows
-    # Row 1: cost, prompts, sessions
-    # Row 2: input, output, cache write, cache read tokens
+    # Create KPI cards in 2 rows of 3 cards each
     kpi_grid = Table.grid(padding=(0, 2), expand=False)
     kpi_grid.add_column(justify="center")
     kpi_grid.add_column(justify="center")
     kpi_grid.add_column(justify="center")
-    kpi_grid.add_column(justify="center")
 
-    # Row 1 - Main metrics
+    # Row 1: Cost, Messages, Input Tokens
     cost_card = Panel(
-        Text(format_cost(total_cost), style="bold green"),
+        Text(_format_number(total_cost) if isinstance(total_cost, int) else format_cost(total_cost), style="bold green"),
         title="Cost",
         border_style="white",
-        width=24,
+        width=36,
     )
 
-    prompts_card = Panel(
+    messages_card = Panel(
         Text(_format_number(overall.total_prompts), style="bold white"),
         title="Messages",
         border_style="white",
-        width=24,
+        width=36,
     )
 
-    sessions_card = Panel(
-        Text(_format_number(overall.total_sessions), style="bold white"),
-        title="Sessions",
-        border_style="white",
-        width=24,
-    )
-
-    kpi_grid.add_row(cost_card, prompts_card, sessions_card, Text(""))
-
-    # Row 2 - Token breakdown
-    input_card = Panel(
+    input_tokens_card = Panel(
         Text(_format_number(total_input_tokens), style="bold cyan"),
         title="Input Tokens",
         border_style="white",
-        width=24,
+        width=36,
     )
 
-    output_card = Panel(
+    kpi_grid.add_row(cost_card, messages_card, input_tokens_card)
+
+    # Row 2: Output Tokens, Cache Creation, Cache Read
+    output_tokens_card = Panel(
         Text(_format_number(total_output_tokens), style="bold cyan"),
         title="Output Tokens",
         border_style="white",
-        width=24,
+        width=36,
     )
 
-    cache_write_card = Panel(
+    cache_creation_card = Panel(
         Text(_format_number(total_cache_creation), style="bold magenta"),
         title="Cache Write",
         border_style="white",
-        width=24,
+        width=36,
     )
 
     cache_read_card = Panel(
         Text(_format_number(total_cache_read), style="bold magenta"),
         title="Cache Read",
         border_style="white",
-        width=24,
+        width=36,
     )
 
-    kpi_grid.add_row(input_card, output_card, cache_write_card, cache_read_card)
+    kpi_grid.add_row(output_tokens_card, cache_creation_card, cache_read_card)
 
     # For weekly mode, add limit boxes below KPI cards
     if view_mode == "weekly":
@@ -354,11 +438,6 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
 
         # Create individual limit boxes if available
         if limits and "error" not in limits:
-            limit_grid = Table.grid(padding=(0, 2), expand=False)
-            limit_grid.add_column(justify="center")
-            limit_grid.add_column(justify="center")
-            limit_grid.add_column(justify="center")
-
             # Remove timezone info from reset dates
             session_reset = limits['session_reset'].split(' (')[0] if '(' in limits['session_reset'] else limits['session_reset']
             week_reset = limits['week_reset'].split(' (')[0] if '(' in limits['week_reset'] else limits['week_reset']
@@ -370,53 +449,50 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
             weekly_sonnet_cost = _calculate_weekly_sonnet_cost(records)  # Weekly, sonnet only
             weekly_opus_cost = _calculate_weekly_opus_cost(records)  # Weekly, opus only
 
-            # Session limit box (5-hour usage, all models)
-            session_bar = _create_bar(limits["session_pct"], 100, width=16, color="red")
-            session_content = Text()
-            session_content.append(f"{limits['session_pct']}% ", style="bold red")
-            session_content.append(session_bar)
-            session_content.append(f"\nResets: {session_reset}", style="white")
-            session_content.append(f"\n{format_cost(session_cost)}", style="bold green")
-            session_box = Panel(
-                session_content,
-                title="[red]Session Limit",
+            # Create table structure with 3 rows per limit
+            limits_table = Table(show_header=False, box=None, padding=(0, 2))
+            limits_table.add_column("Content", justify="left")
+
+            # Session limit (3 rows)
+            limits_table.add_row("Current session")
+            session_bar = _create_bar(limits["session_pct"], 100, width=50, color="red")
+            bar_text = Text()
+            bar_text.append(session_bar)
+            bar_text.append(f"  {limits['session_pct']}% used", style="bold white")
+            limits_table.add_row(bar_text)
+            limits_table.add_row(f"Resets {session_reset} ({format_cost(session_cost)})", style=DIM)
+            limits_table.add_row("")  # Blank line
+
+            # Week limit (3 rows)
+            limits_table.add_row("Current week (all models)")
+            week_bar = _create_bar(limits["week_pct"], 100, width=50, color="red")
+            bar_text = Text()
+            bar_text.append(week_bar)
+            bar_text.append(f"  {limits['week_pct']}% used", style="bold white")
+            limits_table.add_row(bar_text)
+            limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
+            limits_table.add_row("")  # Blank line
+
+            # Opus limit (3 rows)
+            limits_table.add_row("Current week (Opus)")
+            opus_bar = _create_bar(limits["opus_pct"], 100, width=50, color="red")
+            bar_text = Text()
+            bar_text.append(opus_bar)
+            bar_text.append(f"  {limits['opus_pct']}% used", style="bold white")
+            limits_table.add_row(bar_text)
+            limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+
+            # Wrap in outer "Usage Limits" panel (expand to fit terminal width)
+            limits_outer_panel = Panel(
+                limits_table,
+                title="[bold]Usage Limits",
                 border_style="white",
-                width=28,
+                expand=True,
             )
 
-            # Week limit box (weekly sonnet usage)
-            week_bar = _create_bar(limits["week_pct"], 100, width=16, color="red")
-            week_content = Text()
-            week_content.append(f"{limits['week_pct']}% ", style="bold red")
-            week_content.append(week_bar)
-            week_content.append(f"\nResets: {week_reset}", style="white")
-            week_content.append(f"\n{format_cost(weekly_sonnet_cost)}", style="bold green")
-            week_box = Panel(
-                week_content,
-                title="[red]Weekly Limit",
-                border_style="white",
-                width=28,
-            )
-
-            # Opus limit box (weekly opus usage)
-            opus_bar = _create_bar(limits["opus_pct"], 100, width=16, color="red")
-            opus_content = Text()
-            opus_content.append(f"{limits['opus_pct']}% ", style="bold red")
-            opus_content.append(opus_bar)
-            opus_content.append(f"\nResets: {opus_reset}", style="white")
-            opus_content.append(f"\n{format_cost(weekly_opus_cost)}", style="bold green")
-            opus_box = Panel(
-                opus_content,
-                title="[red]Opus Limit",
-                border_style="white",
-                width=28,
-            )
-
-            limit_grid.add_row(session_box, week_box, opus_box)
-
-            # Add spacing between KPI cards and limits with a simple newline
-            spacing = Text("\n")
-            return Group(kpi_grid, spacing, limit_grid)
+            # Add single line spacing between Summary and Usage Limits
+            spacing = Text("")
+            return Group(kpi_grid, spacing, limits_outer_panel)
 
     # Return only KPI cards for monthly/yearly modes
     return Group(kpi_grid)
@@ -607,6 +683,9 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
             format_cost(data["cost"]),
         )
 
+    # Add separator line before total
+    table.add_row("", "", "", "", "")
+
     # Add total row
     table.add_row(
         "[bold]Total",
@@ -620,12 +699,13 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
         table,
         title="[bold]Tokens by Model",
         border_style="white",
+        expand=True,
     )
 
 
 def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     """
-    Create table showing token usage per project.
+    Create table showing token usage and cost per project.
 
     Args:
         records: List of usage records
@@ -633,29 +713,44 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     Returns:
         Panel with project breakdown table
     """
-    # Aggregate tokens by folder
-    folder_tokens: dict[str, int] = defaultdict(int)
+    from src.models.pricing import calculate_cost, format_cost
+
+    # Aggregate tokens and costs by folder
+    folder_data: dict[str, dict] = defaultdict(lambda: {
+        "total_tokens": 0,
+        "cost": 0.0
+    })
 
     for record in records:
         if record.token_usage:
-            folder_tokens[record.folder] += record.token_usage.total_tokens
+            folder_data[record.folder]["total_tokens"] += record.token_usage.total_tokens
 
-    if not folder_tokens:
+            if record.model and record.model != "<synthetic>":
+                cost = calculate_cost(
+                    record.token_usage.input_tokens,
+                    record.token_usage.output_tokens,
+                    record.model,
+                    record.token_usage.cache_creation_tokens,
+                    record.token_usage.cache_read_tokens,
+                )
+                folder_data[record.folder]["cost"] += cost
+
+    if not folder_data:
         return Panel(
             Text("No project data available", style=DIM),
             title="[bold]Tokens by Project",
             border_style="white",
         )
 
-    # Calculate total and max
-    total_tokens = sum(folder_tokens.values())
+    # Calculate total
+    total_tokens = sum(data["total_tokens"] for data in folder_data.values())
 
     # Sort by usage
-    sorted_folders = sorted(folder_tokens.items(), key=lambda x: x[1], reverse=True)
+    sorted_folders = sorted(folder_data.items(), key=lambda x: x[1]["total_tokens"], reverse=True)
 
     # Limit to top 10 projects
     sorted_folders = sorted_folders[:10]
-    max_tokens = max(tokens for _, tokens in sorted_folders)
+    max_tokens = max(data["total_tokens"] for _, data in sorted_folders)
 
     # Create table
     table = Table(show_header=False, box=None, padding=(0, 2))
@@ -663,13 +758,12 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     table.add_column("Bar", justify="left", overflow="crop")
     table.add_column("Tokens", style=ORANGE, justify="right")
     table.add_column("Percentage", style=CYAN, justify="right")
+    table.add_column("Cost", style="green", justify="right", width=10)
 
-    for folder, tokens in sorted_folders:
-        # Show only last 2-3 parts of path and truncate if needed
+    for folder, data in sorted_folders:
+        # Show only last 2 parts of path (without .../ prefix)
         parts = folder.split("/")
-        if len(parts) > 3:
-            display_name = ".../" + "/".join(parts[-2:])
-        elif len(parts) > 2:
+        if len(parts) > 2:
             display_name = "/".join(parts[-2:])
         else:
             display_name = folder
@@ -678,6 +772,7 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
         if len(display_name) > 35:
             display_name = display_name[:35]
 
+        tokens = data["total_tokens"]
         percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
 
         # Create bar
@@ -688,12 +783,214 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
             bar,
             _format_number(tokens),
             f"{percentage:.1f}%",
+            format_cost(data["cost"]),
         )
 
     return Panel(
         table,
         title="[bold]Tokens by Project",
         border_style="white",
+        expand=True,
+    )
+
+
+def _create_daily_breakdown(records: list[UsageRecord]) -> Panel:
+    """
+    Create table showing daily usage breakdown for monthly mode.
+    Shows all dates in the range, including days with no usage.
+
+    Args:
+        records: List of usage records
+
+    Returns:
+        Panel with daily breakdown table
+    """
+    from src.models.pricing import calculate_cost, format_cost
+    from datetime import timedelta
+
+    # Aggregate by date (format: "YYYY-MM-DD")
+    daily_data: dict[str, dict] = defaultdict(lambda: {
+        "cost": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation": 0,
+        "cache_read": 0,
+        "messages": 0
+    })
+
+    # Track min and max dates
+    min_date = None
+    max_date = None
+
+    for record in records:
+        if record.token_usage:
+            # Extract date from timestamp
+            date = record.timestamp.strftime("%Y-%m-%d")
+            record_date = record.timestamp.date()
+
+            # Update min/max dates
+            if min_date is None or record_date < min_date:
+                min_date = record_date
+            if max_date is None or record_date > max_date:
+                max_date = record_date
+
+            daily_data[date]["input_tokens"] += record.token_usage.input_tokens
+            daily_data[date]["output_tokens"] += record.token_usage.output_tokens
+            daily_data[date]["cache_creation"] += record.token_usage.cache_creation_tokens
+            daily_data[date]["cache_read"] += record.token_usage.cache_read_tokens
+            daily_data[date]["messages"] += 1
+
+            if record.model and record.model != "<synthetic>":
+                cost = calculate_cost(
+                    record.token_usage.input_tokens,
+                    record.token_usage.output_tokens,
+                    record.model,
+                    record.token_usage.cache_creation_tokens,
+                    record.token_usage.cache_read_tokens,
+                )
+                daily_data[date]["cost"] += cost
+
+    if not daily_data or min_date is None or max_date is None:
+        return Panel(
+            Text("No daily data available", style=DIM),
+            title="[bold]Daily Usage",
+            border_style="white",
+        )
+
+    # Generate all dates in range
+    all_dates = []
+    current_date = min_date
+    while current_date <= max_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+        # Add date with actual data or zeros
+        if date_str in daily_data:
+            all_dates.append((date_str, daily_data[date_str]))
+        else:
+            # Add date with zero values
+            all_dates.append((date_str, {
+                "cost": 0.0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_creation": 0,
+                "cache_read": 0,
+                "messages": 0
+            }))
+        current_date += timedelta(days=1)
+
+    # Sort by date in descending order (most recent first)
+    sorted_dates = sorted(all_dates, reverse=True)
+
+    # Create table with English column names
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("Date", style="purple", justify="left", width=12)
+    table.add_column("Cost", style="green", justify="right", width=10)
+    table.add_column("Input", style=CYAN, justify="right", width=12)
+    table.add_column("Output", style=CYAN, justify="right", width=12)
+    table.add_column("Cache Write", style="magenta", justify="right", width=14)
+    table.add_column("Cache Read", style="magenta", justify="right", width=14)
+    table.add_column("Messages", style="white", justify="right", width=10)
+
+    for date, data in sorted_dates:
+        table.add_row(
+            date,
+            format_cost(data["cost"]),
+            _format_number(data["input_tokens"]),
+            _format_number(data["output_tokens"]),
+            _format_number(data["cache_creation"]),
+            _format_number(data["cache_read"]),
+            str(data["messages"]),
+        )
+
+    return Panel(
+        table,
+        title="[bold]Daily Usage",
+        border_style="white",
+        expand=True,
+    )
+
+
+def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
+    """
+    Create graph-style daily usage breakdown for weekly mode.
+    Shows cyan bar graphs with token amounts, percentages, and costs.
+
+    Args:
+        records: List of usage records
+
+    Returns:
+        Panel with daily breakdown in graph format
+    """
+    from src.models.pricing import calculate_cost, format_cost
+
+    # Aggregate by date (format: "YYYY-MM-DD")
+    daily_data: dict[str, dict] = defaultdict(lambda: {
+        "total_tokens": 0,
+        "cost": 0.0
+    })
+
+    for record in records:
+        if record.token_usage:
+            date = record.timestamp.strftime("%Y-%m-%d")
+            daily_data[date]["total_tokens"] += record.token_usage.total_tokens
+
+            if record.model and record.model != "<synthetic>":
+                cost = calculate_cost(
+                    record.token_usage.input_tokens,
+                    record.token_usage.output_tokens,
+                    record.model,
+                    record.token_usage.cache_creation_tokens,
+                    record.token_usage.cache_read_tokens,
+                )
+                daily_data[date]["cost"] += cost
+
+    if not daily_data:
+        return Panel(
+            Text("No daily data available", style=DIM),
+            title="[bold]Daily Usage",
+            border_style="white",
+        )
+
+    # Calculate totals and max for scaling
+    total_tokens = sum(data["total_tokens"] for data in daily_data.values())
+    max_tokens = max(data["total_tokens"] for data in daily_data.values())
+
+    # Sort by date in descending order (most recent first)
+    sorted_dates = sorted(daily_data.items(), reverse=True)
+
+    # Create table with bars
+    table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("Date", style="white", justify="left", width=17)
+    table.add_column("Bar", justify="left")
+    table.add_column("Tokens", style=ORANGE, justify="right")
+    table.add_column("Percentage", style=CYAN, justify="right")
+    table.add_column("Cost", style="green", justify="right", width=10)
+
+    for date, data in sorted_dates:
+        tokens = data["total_tokens"]
+        percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
+
+        # Parse date and get day of week
+        from datetime import datetime
+        date_obj = datetime.strptime(date, "%Y-%m-%d")
+        day_name = date_obj.strftime("%a")  # Mon, Tue, Wed, etc.
+        date_with_day = f"{date} ({day_name})"
+
+        # Create bar (same style as Tokens by Model)
+        bar = _create_bar(tokens, max_tokens, width=20)
+
+        table.add_row(
+            date_with_day,
+            bar,
+            _format_number(tokens),
+            f"{percentage:.1f}%",
+            format_cost(data["cost"]),
+        )
+
+    return Panel(
+        table,
+        title="[bold]Daily Usage",
+        border_style="white",
+        expand=True,
     )
 
 
@@ -775,6 +1072,7 @@ def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
         table,
         title="[bold]Hourly Usage",
         border_style="white",
+        expand=True,
     )
 
 
@@ -856,6 +1154,7 @@ def _create_monthly_breakdown(records: list[UsageRecord]) -> Panel:
         table,
         title="[bold]Monthly Usage",
         border_style="white",
+        expand=True,
     )
 
 
@@ -896,51 +1195,70 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
     if in_live_mode:
         footer.append("View: ", style=DIM)
 
-        # Show current mode highlighted - Weekly first
+        # Show current mode highlighted - simplified format
+        # Usage
+        if view_mode == "usage":
+            footer.append("[u]sage ", style=f"bold {ORANGE}")
+        else:
+            footer.append("[u]sage ", style=DIM)
+
+        # Weekly
         if view_mode == "weekly":
-            footer.append("[w] Weekly", style=f"bold {ORANGE}")
+            footer.append("[w]eekly ", style=f"bold {ORANGE}")
         else:
-            footer.append("[w] Weekly", style=DIM)
-        footer.append(" | ", style=DIM)
+            footer.append("[w]eekly ", style=DIM)
 
+        # Monthly
         if view_mode == "monthly":
-            footer.append("[m] Monthly", style=f"bold {ORANGE}")
+            footer.append("[m]onthly ", style=f"bold {ORANGE}")
         else:
-            footer.append("[m] Monthly", style=DIM)
-        footer.append(" | ", style=DIM)
+            footer.append("[m]onthly ", style=DIM)
 
+        # Yearly
         if view_mode == "yearly":
-            footer.append("[y] Yearly", style=f"bold {ORANGE}")
+            footer.append("[y]early ", style=f"bold {ORANGE}")
         else:
-            footer.append("[y] Yearly", style=DIM)
-        footer.append(" | ", style=DIM)
+            footer.append("[y]early ", style=DIM)
 
+        # Heatmap
         if view_mode == "heatmap":
-            footer.append("[h] Heatmap", style=f"bold {ORANGE}")
+            footer.append("[h]eatmap ", style=f"bold {ORANGE}")
         else:
-            footer.append("[h] Heatmap", style=DIM)
-        footer.append(" | ", style=DIM)
+            footer.append("[h]eatmap ", style=DIM)
 
-        footer.append("[q] Quit\n", style=DIM)
+        # Devices
+        if view_mode == "devices":
+            footer.append("[d]evices ", style=f"bold {ORANGE}")
+        else:
+            footer.append("[d]evices ", style=DIM)
 
-    # Add date range if provided
-    if date_range:
-        view_label = {
-            "monthly": "Monthly",
-            "weekly": "Weekly (7-day period)",
-            "yearly": "Yearly",
-            "heatmap": "Heatmap"
-        }.get(view_mode, "Monthly")
+        # Quit
+        footer.append("[q]uit", style=DIM)
 
-        footer.append("Data range: ", style=DIM)
-        footer.append(f"{date_range}", style=f"bold {CYAN}")
-        footer.append(f" ({view_label})\n", style=DIM)
+        # Add date range if provided (on same line)
+        if date_range:
+            footer.append("  ", style=DIM)
+            footer.append(f"{date_range}", style="bold white")
 
-    # Add export tip (only for dashboard modes, not heatmap)
-    if view_mode != "heatmap":
-        footer.append("Tip: ", style=DIM)
-        footer.append("Export heatmap with ", style=DIM)
-        footer.append("ccu export --open", style=f"bold {CYAN}")
+        # Add newline at end
+        footer.append("\n")
+
+        # Add arrow keys hint for monthly/yearly modes (second line)
+        if view_mode in ["monthly", "yearly"]:
+            footer.append("Use ", style=DIM)
+            footer.append("←", style=f"bold {ORANGE}")
+            footer.append(" ", style=DIM)
+            footer.append("→", style=f"bold {ORANGE}")
+            period_label = "month" if view_mode == "monthly" else "year"
+            footer.append(f" to navigate {period_label}s", style=DIM)
+            footer.append("\n")
+
+    else:
+        # No live mode, just date range if provided
+        if date_range:
+            footer.append("Data range: ", style=DIM)
+            footer.append(f"{date_range}", style="bold white")
+            footer.append("\n", style=DIM)
 
     return footer
 
