@@ -1240,7 +1240,7 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
         # Add date range if provided (on same line)
         if date_range:
             footer.append("  ", style=DIM)
-            footer.append(f"{date_range}", style="bold white")
+            footer.append(f"{date_range}", style="cyan")
 
         # Add newline at end
         footer.append("\n")
@@ -1259,7 +1259,7 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
         # No live mode, just date range if provided
         if date_range:
             footer.append("Data range: ", style=DIM)
-            footer.append(f"{date_range}", style="bold white")
+            footer.append(f"{date_range}", style="cyan")
             footer.append("\n", style=DIM)
 
     return footer
