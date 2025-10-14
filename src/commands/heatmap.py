@@ -158,7 +158,7 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
         console.print(f"[dim]{heatmap_title}[/dim]")
         console.print()
 
-        # Build month label line
+        # Build month label line with numbers (1, 2, 3...)
         month_line = "    "  # Space for day labels
         last_month = None
         for week in weeks:
@@ -167,9 +167,7 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
                 if date is not None and not month_added:
                     month = date.month
                     if month != last_month:
-                        month_name = date.strftime("%b")
-                        # Take first char for compact display
-                        month_line += month_name[0]
+                        month_line += str(month)
                         last_month = month
                         month_added = True
                     break
@@ -226,7 +224,7 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
     # 2. Week Limit % heatmap (blue → red gradient)
     def week_color_func(day_stats, date):
         date_key = date.strftime("%Y-%m-%d")
-        week_pct = limits_data.get(date_key, {}).get("week_pct", 0)
+        week_pct = limits_data.get(date_key, {}).get("week_pct", None)  # None for no data
         return _get_limits_style(week_pct, (93, 150, 203), date, today)
 
     # Legend: blue → red → dark red
@@ -241,7 +239,7 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
     # 3. Opus Limit % heatmap (green → red gradient)
     def opus_color_func(day_stats, date):
         date_key = date.strftime("%Y-%m-%d")
-        opus_pct = limits_data.get(date_key, {}).get("opus_pct", 0)
+        opus_pct = limits_data.get(date_key, {}).get("opus_pct", None)  # None for no data
         return _get_limits_style(opus_pct, (93, 203, 123), date, today)
 
     # Legend: green → red → dark red
@@ -277,26 +275,26 @@ def _load_limits_data() -> dict:
         conn = sqlite3.connect(DEFAULT_DB_PATH)
         cursor = conn.cursor()
 
-        # Load limits snapshots
+        # Load limits snapshots (percentages are already calculated)
         cursor.execute("""
-            SELECT date, week_used, week_limit, opus_used, opus_limit
+            SELECT date, week_pct, opus_pct
             FROM limits_snapshots
             ORDER BY timestamp DESC
         """)
 
         for row in cursor.fetchall():
-            date_str, week_used, week_limit, opus_used, opus_limit = row
-            week_pct = int((week_used / week_limit * 100)) if week_limit > 0 else 0
-            opus_pct = int((opus_used / opus_limit * 100)) if opus_limit > 0 else 0
+            date_str, week_pct, opus_pct = row
 
-            limits_data[date_str] = {
-                "week_pct": week_pct,
-                "opus_pct": opus_pct
-            }
+            # Only keep the most recent snapshot for each date
+            if date_str not in limits_data:
+                limits_data[date_str] = {
+                    "week_pct": week_pct if week_pct is not None else 0,
+                    "opus_pct": opus_pct if opus_pct is not None else 0
+                }
 
         conn.close()
-    except:
-        pass
+    except Exception as e:
+        print(f"Warning: Could not load limits data: {e}")
 
     return limits_data
 
@@ -339,14 +337,14 @@ def _get_tokens_style(day_stats, max_tokens: int, date, today) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
-def _get_limits_style(pct: int, base_color_rgb: tuple[int, int, int], date, today) -> str:
+def _get_limits_style(pct: Optional[int], base_color_rgb: tuple[int, int, int], date, today) -> str:
     """
     Get Rich color style for limits percentage (same as PNG export).
 
-    0% = base_color (blue/green), 100% = red, >100% = dark red/purple
+    None = no data (dark grey), 0% = base_color, 100% = red, >100% = dark red/purple
 
     Args:
-        pct: Usage percentage (0-100+)
+        pct: Usage percentage (0-100+) or None if no data
         base_color_rgb: Base color (blue for week, green for opus)
         date: The date of this cell
         today: Today's date
@@ -359,14 +357,18 @@ def _get_limits_style(pct: int, base_color_rgb: tuple[int, int, int], date, toda
         return "#6B6B68"
 
     # Past days with no data: dark grey
-    if pct == 0:
+    if pct is None:
         return "#3C3C3A"
+
+    # 0%: show base color (blue/green)
+    if pct == 0:
+        return f"#{base_color_rgb[0]:02x}{base_color_rgb[1]:02x}{base_color_rgb[2]:02x}"
 
     # >100%: dark red/purple
     if pct > 100:
         return "#782850"
 
-    # 0-100%: interpolate from base_color to red
+    # 1-100%: interpolate from base_color to red
     ratio = pct / 100.0
     red = (203, 93, 93)
 
