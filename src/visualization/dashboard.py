@@ -103,7 +103,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         return
 
     # Create KPI cards with limits (shows spinner if loading limits)
-    kpi_section = _create_kpi_section(stats.overall_totals, records, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db)
+    kpi_section = _create_kpi_section(stats.overall_totals, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db)
 
     # Create breakdowns
     model_breakdown = _create_model_breakdown(records)
@@ -122,19 +122,20 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     console.print(footer)
 
 
-def _create_kpi_section(overall, records: list[UsageRecord], skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None) -> Group:
+def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "monthly", skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None) -> Group:
     """
-    Create KPI cards with individual limit boxes beneath each.
+    Create KPI cards with individual limit boxes beneath each (only for weekly mode).
 
     Args:
         overall: Overall statistics
         records: List of usage records (for cost calculation)
+        view_mode: Current view mode - "monthly", "weekly", or "yearly"
         skip_limits: If True, skip fetching current limits (faster)
         console: Console instance for showing spinner
         limits_from_db: Pre-fetched limits from database (avoids live fetch)
 
     Returns:
-        Group containing KPI cards and limit boxes
+        Group containing KPI cards and limit boxes (if weekly mode)
     """
     from src.models.pricing import calculate_cost, format_cost
 
@@ -225,7 +226,76 @@ def _create_kpi_section(overall, records: list[UsageRecord], skip_limits: bool =
 
     kpi_grid.add_row(input_card, output_card, cache_write_card, cache_read_card)
 
-    # Return only KPI cards (limits removed)
+    # For weekly mode, add limit boxes below KPI cards
+    if view_mode == "weekly":
+        # Use limits from DB if provided, otherwise fetch live (unless skipped)
+        limits = limits_from_db
+        if limits is None and not skip_limits:
+            from src.commands.limits import capture_limits
+            if console:
+                with console.status(f"[bold {ORANGE}]Loading usage limits...", spinner="dots", spinner_style=ORANGE):
+                    limits = capture_limits()
+            else:
+                limits = capture_limits()
+
+        # Create individual limit boxes if available
+        if limits and "error" not in limits:
+            limit_grid = Table.grid(padding=(0, 2), expand=False)
+            limit_grid.add_column(justify="center")
+            limit_grid.add_column(justify="center")
+            limit_grid.add_column(justify="center")
+
+            # Remove timezone info from reset dates
+            session_reset = limits['session_reset'].split(' (')[0] if '(' in limits['session_reset'] else limits['session_reset']
+            week_reset = limits['week_reset'].split(' (')[0] if '(' in limits['week_reset'] else limits['week_reset']
+            opus_reset = limits['opus_reset'].split(' (')[0] if '(' in limits['opus_reset'] else limits['opus_reset']
+
+            # Session limit box
+            session_bar = _create_bar(limits["session_pct"], 100, width=16, color="red")
+            session_content = Text()
+            session_content.append(f"{limits['session_pct']}% ", style="bold red")
+            session_content.append(session_bar)
+            session_content.append(f"\nResets: {session_reset}", style="white")
+            session_box = Panel(
+                session_content,
+                title="[red]Session Limit",
+                border_style="white",
+                width=28,
+            )
+
+            # Week limit box
+            week_bar = _create_bar(limits["week_pct"], 100, width=16, color="red")
+            week_content = Text()
+            week_content.append(f"{limits['week_pct']}% ", style="bold red")
+            week_content.append(week_bar)
+            week_content.append(f"\nResets: {week_reset}", style="white")
+            week_box = Panel(
+                week_content,
+                title="[red]Weekly Limit",
+                border_style="white",
+                width=28,
+            )
+
+            # Opus limit box
+            opus_bar = _create_bar(limits["opus_pct"], 100, width=16, color="red")
+            opus_content = Text()
+            opus_content.append(f"{limits['opus_pct']}% ", style="bold red")
+            opus_content.append(opus_bar)
+            opus_content.append(f"\nResets: {opus_reset}", style="white")
+            opus_box = Panel(
+                opus_content,
+                title="[red]Opus Limit",
+                border_style="white",
+                width=28,
+            )
+
+            limit_grid.add_row(session_box, week_box, opus_box)
+
+            # Add spacing between KPI cards and limits with a simple newline
+            spacing = Text("\n")
+            return Group(kpi_grid, spacing, limit_grid)
+
+    # Return only KPI cards for monthly/yearly modes
     return Group(kpi_grid)
 
 
