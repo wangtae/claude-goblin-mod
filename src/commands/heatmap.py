@@ -169,12 +169,12 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
                     if month != last_month:
                         month_name = date.strftime("%b")
                         # Take first char for compact display
-                        month_line += month_name[0] + " "
+                        month_line += month_name[0]
                         last_month = month
                         month_added = True
                     break
             if not month_added:
-                month_line += "  "  # 2 spaces to match cell width
+                month_line += " "  # 1 space to match cell width
 
         console.print(Text(month_line, style="dim"))
 
@@ -188,11 +188,10 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
                 day_stats, date = week[day_idx]
 
                 if date is None:
-                    line.append("  ", style="")  # 2 spaces: 1 for cell + 1 for gap
+                    line.append(" ", style="")  # 1 space for cell
                 else:
                     color_style = color_func(day_stats, date)
-                    line.append("█", style=color_style)
-                    line.append(" ", style="")  # Gap between cells
+                    line.append("■", style=color_style)  # BLACK SQUARE with built-in padding
 
             console.print(line)
 
@@ -202,9 +201,8 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
         legend = Text()
         legend.append(legend_left + " ", style="dim")
         for color in legend_colors:
-            legend.append("█", style=color)
-            legend.append(" ", style="")
-        legend.append(legend_right, style="dim")
+            legend.append("■", style=color)
+        legend.append(" " + legend_right, style="dim")
 
         console.print(legend)
         console.print()
