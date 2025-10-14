@@ -131,6 +131,103 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     console.print(footer)
 
 
+def _calculate_session_cost(records: list[UsageRecord]) -> float:
+    """
+    Calculate cost for session limit period (last 5 hours, all models).
+
+    Args:
+        records: List of usage records
+
+    Returns:
+        Total cost for session period
+    """
+    from src.models.pricing import calculate_cost
+    from datetime import timedelta
+
+    now = datetime.now()
+    five_hours_ago = now - timedelta(hours=5)
+
+    session_cost = 0.0
+    for record in records:
+        if record.timestamp >= five_hours_ago and record.model and record.token_usage and record.model != "<synthetic>":
+            cost = calculate_cost(
+                record.token_usage.input_tokens,
+                record.token_usage.output_tokens,
+                record.model,
+                record.token_usage.cache_creation_tokens,
+                record.token_usage.cache_read_tokens,
+            )
+            session_cost += cost
+
+    return session_cost
+
+
+def _calculate_weekly_sonnet_cost(records: list[UsageRecord]) -> float:
+    """
+    Calculate cost for weekly sonnet usage (last 7 days, sonnet models only).
+
+    Args:
+        records: List of usage records
+
+    Returns:
+        Total cost for weekly sonnet usage
+    """
+    from src.models.pricing import calculate_cost
+    from datetime import timedelta
+
+    now = datetime.now()
+    seven_days_ago = now - timedelta(days=7)
+
+    weekly_cost = 0.0
+    for record in records:
+        if record.timestamp >= seven_days_ago and record.model and record.token_usage and record.model != "<synthetic>":
+            # Check if it's a sonnet model
+            if "sonnet" in record.model.lower():
+                cost = calculate_cost(
+                    record.token_usage.input_tokens,
+                    record.token_usage.output_tokens,
+                    record.model,
+                    record.token_usage.cache_creation_tokens,
+                    record.token_usage.cache_read_tokens,
+                )
+                weekly_cost += cost
+
+    return weekly_cost
+
+
+def _calculate_weekly_opus_cost(records: list[UsageRecord]) -> float:
+    """
+    Calculate cost for weekly opus usage (last 7 days, opus models only).
+
+    Args:
+        records: List of usage records
+
+    Returns:
+        Total cost for weekly opus usage
+    """
+    from src.models.pricing import calculate_cost
+    from datetime import timedelta
+
+    now = datetime.now()
+    seven_days_ago = now - timedelta(days=7)
+
+    weekly_cost = 0.0
+    for record in records:
+        if record.timestamp >= seven_days_ago and record.model and record.token_usage and record.model != "<synthetic>":
+            # Check if it's an opus model
+            if "opus" in record.model.lower():
+                cost = calculate_cost(
+                    record.token_usage.input_tokens,
+                    record.token_usage.output_tokens,
+                    record.model,
+                    record.token_usage.cache_creation_tokens,
+                    record.token_usage.cache_read_tokens,
+                )
+                weekly_cost += cost
+
+    return weekly_cost
+
+
 def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "monthly", skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None) -> Group:
     """
     Create KPI cards with individual limit boxes beneath each (only for weekly mode).
@@ -259,13 +356,19 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
             week_reset = limits['week_reset'].split(' (')[0] if '(' in limits['week_reset'] else limits['week_reset']
             opus_reset = limits['opus_reset'].split(' (')[0] if '(' in limits['opus_reset'] else limits['opus_reset']
 
-            # Session limit box (with cost)
+            # Calculate costs for each limit period
+            from datetime import timedelta
+            session_cost = _calculate_session_cost(records)  # Last 5 hours, all models
+            weekly_sonnet_cost = _calculate_weekly_sonnet_cost(records)  # Weekly, sonnet only
+            weekly_opus_cost = _calculate_weekly_opus_cost(records)  # Weekly, opus only
+
+            # Session limit box (5-hour usage, all models)
             session_bar = _create_bar(limits["session_pct"], 100, width=16, color="red")
             session_content = Text()
             session_content.append(f"{limits['session_pct']}% ", style="bold red")
             session_content.append(session_bar)
             session_content.append(f"\nResets: {session_reset}", style="white")
-            session_content.append(f"\n{format_cost(total_cost)}", style="bold green")
+            session_content.append(f"\n{format_cost(session_cost)}", style="bold green")
             session_box = Panel(
                 session_content,
                 title="[red]Session Limit",
@@ -273,13 +376,13 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
                 width=28,
             )
 
-            # Week limit box (with cost)
+            # Week limit box (weekly sonnet usage)
             week_bar = _create_bar(limits["week_pct"], 100, width=16, color="red")
             week_content = Text()
             week_content.append(f"{limits['week_pct']}% ", style="bold red")
             week_content.append(week_bar)
             week_content.append(f"\nResets: {week_reset}", style="white")
-            week_content.append(f"\n{format_cost(total_cost)}", style="bold green")
+            week_content.append(f"\n{format_cost(weekly_sonnet_cost)}", style="bold green")
             week_box = Panel(
                 week_content,
                 title="[red]Weekly Limit",
@@ -287,13 +390,13 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
                 width=28,
             )
 
-            # Opus limit box (with cost)
+            # Opus limit box (weekly opus usage)
             opus_bar = _create_bar(limits["opus_pct"], 100, width=16, color="red")
             opus_content = Text()
             opus_content.append(f"{limits['opus_pct']}% ", style="bold red")
             opus_content.append(opus_bar)
             opus_content.append(f"\nResets: {opus_reset}", style="white")
-            opus_content.append(f"\n{format_cost(total_cost)}", style="bold green")
+            opus_content.append(f"\n{format_cost(weekly_opus_cost)}", style="bold green")
             opus_box = Panel(
                 opus_content,
                 title="[red]Opus Limit",
