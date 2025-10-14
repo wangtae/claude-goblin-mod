@@ -160,7 +160,10 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     if not all_records:
         console.clear()
         console.print(
-            "[yellow]No usage data found in database. Run --update-usage to ingest data.[/yellow]"
+            "[yellow]No Claude Code usage data found.[/yellow]\n"
+            "[dim]This could mean:[/dim]\n"
+            "[dim]  • Claude Code has not been used yet on this machine[/dim]\n"
+            "[dim]  • No JSONL log files exist in ~/.claude/projects/[/dim]\n"
         )
         return
 
