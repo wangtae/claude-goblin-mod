@@ -117,8 +117,8 @@ safety check
 
 ```bash
 # 1. 정상 동작 확인
-ccg usage
-ccg export -o ~/test-output.png
+ccu usage
+ccu export -o ~/test-output.png
 
 # 2. 악의적인 입력 차단 확인
 # (이것들은 자동으로 거부되어야 함)
@@ -127,7 +127,7 @@ ccg export -o ~/test-output.png
 # - 심볼릭 링크 통한 접근 시도
 
 # 3. 백업 파일명 중복 방지 확인
-ccg setup usage  # 백업 생성 시 고유한 파일명 확인
+ccu setup usage  # 백업 생성 시 고유한 파일명 확인
 ```
 
 ### 보안 감사

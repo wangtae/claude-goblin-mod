@@ -15,14 +15,14 @@ Python command line tool to help with Claude Code utilities and Claude Code usag
 ## New Features in This Fork
 
 - 🔄 **Automatic OneDrive Detection** - Auto-detects OneDrive across multiple drives (C:, D:, E:, F:)
-- ⚙️ **Configuration Management** - `ccg config` command for database path and machine name settings
+- ⚙️ **Configuration Management** - `ccu config` command for database path and machine name settings
 - 🖥️ **Multi-PC Support** - Track usage across multiple computers with automatic cloud sync
 - 📊 **Per-Machine Statistics** (Coming in Phase 2) - View usage breakdown by computer
 
 **Quick Start (Modified Fork):** See [Installation](#installation-modified-fork) for running from source.
 
 > [!NOTE]
-> Both `claude-goblin` and `ccg` work interchangeably as command aliases.
+> Both `claude-goblin` and `ccu` work interchangeably as command aliases.
 
 ## Example outputs
 
@@ -72,8 +72,8 @@ Python command line tool to help with Claude Code utilities and Claude Code usag
 pip install claude-goblin-mod
 
 # Use commands
-ccg --help
-ccg usage
+ccu --help
+ccu usage
 ```
 
 📖 **Publishing guide**: See [docs/PYPI_PUBLISHING.md](docs/PYPI_PUBLISHING.md)
@@ -101,25 +101,25 @@ python3 -m src.cli config show
 ```bash
 cd /path/to/claude-goblin-mod
 
-# Install in editable mode (creates ccg command)
+# Install in editable mode (creates ccu command)
 pip install -e .
 
-# Now you can use ccg commands
-ccg --help
-ccg usage
+# Now you can use ccu commands
+ccu --help
+ccu usage
 ```
 
 ### Option 4: Create Shell Alias
 
 Add to `~/.bashrc` or `~/.zshrc`:
 ```bash
-alias ccg='python3 -m src.cli'
+alias ccu='python3 -m src.cli'
 ```
 
 Reload and use:
 ```bash
 source ~/.bashrc
-ccg --help
+ccu --help
 ```
 
 📖 **Detailed installation guide**: See [docs/INSTALLATION.md](docs/INSTALLATION.md)
@@ -130,10 +130,10 @@ After installation, start tracking your Claude Code usage:
 
 ```bash
 # View your current usage dashboard
-ccg usage
+ccu usage
 
 # (Optional) Enable automatic tracking with hooks
-ccg setup-hooks usage
+ccu setup-hooks usage
 ```
 
 **Note**: The `usage` command automatically saves your data to the historical database every time you run it. No manual setup required.
@@ -149,36 +149,36 @@ For most users, just run `usage` regularly and it will handle data tracking auto
 | Command | Description |
 |---------|-------------|
 | **Dashboard & Analytics** | |
-| `ccg usage` | Show usage dashboard with KPI cards and breakdowns |
-| `ccg usage --live` | Auto-refresh dashboard every 5 seconds |
-| `ccg usage --fast` | Skip live limits for faster rendering |
-| `ccg usage --anon` | Anonymize project names (project-001, project-002, etc.) |
-| `ccg limits` | Show current usage limits (session, week, Opus) |
-| `ccg stats` | Show detailed statistics and cost analysis |
-| `ccg stats --fast` | Skip live limits for faster rendering |
-| `ccg status-bar [type]` | Launch macOS menu bar app (session\|weekly\|opus) |
+| `ccu usage` | Show usage dashboard with KPI cards and breakdowns |
+| `ccu usage --live` | Auto-refresh dashboard every 5 seconds |
+| `ccu usage --fast` | Skip live limits for faster rendering |
+| `ccu usage --anon` | Anonymize project names (project-001, project-002, etc.) |
+| `ccu limits` | Show current usage limits (session, week, Opus) |
+| `ccu stats` | Show detailed statistics and cost analysis |
+| `ccu stats --fast` | Skip live limits for faster rendering |
+| `ccu status-bar [type]` | Launch macOS menu bar app (session\|weekly\|opus) |
 | **Export** | |
-| `ccg export` | Export yearly heatmap as PNG (default) |
-| `ccg export --svg` | Export as SVG image |
-| `ccg export --open` | Export and open the image |
-| `ccg export -y 2024` | Export specific year |
-| `ccg export -o output.png` | Specify output file path |
+| `ccu export` | Export yearly heatmap as PNG (default) |
+| `ccu export --svg` | Export as SVG image |
+| `ccu export --open` | Export and open the image |
+| `ccu export -y 2024` | Export specific year |
+| `ccu export -o output.png` | Specify output file path |
 | **Data Management** | |
-| `ccg update-usage` | Update historical database with latest data |
-| `ccg delete-usage --force` | Delete historical database (requires --force) |
-| `ccg restore-backup` | Restore from backup |
+| `ccu update-usage` | Update historical database with latest data |
+| `ccu delete-usage --force` | Delete historical database (requires --force) |
+| `ccu restore-backup` | Restore from backup |
 | **Configuration (Fork Feature)** | |
-| `ccg config show` | Display all configuration settings |
-| `ccg config set-db-path <path>` | Set custom database path (e.g., OneDrive) |
-| `ccg config clear-db-path` | Clear custom path (use auto-detect) |
-| `ccg config set-machine-name <name>` | Set friendly machine name |
-| `ccg config clear-machine-name` | Clear custom name (use hostname) |
+| `ccu config show` | Display all configuration settings |
+| `ccu config set-db-path <path>` | Set custom database path (e.g., OneDrive) |
+| `ccu config clear-db-path` | Clear custom path (use auto-detect) |
+| `ccu config set-machine-name <name>` | Set friendly machine name |
+| `ccu config clear-machine-name` | Clear custom name (use hostname) |
 | **Hooks (Advanced)** | |
-| `ccg setup-hooks usage` | Auto-track usage after each Claude response |
-| `ccg setup-hooks audio` | Play sounds for completion, permission & compaction |
-| `ccg setup-hooks audio-tts` | Speak notifications using TTS (macOS, multi-hook) |
-| `ccg setup-hooks png` | Auto-generate PNG after each response |
-| `ccg remove-hooks [type]` | Remove hooks (usage\|audio\|audio-tts\|png, or all) |
+| `ccu setup-hooks usage` | Auto-track usage after each Claude response |
+| `ccu setup-hooks audio` | Play sounds for completion, permission & compaction |
+| `ccu setup-hooks audio-tts` | Speak notifications using TTS (macOS, multi-hook) |
+| `ccu setup-hooks png` | Auto-generate PNG after each response |
+| `ccu remove-hooks [type]` | Remove hooks (usage\|audio\|audio-tts\|png, or all) |
 
 ## Data Source
 
@@ -232,20 +232,20 @@ graph TD
 
 ### Command Behavior
 
-**`ccg usage`** (Display + Ingestion)
+**`ccu usage`** (Display + Ingestion)
 1. **Ingestion**: Reads JSONL files from `~/.claude/projects/*.jsonl` and saves to DB
 2. **Display**: Reads data from DB and renders dashboard
 
-**`ccg export`** (Display only)
+**`ccu export`** (Display only)
 1. Reads data from DB at `~/.claude/usage/usage_history.db`
 2. Generates yearly heatmap
 3. Exports to current directory as `claude-usage-<timestamp>.png` (or specify with `-o`)
 
-**`ccg stats`** (Display + Ingestion)
+**`ccu stats`** (Display + Ingestion)
 1. **Ingestion**: Reads JSONL files from `~/.claude/projects/*.jsonl` and saves to DB
 2. **Display**: Reads data from DB and displays comprehensive statistics
 
-**`ccg update-usage`** (Ingestion only)
+**`ccu update-usage`** (Ingestion only)
 1. Reads JSONL files from `~/.claude/projects/*.jsonl`
 2. Saves to DB at `~/.claude/usage/usage_history.db` (with automatic deduplication)
 3. Fills in missing dates with empty records (ensures continuous heatmap)
@@ -299,7 +299,7 @@ python3 -m src.cli config set-machine-name "Home-Desktop"
 
 - ✅ **OneDrive** (Windows/WSL2) - Auto-detected on drives C:, D:, E:, F:
 - ✅ **iCloud Drive** (macOS) - Auto-detected at `~/Library/Mobile Documents/com~apple~CloudDocs/`
-- ⚙️ **Custom paths** - Any path via `ccg config set-db-path`
+- ⚙️ **Custom paths** - Any path via `ccu config set-db-path`
 
 ### How It Works
 
@@ -316,8 +316,8 @@ python3 -m src.cli config set-machine-name "Home-Desktop"
    - Multiple PCs can safely write to same database
 
 3. **Future Features** (Phase 2):
-   - Per-machine statistics: `ccg stats --by-machine`
-   - Database merge tool: `ccg merge-db <conflict-file>`
+   - Per-machine statistics: `ccu stats --by-machine`
+   - Database merge tool: `ccu merge-db <conflict-file>`
    - Hostname tracking for PC identification
 
 📖 **Complete guide**: See [docs/MULTI_PC_IMPLEMENTATION_PLAN.md](docs/MULTI_PC_IMPLEMENTATION_PLAN.md)
@@ -333,7 +333,7 @@ Example TUI:
 Export a GitHub-style yearly activity heatmap:
 
 ```bash
-ccg export --open
+ccu export --open
 ```
 
 Example heatmap:
@@ -342,7 +342,7 @@ Example heatmap:
 
 ### --export Formats
 
-- **PNG** (default): `ccg export`
+- **PNG** (default): `ccu export`
 
 ## --status-bar (macOS only)
 
@@ -350,20 +350,20 @@ Launch a menu bar app showing your Claude Code usage limits:
 
 ```bash
 # Show weekly usage (default)
-ccg status-bar weekly
+ccu status-bar weekly
 
 # Show session usage
-ccg status-bar session
+ccu status-bar session
 
 # Show Opus weekly usage
-ccg status-bar opus
+ccu status-bar opus
 ```
 
 The menu bar displays "CC: XX%" and clicking it shows all three limits (Session, Weekly, Opus) with reset times.
 
 **Running in background:**
-- Use `&` to run in background: `ccg status-bar weekly &`
-- Use `nohup` to persist after terminal closes: `nohup ccg status-bar weekly > /dev/null 2>&1 &`
+- Use `&` to run in background: `ccu status-bar weekly &`
+- Use `nohup` to persist after terminal closes: `nohup ccu status-bar weekly > /dev/null 2>&1 &`
 
 Example:
 
@@ -378,15 +378,15 @@ Claude Goblin can integrate with Claude Code's hook system to automate various t
 #### Usage Hook
 Automatically tracks usage data after each Claude response:
 ```bash
-ccg setup-hooks usage
+ccu setup-hooks usage
 ```
 
-This adds a hook that runs `ccg update-usage --fast` after each Claude response, keeping your historical database up-to-date.
+This adds a hook that runs `ccu update-usage --fast` after each Claude response, keeping your historical database up-to-date.
 
 #### Audio Hook
 Plays system sounds for three different events:
 ```bash
-ccg setup-hooks audio
+ccu setup-hooks audio
 ```
 
 You'll be prompted to select three sounds:
@@ -399,7 +399,7 @@ Supports macOS (10 built-in sounds), Windows, and Linux.
 #### Audio TTS Hook (macOS only)
 Speaks notifications aloud using macOS text-to-speech:
 ```bash
-ccg setup-hooks audio-tts
+ccu setup-hooks audio-tts
 ```
 
 **Multi-hook selection** - Choose which events to speak:
@@ -421,7 +421,7 @@ You can also select from 7 different voices (Samantha, Alex, Daniel, Karen, Moir
 #### PNG Hook
 Auto-generates usage heatmap PNG after each Claude response:
 ```bash
-ccg setup-hooks png
+ccu setup-hooks png
 ```
 
 Requires export dependencies: `pip install "claude-goblin[export]"`
@@ -430,13 +430,13 @@ Requires export dependencies: `pip install "claude-goblin[export]"`
 
 ```bash
 # Remove specific hook type
-ccg remove-hooks usage
-ccg remove-hooks audio
-ccg remove-hooks audio-tts
-ccg remove-hooks png
+ccu remove-hooks usage
+ccu remove-hooks audio
+ccu remove-hooks audio-tts
+ccu remove-hooks png
 
 # Remove all Claude Goblin hooks
-ccg remove-hooks
+ccu remove-hooks
 ```
 
 ## Project Anonymization
@@ -444,8 +444,8 @@ ccg remove-hooks
 The `--anon` flag anonymizes project names when displaying usage data, perfect for sharing screenshots:
 
 ```bash
-ccg usage --anon
-ccg stats --anon
+ccu usage --anon
+ccu stats --anon
 ```
 
 Projects are renamed to `project-001`, `project-002`, etc., ranked by total token usage (project-001 has the highest usage).
@@ -456,13 +456,13 @@ Claude Goblin automatically saves data every time you run `usage`. To manually m
 
 ```bash
 # View historical stats
-ccg stats
+ccu stats
 
 # Update database with latest data and fill date gaps
-ccg update-usage
+ccu update-usage
 
 # Delete all history
-ccg delete-usage -f
+ccu delete-usage -f
 ```
 
 ## What It Tracks
@@ -527,8 +527,8 @@ I don't have much time but I'll review PRs when I can.
 - For PNG: requires Pillow and CairoSVG
 
 ### Database errors
-- Try deleting and recreating: `ccg delete-usage --force`
-- Then run: `ccg usage` to rebuild from current data
+- Try deleting and recreating: `ccu delete-usage --force`
+- Then run: `ccu usage` to rebuild from current data
 
 ## **AI Tools Disclaimer**: 
 This project was developed with assistance from Claude Code.

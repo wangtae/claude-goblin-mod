@@ -77,7 +77,7 @@ python -m twine upload dist/*
 
 # 4. Verify
 pip install claude-goblin-mod
-ccg --version
+ccu --version
 ```
 
 ## After Publishing
@@ -91,9 +91,9 @@ pip install claude-goblin-mod
 And use all commands:
 
 ```bash
-ccg usage
-ccg config show
-ccg export --open
+ccu usage
+ccu config show
+ccu export --open
 ```
 
 ## Key Differences from Original
@@ -104,7 +104,7 @@ ccg export --open
 | **PyPI page** | https://pypi.org/project/claude-goblin/ | (Not yet published) |
 | **Installation** | `pip install claude-goblin` | `pip install claude-goblin-mod` |
 | **Multi-PC support** | ❌ Not implemented | ✅ OneDrive auto-detection |
-| **Configuration** | ❌ No config command | ✅ `ccg config` command |
+| **Configuration** | ❌ No config command | ✅ `ccu config` command |
 | **Version** | 0.1.5 | 0.2.0 (fork starting point) |
 
 ## Legal Compliance

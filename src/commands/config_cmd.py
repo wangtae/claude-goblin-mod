@@ -43,7 +43,7 @@ def run(console: Console, action: str, value: str | None = None) -> None:
     elif action == "set-db-path":
         if not value:
             console.print("[red]Error: Database path required[/red]")
-            console.print("[yellow]Usage: ccg config set-db-path /path/to/usage_history.db[/yellow]")
+            console.print("[yellow]Usage: ccu config set-db-path /path/to/usage_history.db[/yellow]")
             return
 
         try:
@@ -61,7 +61,7 @@ def run(console: Console, action: str, value: str | None = None) -> None:
     elif action == "set-machine-name":
         if not value:
             console.print("[red]Error: Machine name required[/red]")
-            console.print("[yellow]Usage: ccg config set-machine-name \"My-Desktop\"[/yellow]")
+            console.print("[yellow]Usage: ccu config set-machine-name \"My-Desktop\"[/yellow]")
             return
 
         set_machine_name(value)
@@ -140,6 +140,6 @@ def _show_config(console: Console) -> None:
 
     # Help text
     console.print("\n[dim]To change settings, run:[/dim]")
-    console.print("[dim]  ccg config set-db-path /path/to/database.db[/dim]")
-    console.print("[dim]  ccg config set-machine-name \"My-Desktop\"[/dim]")
+    console.print("[dim]  ccu config set-db-path /path/to/database.db[/dim]")
+    console.print("[dim]  ccu config set-machine-name \"My-Desktop\"[/dim]")
     console.print()

@@ -75,8 +75,8 @@ Then test the installation:
 pip install --index-url https://test.pypi.org/simple/ claude-goblin-mod
 
 # Test the installation
-ccg --version
-ccg usage
+ccu --version
+ccu usage
 ```
 
 If everything works, uninstall the test version:

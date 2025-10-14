@@ -369,7 +369,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     if skip_limits and not DEFAULT_DB_PATH.exists():
         console.clear()
         console.print("[red]Error: Cannot use --fast flag without existing database.[/red]")
-        console.print("[yellow]Run 'ccg usage' (without --fast) first to create the database.[/yellow]")
+        console.print("[yellow]Run 'ccu usage' (without --fast) first to create the database.[/yellow]")
         return
 
     # Update data unless in fast mode

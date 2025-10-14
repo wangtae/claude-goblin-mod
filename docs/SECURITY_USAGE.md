@@ -12,13 +12,13 @@
 
 ```bash
 export CCG_DEBUG=true
-ccg usage
+ccu usage
 ```
 
 또는 일회성으로 실행:
 
 ```bash
-CCG_DEBUG=true ccg usage
+CCG_DEBUG=true ccu usage
 ```
 
 **경고**: 디버그 모드는 시스템 경로와 내부 구조를 노출할 수 있으므로 프로덕션 환경에서는 사용하지 마세요.
@@ -58,13 +58,13 @@ export 명령어를 사용할 때 출력 경로가 자동으로 검증됩니다:
 
 ```bash
 # 안전한 경로
-✓ ccg export -o ~/reports/usage.png
-✓ ccg export -o ./output/usage.svg
+✓ ccu export -o ~/reports/usage.png
+✓ ccu export -o ./output/usage.svg
 
 # 차단되는 경로
-✗ ccg export -o /etc/important-file
-✗ ccg export -o /usr/bin/malicious
-✗ ccg export -o "C:\Windows\System32\file.png"
+✗ ccu export -o /etc/important-file
+✗ ccu export -o /usr/bin/malicious
+✗ ccu export -o "C:\Windows\System32\file.png"
 ```
 
 보호되는 시스템 디렉토리:
@@ -158,7 +158,7 @@ claude-goblin은 사용자 홈 디렉토리(`~/.claude/`)만 사용합니다:
 
 ```bash
 # 스토리지 모드 변경 전
-ccg setup usage  # 프롬프트에서 백업 옵션 선택
+ccu setup usage  # 프롬프트에서 백업 옵션 선택
 
 # 수동 백업
 cp ~/.claude/usage_history.db ~/.claude/backups/usage_history_$(date +%Y%m%d).db
@@ -176,7 +176,7 @@ hook 설정 시 신뢰할 수 있는 명령어만 사용하세요:
         "matcher": "*",
         "hooks": [{
           "type": "command",
-          "command": "ccg update-usage > /dev/null 2>&1 &"
+          "command": "ccu update-usage > /dev/null 2>&1 &"
         }]
       }
     ]

@@ -29,8 +29,8 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
         console.print("  [bold]audio[/bold]     - Play sounds for completion & permission requests")
         console.print("  [bold]audio-tts[/bold] - Speak permission requests using TTS (macOS only)")
         console.print("  [bold]png[/bold]       - Auto-update usage PNG after each response\n")
-        console.print("Usage: ccg setup-hooks <type>")
-        console.print("Example: ccg setup-hooks usage")
+        console.print("Usage: ccu setup-hooks <type>")
+        console.print("Example: ccu setup-hooks usage")
         return
 
     console.print(f"[bold cyan]Setting up {hook_type} hook[/bold cyan]\n")
@@ -72,7 +72,7 @@ def setup_hooks(console: Console, hook_type: Optional[str] = None) -> None:
             json.dump(settings, f, indent=2)
 
         console.print("\n[dim]Hook location: ~/.claude/settings.json[/dim]")
-        console.print(f"[dim]To remove: ccg remove-hooks {hook_type}[/dim]")
+        console.print(f"[dim]To remove: ccu remove-hooks {hook_type}[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error setting up hooks: {e}[/red]")

@@ -43,7 +43,7 @@ export = [
 
 [project.scripts]
 claude-goblin = "src.cli:main"
-ccg = "src.cli:main"
+ccu = "src.cli:main"
 
 [build-system]
 requires = ["hatchling"]

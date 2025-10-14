@@ -53,7 +53,7 @@ def setup(console: Console, settings: dict, settings_path: Path) -> None:
         console.print("\n[yellow]Cancelled[/yellow]")
         return
 
-    hook_command = "ccg update-usage > /dev/null 2>&1 &"
+    hook_command = "ccu update-usage > /dev/null 2>&1 &"
 
     # Check if already exists
     hook_exists = any(is_hook(hook) for hook in settings["hooks"]["Stop"])
@@ -89,7 +89,7 @@ def setup(console: Console, settings: dict, settings_path: Path) -> None:
                 if DEFAULT_DB_PATH.exists():
                     shutil.copy2(DEFAULT_DB_PATH, backup_path)
                     console.print(f"[green]✓ Backup created: {backup_path}[/green]")
-                    console.print(f"[dim]To restore: ccg restore-backup {backup_path.name}[/dim]")
+                    console.print(f"[dim]To restore: ccu restore-backup {backup_path.name}[/dim]")
                 else:
                     console.print("[yellow]No database file found to backup[/yellow]")
         except (EOFError, KeyboardInterrupt):
@@ -153,9 +153,9 @@ def is_hook(hook) -> bool:
     for h in hook.get("hooks", []):
         command = h.get("command", "")
         # Support both old-style (--update-usage) and new-style (update-usage)
-        # Also support both claude-goblin and ccg aliases
+        # Also support both claude-goblin and ccu aliases
         if ("claude-goblin --update-usage" in command or "claude-goblin update-usage" in command or
-            "ccg --update-usage" in command or "ccg update-usage" in command):
+            "ccu --update-usage" in command or "ccu update-usage" in command):
             return True
     return False
 

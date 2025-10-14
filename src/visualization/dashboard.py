@@ -940,7 +940,7 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
     if view_mode != "heatmap":
         footer.append("Tip: ", style=DIM)
         footer.append("Export heatmap with ", style=DIM)
-        footer.append("ccg export --open", style=f"bold {CYAN}")
+        footer.append("ccu export --open", style=f"bold {CYAN}")
 
     return footer
 

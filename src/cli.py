@@ -105,9 +105,9 @@ def heatmap_command(
     using the same visual design as PNG export but rendered directly in the terminal.
 
     Examples:
-        ccg heatmap              Show current year heatmap
-        ccg heatmap -y 2024      Show 2024 heatmap
-        ccg heatmap --fast       Skip data collection, use cached data
+        ccu heatmap              Show current year heatmap
+        ccu heatmap -y 2024      Show 2024 heatmap
+        ccu heatmap --fast       Skip data collection, use cached data
     """
     heatmap.run(console, year=year, fast=fast)
 
@@ -129,13 +129,13 @@ def export_command(
     Use --fast to skip all updates and read from database only (requires existing database).
 
     Examples:
-        ccg export --open                  Export current year as PNG and open it
-        ccg export --svg                   Export as SVG instead
-        ccg export --fast                  Export from database without updating
-        ccg export -y 2024                 Export specific year
-        ccg export -o ~/usage.png          Specify output path
+        ccu export --open                  Export current year as PNG and open it
+        ccu export --svg                   Export as SVG instead
+        ccu export --fast                  Export from database without updating
+        ccu export -y 2024                 Export specific year
+        ccu export -o ~/usage.png          Specify output path
 
-    Tip: Use 'ccg heatmap' to view in terminal without creating a file.
+    Tip: Use 'ccu heatmap' to view in terminal without creating a file.
     """
     # Pass parameters via sys.argv for backward compatibility with export command
     import sys
@@ -183,7 +183,7 @@ def delete_usage_command(
     A backup is automatically created before deletion.
 
     Example:
-        ccg delete-usage --force
+        ccu delete-usage --force
     """
     # Pass force flag via command module's own sys.argv check for backward compatibility
     import sys
@@ -219,12 +219,12 @@ def status_bar_command(
         limit_type: Which limit to display (session, weekly, or opus). Defaults to weekly.
 
     Examples:
-        ccg status-bar weekly    Show weekly usage (default)
-        ccg status-bar session   Show session usage
-        ccg status-bar opus      Show Opus weekly usage
+        ccu status-bar weekly    Show weekly usage (default)
+        ccu status-bar session   Show session usage
+        ccu status-bar opus      Show Opus weekly usage
 
     Running in background:
-        nohup ccg status-bar weekly > /dev/null 2>&1 &
+        nohup ccu status-bar weekly > /dev/null 2>&1 &
     """
     if limit_type not in ["session", "weekly", "opus"]:
         console.print(f"[red]Error: Invalid limit type '{limit_type}'[/red]")
@@ -248,10 +248,10 @@ def setup_hooks_command(
     - png: Auto-update usage PNG after each Claude response
 
     Examples:
-        ccg setup-hooks usage      Enable automatic usage tracking
-        ccg setup-hooks audio      Enable audio notifications (3 sounds)
-        ccg setup-hooks audio-tts  Enable TTS (choose which hooks)
-        ccg setup-hooks png        Enable automatic PNG exports
+        ccu setup-hooks usage      Enable automatic usage tracking
+        ccu setup-hooks audio      Enable audio notifications (3 sounds)
+        ccu setup-hooks audio-tts  Enable TTS (choose which hooks)
+        ccu setup-hooks png        Enable automatic PNG exports
     """
     setup_hooks(console, hook_type)
 
@@ -264,11 +264,11 @@ def remove_hooks_command(
     Remove Claude Code hooks configured by this tool.
 
     Examples:
-        ccg remove-hooks           Remove all hooks
-        ccg remove-hooks usage     Remove only usage tracking hook
-        ccg remove-hooks audio     Remove only audio notification hook
-        ccg remove-hooks audio-tts Remove only audio TTS hook
-        ccg remove-hooks png       Remove only PNG export hook
+        ccu remove-hooks           Remove all hooks
+        ccu remove-hooks usage     Remove only usage tracking hook
+        ccu remove-hooks audio     Remove only audio notification hook
+        ccu remove-hooks audio-tts Remove only audio TTS hook
+        ccu remove-hooks png       Remove only PNG export hook
     """
     remove_hooks(console, hook_type)
 
@@ -289,10 +289,10 @@ def config_command(
         clear-machine-name      Clear custom name and use hostname
 
     Examples:
-        ccg config show
-        ccg config set-db-path /mnt/d/OneDrive/.claude-goblin/usage_history.db
-        ccg config set-machine-name "Home-Desktop"
-        ccg config clear-db-path
+        ccu config show
+        ccu config set-db-path /mnt/d/OneDrive/.claude-goblin/usage_history.db
+        ccu config set-machine-name "Home-Desktop"
+        ccu config clear-db-path
     """
     config_cmd.run(console, action, value)
 
@@ -319,11 +319,11 @@ def main() -> None:
     analyzing, and exporting usage statistics.
 
     Usage:
-        ccg --help              Show available commands
-        ccg usage               Show usage dashboard
-        ccg usage --live        Show dashboard with auto-refresh
-        ccg stats               Show detailed statistics
-        ccg export              Export yearly heatmap
+        ccu --help              Show available commands
+        ccu usage               Show usage dashboard
+        ccu usage --live        Show dashboard with auto-refresh
+        ccu stats               Show detailed statistics
+        ccu export              Export yearly heatmap
 
     Exit:
         Press Ctrl+C to exit

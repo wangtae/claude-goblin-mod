@@ -256,7 +256,7 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
     total_tokens = sum(s.total_tokens for s in stats.daily_stats.values())
     console.print(f"[dim]Total: {total_tokens:,} tokens across {total_days} active days[/dim]")
     console.print()
-    console.print("[dim]Tip: Use [bold]ccg export --open[/bold] for high-resolution PNG[/dim]")
+    console.print("[dim]Tip: Use [bold]ccu export --open[/bold] for high-resolution PNG[/dim]")
 
 
 def _load_limits_data() -> dict:

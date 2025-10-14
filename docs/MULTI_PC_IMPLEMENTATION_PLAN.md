@@ -237,7 +237,7 @@ def merge_db_command(
     or when manually importing data from another PC.
 
     Example:
-        ccg merge-db /mnt/c/Users/wangt/OneDrive/.claude-goblin/usage_history-Laptop.db
+        ccu merge-db /mnt/c/Users/wangt/OneDrive/.claude-goblin/usage_history-Laptop.db
     """
     from src.commands import merge_db
     merge_db.run(console, source)
@@ -411,8 +411,8 @@ def config_command(
     Manage Claude Goblin configuration.
 
     Examples:
-        ccg config set-machine-name "Home-Desktop"
-        ccg config get-machine-name
+        ccu config set-machine-name "Home-Desktop"
+        ccu config get-machine-name
     """
     from src.config.user_config import get_machine_name, set_machine_name
 
@@ -643,7 +643,7 @@ def run(console: Console) -> None:
         console.print(f"[yellow]⚠ Found {len(conflict_files)} conflict file(s)[/yellow]")
         for cf in conflict_files:
             console.print(f"  - {cf.name}")
-        console.print("\nRun: [cyan]ccg merge-db <conflict-file>[/cyan] to resolve")
+        console.print("\nRun: [cyan]ccu merge-db <conflict-file>[/cyan] to resolve")
     else:
         console.print("[green]✓ No conflict files detected[/green]")
 
@@ -721,11 +721,11 @@ Claude Goblin automatically detects and uses:
 ```bash
 # PC-A
 pip install claude-goblin
-ccg usage  # Automatically uses OneDrive
+ccu usage  # Automatically uses OneDrive
 
 # PC-B (syncs automatically via OneDrive)
 pip install claude-goblin
-ccg usage  # Finds existing database, merges data
+ccu usage  # Finds existing database, merges data
 ```
 
 ### Per-Machine Statistics
@@ -733,7 +733,7 @@ ccg usage  # Finds existing database, merges data
 View usage breakdown by computer:
 
 ```bash
-ccg stats --by-machine
+ccu stats --by-machine
 
 # Output:
 ┌──────────────┬───────────┬──────────┐
@@ -751,10 +751,10 @@ Set a friendly name for each PC:
 
 ```bash
 # On desktop
-ccg config set-machine-name "Home-Desktop"
+ccu config set-machine-name "Home-Desktop"
 
 # On laptop
-ccg config set-machine-name "Work-Laptop"
+ccu config set-machine-name "Work-Laptop"
 ```
 
 ### Manual Configuration
@@ -775,21 +775,21 @@ If OneDrive creates conflict files (e.g., when editing on multiple PCs offline):
 
 ```bash
 # Check for conflicts
-ccg doctor
+ccu doctor
 
 # Merge conflict files
-ccg merge-db /path/to/usage_history-conflict.db
+ccu merge-db /path/to/usage_history-conflict.db
 ```
 
 ### Troubleshooting
 
 ```bash
 # Verify setup
-ccg doctor
+ccu doctor
 
 # Common issues:
 # 1. "No cloud sync detected" - OneDrive not installed or path not found
-# 2. "Conflict files found" - Use ccg merge-db to resolve
+# 2. "Conflict files found" - Use ccu merge-db to resolve
 # 3. "Database integrity failed" - Restore from backup
 ```
 ```

@@ -46,7 +46,7 @@ python -m twine upload dist/*
 
 # 3. Test installation
 pip install --upgrade claude-goblin-mod
-ccg --version
+ccu --version
 ```
 
 ## Common Issues

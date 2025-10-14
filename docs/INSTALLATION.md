@@ -34,10 +34,10 @@ cd /home/wangt/projects/personal/claude-goblin/claude-goblin-mod
 # Install in editable mode
 pip install -e .
 
-# Now you can use 'ccg' or 'claude-goblin' commands
-ccg --help
-ccg usage
-ccg config show
+# Now you can use 'ccu' or 'claude-goblin' commands
+ccu --help
+ccu usage
+ccu config show
 ```
 
 **Note**: This will install your modified version, not the original from PyPI.
@@ -47,13 +47,13 @@ ccg config show
 Add to your `~/.bashrc` or `~/.zshrc`:
 
 ```bash
-alias ccg='python3 -m src.cli'
+alias ccu='python3 -m src.cli'
 ```
 
 Then reload:
 ```bash
 source ~/.bashrc
-ccg --help
+ccu --help
 ```
 
 ## Dependencies
@@ -80,10 +80,10 @@ cd /home/wangt/projects/personal/claude-goblin/claude-goblin-mod
 python3 -m src.cli config show
 
 # From local install (Option 2)
-ccg config show
+ccu config show
 
 # From alias (Option 3)
-ccg config show
+ccu config show
 ```
 
 Expected output:
@@ -113,7 +113,7 @@ This forked version includes:
    - Auto-creates `.claude-goblin` folder in OneDrive
 
 2. **Configuration Management**
-   - `ccg config` command for managing settings
+   - `ccu config` command for managing settings
    - Custom database path support
    - Custom machine name support
 

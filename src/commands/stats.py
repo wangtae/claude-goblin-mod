@@ -42,7 +42,7 @@ def run(console: Console, fast: bool = False) -> None:
     # Check if database exists when using --fast
     if fast_mode and not DEFAULT_DB_PATH.exists():
         console.print("[red]Error: Cannot use --fast flag without existing database.[/red]")
-        console.print("[yellow]Run 'ccg stats' (without --fast) first to create the database.[/yellow]")
+        console.print("[yellow]Run 'ccu stats' (without --fast) first to create the database.[/yellow]")
         return
 
     # If fast mode, show warning with last update timestamp
@@ -89,7 +89,7 @@ def run(console: Console, fast: bool = False) -> None:
     db_stats = get_database_stats()
 
     if db_stats["total_records"] == 0 and db_stats["total_prompts"] == 0:
-        console.print("[yellow]No historical data found. Run ccg usage to start tracking.[/yellow]")
+        console.print("[yellow]No historical data found. Run ccu usage to start tracking.[/yellow]")
         return
 
     console.print("[bold cyan]Claude Code Usage Statistics[/bold cyan]\n")

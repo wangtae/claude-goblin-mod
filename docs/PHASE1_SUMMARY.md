@@ -54,7 +54,7 @@
 
 **File**: `src/commands/config_cmd.py` (NEW)
 
-**Command**: `ccg config <action> [value]`
+**Command**: `ccu config <action> [value]`
 
 **Actions**:
 - `show` - Display all current settings
@@ -74,7 +74,7 @@
 pip install claude-goblin
 
 # Run (automatically uses OneDrive if available)
-ccg usage
+ccu usage
 # → Detected: /mnt/d/OneDrive/.claude-goblin/usage_history.db
 ```
 
@@ -82,7 +82,7 @@ ccg usage
 
 ```bash
 # View current settings
-ccg config show
+ccu config show
 
 # Output:
 # Database Settings
@@ -93,20 +93,20 @@ ccg config show
 #   Machine Name (auto): desktop-wsl
 
 # Set custom OneDrive path
-ccg config set-db-path /mnt/e/MyOneDrive/.claude-goblin/usage_history.db
+ccu config set-db-path /mnt/e/MyOneDrive/.claude-goblin/usage_history.db
 
 # Set friendly machine name
-ccg config set-machine-name "Home-Desktop"
+ccu config set-machine-name "Home-Desktop"
 
 # Clear custom settings (revert to auto-detect)
-ccg config clear-db-path
+ccu config clear-db-path
 ```
 
 ### Environment Variable Override
 
 ```bash
 export CLAUDE_GOBLIN_DB_PATH="/mnt/d/Backup/claude-usage.db"
-ccg usage
+ccu usage
 # → Uses: /mnt/d/Backup/claude-usage.db
 ```
 
@@ -117,34 +117,34 @@ ccg usage
 1. **Fresh Install (OneDrive on D:)**
    ```bash
    pip install claude-goblin
-   ccg usage
+   ccu usage
    # Expected: Auto-detects /mnt/d/OneDrive/.claude-goblin/usage_history.db
    ```
 
 2. **Custom Path Configuration**
    ```bash
-   ccg config set-db-path /mnt/e/Custom/path/usage.db
-   ccg usage
+   ccu config set-db-path /mnt/e/Custom/path/usage.db
+   ccu usage
    # Expected: Uses /mnt/e/Custom/path/usage.db
    ```
 
 3. **Config Show**
    ```bash
-   ccg config show
+   ccu config show
    # Expected: Displays all settings with OneDrive status
    ```
 
 4. **Machine Name**
    ```bash
-   ccg config set-machine-name "Test-PC"
-   ccg config show
+   ccu config set-machine-name "Test-PC"
+   ccu config show
    # Expected: Shows "Test-PC" as machine name
    ```
 
 5. **Clear Settings**
    ```bash
-   ccg config clear-db-path
-   ccg usage
+   ccu config clear-db-path
+   ccu usage
    # Expected: Reverts to auto-detected path
    ```
 
@@ -206,12 +206,12 @@ The following features are planned but not yet implemented:
    - Auto-migration for existing databases
 
 2. **Per-Machine Statistics**
-   - `ccg stats --by-machine` command
+   - `ccu stats --by-machine` command
    - Dashboard machine breakdown
    - Machine comparison features
 
 3. **Database Merge Command**
-   - `ccg merge-db <source-db>` command
+   - `ccu merge-db <source-db>` command
    - Conflict resolution for OneDrive sync issues
 
 See [MULTI_PC_IMPLEMENTATION_PLAN.md](MULTI_PC_IMPLEMENTATION_PLAN.md) for complete Phase 2 details.
@@ -234,5 +234,5 @@ rm docs/PHASE1_SUMMARY.md
 
 For issues or questions:
 1. Check [docs/MULTI_PC_IMPLEMENTATION_PLAN.md](MULTI_PC_IMPLEMENTATION_PLAN.md)
-2. Run `ccg config show` to verify settings
-3. Try `ccg config clear-db-path` to reset to auto-detect
+2. Run `ccu config show` to verify settings
+3. Try `ccu config clear-db-path` to reset to auto-detect
