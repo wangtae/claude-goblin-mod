@@ -1,6 +1,8 @@
 #region Imports
 from pathlib import Path
 from typing import Final
+
+from src.utils.security import validate_file_path
 #endregion
 
 
@@ -26,6 +28,9 @@ GRAPH_DAYS_PER_WEEK: Final[int] = 7
 def get_claude_jsonl_files() -> list[Path]:
     """
     Get all JSONL files from Claude's project data directory.
+    
+    Security: Excludes symbolic links and validates paths remain within
+    the base directory to prevent path traversal attacks.
 
     Returns:
         List of Path objects pointing to JSONL files
@@ -39,5 +44,17 @@ def get_claude_jsonl_files() -> list[Path]:
             "Make sure Claude Code has been run at least once."
         )
 
-    return list(CLAUDE_DATA_DIR.rglob("*.jsonl"))
+    # SECURITY: Collect files while validating against path traversal
+    validated_files = []
+    for path in CLAUDE_DATA_DIR.rglob("*.jsonl"):
+        # Skip symbolic links to prevent following them outside the directory
+        if path.is_symlink():
+            continue
+        
+        # Validate that resolved path is within CLAUDE_DATA_DIR
+        is_valid, _ = validate_file_path(path, CLAUDE_DATA_DIR)
+        if is_valid:
+            validated_files.append(path)
+    
+    return validated_files
 #endregion

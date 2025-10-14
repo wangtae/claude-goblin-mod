@@ -3,6 +3,8 @@ import platform
 import subprocess
 from pathlib import Path
 from typing import Optional
+
+from src.utils.security import validate_sound_name
 #endregion
 
 
@@ -21,7 +23,9 @@ def open_file(file_path: Path) -> None:
         if system == "Darwin":  # macOS
             subprocess.run(["open", str(file_path)], check=False)
         elif system == "Windows":
-            subprocess.run(["start", str(file_path)], shell=True, check=False)
+            # Use cmd with explicit start command (no shell=True)
+            # Empty string after /c is required for proper file path handling
+            subprocess.run(["cmd", "/c", "start", "", str(file_path)], check=False)
         else:  # Linux and others
             subprocess.run(["xdg-open", str(file_path)], check=False)
     except Exception:
@@ -31,23 +35,31 @@ def open_file(file_path: Path) -> None:
 def get_sound_command(sound_name: str) -> Optional[str]:
     """
     Get the command to play a sound (cross-platform).
-
+    
+    Security: Validates sound_name to prevent command injection.
+    Only alphanumeric, hyphens, and underscores are allowed.
+ 
     Args:
         sound_name: Name of the sound file (without extension)
-
+ 
     Returns:
-        Command string to play the sound, or None if not supported
+        Command string to play the sound, or None if not supported or invalid
     """
+    # SECURITY: Validate sound name to prevent command injection
+    if not validate_sound_name(sound_name):
+        return None
+    
     system = platform.system()
-
+ 
     if system == "Darwin":  # macOS
+        # Safe: sound_name is validated to contain only safe characters
         return f"afplay /System/Library/Sounds/{sound_name}.aiff &"
     elif system == "Windows":
-        # Windows Media Player command for playing system sounds
+        # Safe: sound_name is validated to contain only safe characters
         return f'powershell -c "(New-Object Media.SoundPlayer \'C:\\Windows\\Media\\{sound_name}.wav\').PlaySync();" &'
     else:  # Linux
+        # Safe: sound_name is validated to contain only safe characters
         # Try to use paplay (PulseAudio) or aplay (ALSA)
-        # Most Linux systems have one of these
         return f"(paplay /usr/share/sounds/freedesktop/stereo/{sound_name}.oga 2>/dev/null || aplay /usr/share/sounds/alsa/{sound_name}.wav 2>/dev/null) &"
 
 

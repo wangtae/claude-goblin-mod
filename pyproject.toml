@@ -1,12 +1,13 @@
 [project]
-name = "claude-goblin"
-version = "0.1.5"
-description = "Python CLI for Claude Code utilities and usage tracking/analytics"
+name = "claude-goblin-mod"
+version = "0.2.0"
+description = "Enhanced fork of Claude Goblin with multi-PC support via OneDrive synchronization"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Kurt Buhler"}
+    {name = "Your Name"},  # TODO: Replace with your name
+    {name = "Kurt Buhler", email = "original-author@example.com"}  # Original author credit
 ]
 keywords = ["claude", "claude-code", "usage", "analytics", "tui", "dashboard", "visualization"]
 classifiers = [
@@ -28,9 +29,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/data-goblin/claude-goblin"
-Repository = "https://github.com/data-goblin/claude-goblin"
-Issues = "https://github.com/data-goblin/claude-goblin/issues"
+Homepage = "https://github.com/YOUR-USERNAME/claude-goblin-mod"  # TODO: Replace with your GitHub username
+Repository = "https://github.com/YOUR-USERNAME/claude-goblin-mod"  # TODO: Replace with your GitHub username
+Issues = "https://github.com/YOUR-USERNAME/claude-goblin-mod/issues"  # TODO: Replace with your GitHub username
+"Original Project" = "https://github.com/data-goblin/claude-goblin"
 
 [project.optional-dependencies]
 export = [
@@ -56,6 +58,10 @@ dev = [
     "pytest-asyncio>=0.23.0",
     "pytest-faker>=2.0.0",
     "mypy>=1.7.0",
+]
+security = [
+    "pip-audit>=2.6.0",
+    "safety>=3.0.0",
 ]
 
 [tool.pytest.ini_options]

@@ -1,4 +1,6 @@
 #region Imports
+import os
+import platform
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -8,8 +10,99 @@ from src.models.usage_record import UsageRecord
 #endregion
 
 
-#region Constants
-DEFAULT_DB_PATH = Path.home() / ".claude" / "usage" / "usage_history.db"
+#region Constants and Path Detection
+
+def _try_create_folder(path: Path) -> bool:
+    """
+    Try to create folder. Return True if successful or already exists.
+
+    Args:
+        path: Path to folder to create
+
+    Returns:
+        True if folder exists or was created successfully, False otherwise
+    """
+    try:
+        # Check if parent exists (e.g., OneDrive root)
+        if path.parent.parent.exists():
+            path.mkdir(parents=True, exist_ok=True)
+            return True
+        elif path.exists():
+            return True
+    except (PermissionError, OSError):
+        pass
+    return False
+
+
+def get_default_db_path() -> Path:
+    """
+    Auto-detect OneDrive/iCloud and use it for database storage.
+    Falls back to local storage if cloud storage is not available.
+
+    Priority:
+    1. Config file: user_config.get_db_path()
+    2. Environment variable: CLAUDE_GOBLIN_DB_PATH
+    3. OneDrive (WSL2): /mnt/c/Users/{username}/OneDrive/.claude-goblin/ or /mnt/d/OneDrive/.claude-goblin/
+    4. iCloud (macOS): ~/Library/Mobile Documents/com~apple~CloudDocs/.claude-goblin/
+    5. Local fallback: ~/.claude/usage/
+
+    Returns:
+        Path to the database file
+    """
+    # 1. Config file override
+    try:
+        from src.config.user_config import get_db_path
+        config_path = get_db_path()
+        if config_path:
+            return Path(config_path)
+    except ImportError:
+        pass  # Config module not available yet (first install)
+
+    # 2. Environment variable override
+    custom_path = os.getenv("CLAUDE_GOBLIN_DB_PATH")
+    if custom_path:
+        return Path(custom_path)
+
+    # 3. WSL2 OneDrive detection
+    if platform.system() == "Linux" and "microsoft" in platform.release().lower():
+        username = os.getenv("USER")
+
+        # Try multiple common OneDrive locations
+        onedrive_candidates = []
+
+        if username:
+            # Standard Windows user profile location
+            onedrive_candidates.append(Path(f"/mnt/c/Users/{username}/OneDrive"))
+
+        # Check all mounted drives (C:, D:, E:, etc.)
+        for drive in ["c", "d", "e", "f"]:
+            onedrive_candidates.append(Path(f"/mnt/{drive}/OneDrive"))
+
+        # Try each candidate
+        for onedrive_base in onedrive_candidates:
+            if onedrive_base.exists():
+                onedrive_path = onedrive_base / ".claude-goblin" / "usage_history.db"
+
+                if _try_create_folder(onedrive_path.parent):
+                    return onedrive_path
+
+    # 4. macOS iCloud Drive detection
+    elif platform.system() == "Darwin":
+        icloud_base = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
+
+        if icloud_base.exists():
+            icloud_path = icloud_base / ".claude-goblin" / "usage_history.db"
+
+            if _try_create_folder(icloud_path.parent):
+                return icloud_path
+
+    # 5. Local fallback
+    return Path.home() / ".claude" / "usage" / "usage_history.db"
+
+
+# Initialize default path
+DEFAULT_DB_PATH = get_default_db_path()
+
 #endregion
 
 

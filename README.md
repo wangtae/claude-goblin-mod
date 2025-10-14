@@ -1,14 +1,25 @@
-# Claude Code Goblin
+# Claude Code Goblin (Modified Fork)
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude%20Code-required-orange?logo=anthropic)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
+> [!IMPORTANT]
+> This is a **modified fork** of [claude-goblin](https://github.com/data-goblin/claude-goblin) with additional multi-PC support features.
+>
+> **Installation**: Run from source (see [Installation](#installation-modified-fork)) - `pip install claude-goblin` installs the original, not this fork.
+
 Python command line tool to help with Claude Code utilities and Claude Code usage analytics and long-term tracking.
 
+## New Features in This Fork
 
-**Quick Start:** Install with `pip install claude-goblin` and use `ccg --help` for commands or `ccg usage` to start tracking. Below are some examples of outputs that this command line can give you.
+- 🔄 **Automatic OneDrive Detection** - Auto-detects OneDrive across multiple drives (C:, D:, E:, F:)
+- ⚙️ **Configuration Management** - `ccg config` command for database path and machine name settings
+- 🖥️ **Multi-PC Support** - Track usage across multiple computers with automatic cloud sync
+- 📊 **Per-Machine Statistics** (Coming in Phase 2) - View usage breakdown by computer
+
+**Quick Start (Modified Fork):** See [Installation](#installation-modified-fork) for running from source.
 
 > [!NOTE]
 > Both `claude-goblin` and `ccg` work interchangeably as command aliases.
@@ -49,29 +60,69 @@ Python command line tool to help with Claude Code utilities and Claude Code usag
 - Audio notifications for Claude Code completion, permission requests, and conversation compaction
 - Text-to-speech (TTS) notifications with customizable hook selection (macOS only)
 
-## Installation
+## Installation (Modified Fork)
 
-### From PyPI (recommended)
+> [!WARNING]
+> This fork is not yet published to PyPI. `pip install claude-goblin` installs the **original** version, not this fork!
+
+### Option 1: PyPI Installation (Once Published)
+
 ```bash
-# Install from PyPI
-pip install claude-goblin
+# After the fork is published to PyPI
+pip install claude-goblin-mod
 
-# Optional: Install export dependencies for PNG/SVG generation
-pip install "claude-goblin[export]"
+# Use commands
+ccg --help
+ccg usage
 ```
 
-### From source
-```bash
-# Clone the repository
-git clone https://github.com/data-goblin/claude-goblin.git
-cd claude-goblin
+📖 **Publishing guide**: See [docs/PYPI_PUBLISHING.md](docs/PYPI_PUBLISHING.md)
 
-# Install with pip
-pip install -e .
+### Option 2: Run from Source (Current Method)
+
+```bash
+# Navigate to the fork directory
+cd /path/to/claude-goblin-mod
+
+# Install dependencies only
+pip install rich typer
 
 # Optional: Install export dependencies
-pip install -e ".[export]"
+pip install pillow cairosvg
+
+# Run commands directly
+python3 -m src.cli --help
+python3 -m src.cli usage
+python3 -m src.cli config show
 ```
+
+### Option 3: Local Editable Install
+
+```bash
+cd /path/to/claude-goblin-mod
+
+# Install in editable mode (creates ccg command)
+pip install -e .
+
+# Now you can use ccg commands
+ccg --help
+ccg usage
+```
+
+### Option 4: Create Shell Alias
+
+Add to `~/.bashrc` or `~/.zshrc`:
+```bash
+alias ccg='python3 -m src.cli'
+```
+
+Reload and use:
+```bash
+source ~/.bashrc
+ccg --help
+```
+
+📖 **Detailed installation guide**: See [docs/INSTALLATION.md](docs/INSTALLATION.md)
 
 ## First-Time Setup
 
@@ -116,6 +167,12 @@ For most users, just run `usage` regularly and it will handle data tracking auto
 | `ccg update-usage` | Update historical database with latest data |
 | `ccg delete-usage --force` | Delete historical database (requires --force) |
 | `ccg restore-backup` | Restore from backup |
+| **Configuration (Fork Feature)** | |
+| `ccg config show` | Display all configuration settings |
+| `ccg config set-db-path <path>` | Set custom database path (e.g., OneDrive) |
+| `ccg config clear-db-path` | Clear custom path (use auto-detect) |
+| `ccg config set-machine-name <name>` | Set friendly machine name |
+| `ccg config clear-machine-name` | Clear custom name (use hostname) |
 | **Hooks (Advanced)** | |
 | `ccg setup-hooks usage` | Auto-track usage after each Claude response |
 | `ccg setup-hooks audio` | Play sounds for completion, permission & compaction |
@@ -198,9 +255,72 @@ graph TD
 | File | Location | Purpose |
 |------|----------|---------|
 | **JSONL logs** | `~/.claude/projects/*.jsonl` | Current 30-day usage data from Claude Code |
-| **SQLite DB** | `~/.claude/usage/usage_history.db` | Historical usage data preserved indefinitely |
+| **SQLite DB** | `~/.claude/usage/usage_history.db` (default) | Historical usage data preserved indefinitely |
+| **SQLite DB** | `/mnt/d/OneDrive/.claude-goblin/usage_history.db` (auto-detected) | OneDrive sync location (if available) |
+| **Config** | `~/.claude/goblin_config.json` | User configuration settings |
 | **Default exports** | `~/.claude/usage/claude-usage-<timestamp>.png` | PNG/SVG heatmaps (default location unless `-o` is used) |
 | **Hook exports** | `~/.claude/usage/claude-usage.png` | Default location for PNG hook auto-updates |
+
+## Multi-PC Setup (Fork Feature)
+
+This fork automatically detects OneDrive and enables multi-PC synchronization.
+
+### Automatic Setup (Zero Configuration)
+
+```bash
+# On PC-A (Desktop)
+python3 -m src.cli usage
+# → Auto-detects: /mnt/d/OneDrive/.claude-goblin/usage_history.db
+# → OneDrive automatically syncs to cloud
+
+# On PC-B (Laptop)
+python3 -m src.cli usage
+# → Auto-detects same OneDrive path
+# → Automatically uses synced database
+# ✅ Your usage from both PCs is now combined!
+```
+
+### Manual Configuration
+
+If OneDrive is in a non-standard location:
+
+```bash
+# Check current settings
+python3 -m src.cli config show
+
+# Set custom OneDrive path
+python3 -m src.cli config set-db-path /mnt/e/MyOneDrive/.claude-goblin/usage_history.db
+
+# Set friendly machine name
+python3 -m src.cli config set-machine-name "Home-Desktop"
+```
+
+### Supported Cloud Storage
+
+- ✅ **OneDrive** (Windows/WSL2) - Auto-detected on drives C:, D:, E:, F:
+- ✅ **iCloud Drive** (macOS) - Auto-detected at `~/Library/Mobile Documents/com~apple~CloudDocs/`
+- ⚙️ **Custom paths** - Any path via `ccg config set-db-path`
+
+### How It Works
+
+1. **Database Location Priority**:
+   - Config file setting (if set manually)
+   - Environment variable `CLAUDE_GOBLIN_DB_PATH`
+   - OneDrive auto-detection (WSL2: `/mnt/*/OneDrive`)
+   - iCloud Drive auto-detection (macOS)
+   - Local fallback (`~/.claude/usage/`)
+
+2. **Automatic Deduplication**:
+   - Each record has unique `(session_id, message_uuid)`
+   - SQLite UNIQUE constraint prevents duplicates
+   - Multiple PCs can safely write to same database
+
+3. **Future Features** (Phase 2):
+   - Per-machine statistics: `ccg stats --by-machine`
+   - Database merge tool: `ccg merge-db <conflict-file>`
+   - Hostname tracking for PC identification
+
+📖 **Complete guide**: See [docs/MULTI_PC_IMPLEMENTATION_PLAN.md](docs/MULTI_PC_IMPLEMENTATION_PLAN.md)
 
 ## --usage TUI dashboard
 

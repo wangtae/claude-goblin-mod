@@ -17,6 +17,7 @@ from src.commands import (
     help as help_cmd,
     limits,
     status_bar,
+    config_cmd,
 )
 from src.hooks.manager import setup_hooks, remove_hooks
 
@@ -246,6 +247,30 @@ def remove_hooks_command(
         ccg remove-hooks png       Remove only PNG export hook
     """
     remove_hooks(console, hook_type)
+
+
+@app.command(name="config")
+def config_command(
+    action: str = typer.Argument(..., help="Action: show, set-db-path, clear-db-path, set-machine-name, clear-machine-name"),
+    value: Optional[str] = typer.Argument(None, help="Value for set actions"),
+):
+    """
+    Manage Claude Goblin configuration.
+
+    Actions:
+        show                    Display all current settings
+        set-db-path <path>      Set custom database path (e.g., /mnt/d/OneDrive/.claude-goblin/usage_history.db)
+        clear-db-path           Clear custom path and use auto-detect
+        set-machine-name <name> Set friendly machine name (e.g., "Home-Desktop")
+        clear-machine-name      Clear custom name and use hostname
+
+    Examples:
+        ccg config show
+        ccg config set-db-path /mnt/d/OneDrive/.claude-goblin/usage_history.db
+        ccg config set-machine-name "Home-Desktop"
+        ccg config clear-db-path
+    """
+    config_cmd.run(console, action, value)
 
 
 @app.command(name="help", hidden=True)

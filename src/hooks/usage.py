@@ -6,6 +6,7 @@ from rich.console import Console
 
 from src.config.user_config import get_storage_mode, set_storage_mode
 from src.storage.snapshot_db import DEFAULT_DB_PATH
+from src.utils.security import generate_safe_filename
 #endregion
 
 
@@ -74,20 +75,21 @@ def setup(console: Console, settings: dict, settings_path: Path) -> None:
         console.print("")
         console.print("[bold cyan]Would you like to create a backup of your database?[/bold cyan]")
         console.print(f"[dim]Database: {DEFAULT_DB_PATH}[/dim]")
-        console.print("[dim]Backup will be saved as: usage_history.db.bak[/dim]")
         console.print("")
         console.print("[cyan]Create backup? (yes/no) [recommended: yes]:[/cyan] ", end="")
 
         try:
             backup_choice = input().strip().lower()
             if backup_choice in ["yes", "y"]:
-                # Create backup
-                backup_path = DEFAULT_DB_PATH.parent / "usage_history.db.bak"
+                # SECURITY: Generate unique backup filename with timestamp and PID
+                # to prevent race conditions and overwrites
+                backup_filename = generate_safe_filename("usage_history", "db", include_pid=True)
+                backup_path = DEFAULT_DB_PATH.parent / backup_filename
 
                 if DEFAULT_DB_PATH.exists():
                     shutil.copy2(DEFAULT_DB_PATH, backup_path)
                     console.print(f"[green]✓ Backup created: {backup_path}[/green]")
-                    console.print(f"[dim]To restore: ccg restore-backup[/dim]")
+                    console.print(f"[dim]To restore: ccg restore-backup {backup_path.name}[/dim]")
                 else:
                     console.print("[yellow]No database file found to backup[/yellow]")
         except (EOFError, KeyboardInterrupt):

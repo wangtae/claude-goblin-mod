@@ -19,6 +19,7 @@ from src.storage.snapshot_db import (
     DEFAULT_DB_PATH,
 )
 from src.utils._system import open_file
+from src.utils.security import validate_output_path, sanitize_error_message
 #endregion
 
 
@@ -94,6 +95,12 @@ def run(console: Console) -> None:
             default_dir = Path.home() / ".claude" / "usage"
             default_dir.mkdir(parents=True, exist_ok=True)
             output_path = default_dir / output_file
+
+    # SECURITY: Validate output path to prevent writing to system directories
+    is_valid, error_msg = validate_output_path(output_path)
+    if not is_valid:
+        console.print(f"[red]Error: Invalid output path - {error_msg}[/red]")
+        return
 
     try:
         # Check if database exists when using --fast
@@ -173,9 +180,9 @@ def run(console: Console) -> None:
     except ImportError as e:
         console.print(f"[red]{e}[/red]")
     except Exception as e:
-        console.print(f"[red]Error exporting: {e}[/red]")
-        import traceback
-        traceback.print_exc()
+        # SECURITY: Sanitize error messages to avoid exposing system information
+        error_msg = sanitize_error_message(e, "exporting")
+        console.print(f"[red]{error_msg}[/red]")
 
 
 #endregion

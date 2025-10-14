@@ -57,6 +57,8 @@ def get_default_config() -> dict:
         "storage_mode": "aggregate",  # "aggregate" or "full"
         "plan_type": "max_20x",  # "pro", "max_5x", or "max_20x"
         "tracking_mode": "both",  # "both", "tokens", or "limits"
+        "db_path": None,  # Custom database path (None = auto-detect)
+        "machine_name": None,  # Custom machine name (None = use hostname)
         "version": "1.0"
     }
 
@@ -145,6 +147,84 @@ def set_tracking_mode(mode: str) -> None:
 
     config = load_config()
     config["tracking_mode"] = mode
+    save_config(config)
+
+
+def get_db_path() -> Optional[str]:
+    """
+    Get the custom database path from config.
+
+    Returns:
+        Custom database path or None if not set (use auto-detect)
+    """
+    config = load_config()
+    return config.get("db_path")
+
+
+def set_db_path(path: str) -> None:
+    """
+    Set a custom database path.
+
+    Args:
+        path: Full path to database file (e.g., /mnt/d/OneDrive/.claude-goblin/usage_history.db)
+
+    Raises:
+        ValueError: If path is invalid
+    """
+    from pathlib import Path
+
+    # Validate path
+    db_path = Path(path)
+
+    # Ensure parent directory exists or can be created
+    try:
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError) as e:
+        raise ValueError(f"Cannot create directory {db_path.parent}: {e}")
+
+    config = load_config()
+    config["db_path"] = str(db_path)
+    save_config(config)
+
+
+def clear_db_path() -> None:
+    """
+    Clear custom database path (revert to auto-detect).
+    """
+    config = load_config()
+    config["db_path"] = None
+    save_config(config)
+
+
+def get_machine_name() -> Optional[str]:
+    """
+    Get the custom machine name from config.
+
+    Returns:
+        Custom machine name or None if not set (use hostname)
+    """
+    config = load_config()
+    return config.get("machine_name")
+
+
+def set_machine_name(name: str) -> None:
+    """
+    Set a custom machine name for this PC.
+
+    Args:
+        name: Friendly machine name (e.g., "Home-Desktop", "Work-Laptop")
+    """
+    config = load_config()
+    config["machine_name"] = name
+    save_config(config)
+
+
+def clear_machine_name() -> None:
+    """
+    Clear custom machine name (revert to hostname).
+    """
+    config = load_config()
+    config["machine_name"] = None
     save_config(config)
 
 
