@@ -118,6 +118,9 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     if view_mode == "usage":
         from src.models.pricing import format_cost
 
+        # Add blank line at top
+        console.print()
+
         # Show footer at top for usage mode
         footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
         console.print(footer)
