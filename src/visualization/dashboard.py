@@ -130,10 +130,26 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
         # Show Usage Limits if available
         if limits and "error" not in limits:
-            # Remove timezone info from reset dates
-            session_reset = limits['session_reset'].split(' (')[0] if '(' in limits['session_reset'] else limits['session_reset']
-            week_reset = limits['week_reset'].split(' (')[0] if '(' in limits['week_reset'] else limits['week_reset']
-            opus_reset = limits['opus_reset'].split(' (')[0] if '(' in limits['opus_reset'] else limits['opus_reset']
+            # Format reset dates from "Oct 17, 10am" to "10/17"
+            def format_reset_date(reset_str: str) -> str:
+                """Convert 'Oct 17, 10am (Asia/Seoul)' to '10/17'"""
+                import re
+                # Remove timezone part
+                reset_no_tz = reset_str.split(' (')[0] if '(' in reset_str else reset_str
+                # Extract month and day from "Oct 17, 10am" format
+                match = re.search(r'([A-Za-z]+)\s+(\d+)', reset_no_tz)
+                if match:
+                    month_name = match.group(1)
+                    day = match.group(2)
+                    # Convert month name to number
+                    from datetime import datetime
+                    month_num = datetime.strptime(month_name, '%b').month
+                    return f"{month_num}/{day}"
+                return reset_no_tz
+
+            session_reset = format_reset_date(limits['session_reset'])
+            week_reset = format_reset_date(limits['week_reset'])
+            opus_reset = format_reset_date(limits['opus_reset'])
 
             # Calculate costs for each limit period
             session_cost = _calculate_session_cost(records)  # Last 5 hours, all models
@@ -146,42 +162,35 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
             # Session limit (3 rows)
             limits_table.add_row("Current session")
-            session_bar = _create_bar(limits["session_pct"], 100, width=50, color="red")
+            session_bar = _create_bar(limits["session_pct"], 100, width=20, color="red")
             bar_text = Text()
             bar_text.append(session_bar)
-            bar_text.append(f"  {limits['session_pct']}% used", style="bold white")
+            bar_text.append(f"  {limits['session_pct']}%", style="bold white")
             limits_table.add_row(bar_text)
             limits_table.add_row(f"Resets {session_reset} ({format_cost(session_cost)})", style=DIM)
             limits_table.add_row("")  # Blank line
 
             # Week limit (3 rows)
             limits_table.add_row("Current week (all models)")
-            week_bar = _create_bar(limits["week_pct"], 100, width=50, color="red")
+            week_bar = _create_bar(limits["week_pct"], 100, width=20, color="red")
             bar_text = Text()
             bar_text.append(week_bar)
-            bar_text.append(f"  {limits['week_pct']}% used", style="bold white")
+            bar_text.append(f"  {limits['week_pct']}%", style="bold white")
             limits_table.add_row(bar_text)
             limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
             limits_table.add_row("")  # Blank line
 
             # Opus limit (3 rows)
             limits_table.add_row("Current week (Opus)")
-            opus_bar = _create_bar(limits["opus_pct"], 100, width=50, color="red")
+            opus_bar = _create_bar(limits["opus_pct"], 100, width=20, color="red")
             bar_text = Text()
             bar_text.append(opus_bar)
-            bar_text.append(f"  {limits['opus_pct']}% used", style="bold white")
+            bar_text.append(f"  {limits['opus_pct']}%", style="bold white")
             limits_table.add_row(bar_text)
             limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
-            # Wrap in outer "Usage Limits" panel (expand to fit terminal width)
-            limits_outer_panel = Panel(
-                limits_table,
-                title="[bold]Usage Limits",
-                border_style="white",
-                expand=True,
-            )
-
-            console.print(limits_outer_panel, end="")
+            # Display table without panel wrapper
+            console.print(limits_table)
             console.print()
 
         # Show footer
