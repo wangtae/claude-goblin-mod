@@ -116,15 +116,17 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
     # For usage mode, show only Usage Limits
     if view_mode == "usage":
-        from src.commands.limits import capture_limits
         from src.models.pricing import format_cost
 
-        # Fetch limits
-        if console:
-            with console.status(f"[bold {ORANGE}]Loading usage limits...", spinner="dots", spinner_style=ORANGE):
+        # Use limits from DB if available, otherwise fetch live
+        limits = limits_from_db
+        if limits is None and not skip_limits:
+            from src.commands.limits import capture_limits
+            if console:
+                with console.status(f"[bold {ORANGE}]Loading usage limits...", spinner="dots", spinner_style=ORANGE):
+                    limits = capture_limits()
+            else:
                 limits = capture_limits()
-        else:
-            limits = capture_limits()
 
         # Show Usage Limits if available
         if limits and "error" not in limits:
