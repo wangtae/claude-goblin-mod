@@ -25,6 +25,7 @@ classifiers = [
 dependencies = [
     "rich>=13.7.0",
     "typer>=0.9.0",
+    "watchdog>=3.0.0",
     "rumps>=0.4.0; sys_platform == 'darwin'",
 ]
 

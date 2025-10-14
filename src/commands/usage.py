@@ -26,16 +26,17 @@ from src.visualization.dashboard import render_dashboard
 #region Functions
 
 
-def run(console: Console, live: bool = False, fast: bool = False, anon: bool = False) -> None:
+def run(console: Console, live: bool = False, watch: bool = False, fast: bool = False, anon: bool = False) -> None:
     """
     Handle the usage command.
 
     Loads Claude Code usage data and displays a dashboard with GitHub-style
-    activity graph and statistics. Supports live refresh mode.
+    activity graph and statistics. Supports live refresh and file watching modes.
 
     Args:
         console: Rich console for output
-        live: Enable auto-refresh mode (default: False)
+        live: Enable auto-refresh mode with 5-second polling (default: False)
+        watch: Enable file watching mode - updates only when files change (default: False)
         fast: Skip limits fetching for faster rendering (default: False)
         anon: Anonymize project names to project-001, project-002, etc (default: False)
 
@@ -44,6 +45,7 @@ def run(console: Console, live: bool = False, fast: bool = False, anon: bool = F
     """
     # Check sys.argv for backward compatibility (hooks still use old style)
     run_live = live or "--live" in sys.argv
+    run_watch = watch or "--watch" in sys.argv
     skip_limits = fast or "--fast" in sys.argv
     anonymize = anon or "--anon" in sys.argv
 
@@ -60,8 +62,10 @@ def run(console: Console, live: bool = False, fast: bool = False, anon: bool = F
 
         console.print(f"[dim]Found {len(jsonl_files)} session files[/dim]", end="")
 
-        # Run with or without live refresh
-        if run_live:
+        # Run with watch mode, live mode, or single display
+        if run_watch:
+            _run_watch_dashboard(jsonl_files, console, skip_limits, anonymize)
+        elif run_live:
             _run_live_dashboard(jsonl_files, console, skip_limits, anonymize)
         else:
             _display_dashboard(jsonl_files, console, skip_limits, anonymize)
@@ -79,9 +83,55 @@ def run(console: Console, live: bool = False, fast: bool = False, anon: bool = F
         sys.exit(1)
 
 
+def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False) -> None:
+    """
+    Run dashboard with file watching - updates only when JSONL files change.
+
+    More efficient than polling mode as it only updates when files actually change.
+    Uses the watchdog library to monitor file system events.
+
+    Args:
+        jsonl_files: List of JSONL files to parse
+        console: Rich console for output
+        skip_limits: Skip limits fetching for faster rendering
+        anonymize: Anonymize project names
+    """
+    from src.utils.file_watcher import watch_claude_files
+
+    console.print(
+        "[dim]Watching for file changes... "
+        "Dashboard will update when Claude Code creates or modifies log files. "
+        "Press Ctrl+C to exit.[/dim]\n"
+    )
+
+    # Display initial dashboard
+    _display_dashboard(jsonl_files, console, skip_limits, anonymize)
+
+    # Create callback that refreshes dashboard
+    def on_file_change():
+        # Re-fetch file list (in case new files were created)
+        updated_files = get_claude_jsonl_files()
+        _display_dashboard(updated_files, console, skip_limits, anonymize)
+
+    # Start file watcher
+    watcher = watch_claude_files(on_file_change, debounce_seconds=2.0)
+    watcher.start()
+
+    try:
+        # Keep the main thread alive
+        while watcher.is_alive():
+            time.sleep(1)
+    except KeyboardInterrupt:
+        watcher.stop()
+        raise
+
+
 def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False) -> None:
     """
-    Run dashboard with auto-refresh.
+    Run dashboard with auto-refresh (polling mode).
+
+    Updates every 5 seconds regardless of whether files changed.
+    Use --watch mode for more efficient file-change-based updates.
 
     Args:
         jsonl_files: List of JSONL files to parse
@@ -92,6 +142,7 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
     console.print(
         f"[dim]Auto-refreshing every {DEFAULT_REFRESH_INTERVAL} seconds. "
         "Press Ctrl+C to exit.[/dim]\n"
+        "[dim]Tip: Use --watch for more efficient file-change-based updates.[/dim]\n"
     )
 
     while True:

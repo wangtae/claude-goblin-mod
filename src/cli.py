@@ -36,7 +36,8 @@ console = Console()
 
 @app.command(name="usage")
 def usage_command(
-    live: bool = typer.Option(False, "--live", help="Auto-refresh dashboard every 5 seconds"),
+    live: bool = typer.Option(False, "--live", help="Auto-refresh dashboard every 5 seconds (polling)"),
+    watch: bool = typer.Option(False, "--watch", help="Auto-refresh only when files change (efficient)"),
     fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
     anon: bool = typer.Option(False, "--anon", help="Anonymize project names to project-001, project-002, etc"),
 ):
@@ -49,11 +50,12 @@ def usage_command(
     - Token breakdown by model
     - Token breakdown by project
 
-    Use --live for auto-refreshing dashboard.
+    Use --watch for file-change-based auto-refresh (most efficient).
+    Use --live for time-based auto-refresh every 5 seconds.
     Use --fast to skip all updates and read from database only (requires existing database).
     Use --anon to anonymize project names (ranked by usage, project-001 is highest).
     """
-    usage.run(console, live=live, fast=fast, anon=anon)
+    usage.run(console, live=live, watch=watch, fast=fast, anon=anon)
 
 
 @app.command(name="stats")
