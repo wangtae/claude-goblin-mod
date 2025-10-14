@@ -72,7 +72,7 @@ def _create_bar(value: int, max_value: int, width: int = BAR_WIDTH, color: str =
     return bar
 
 
-def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None, fast_mode: bool = False) -> None:
+def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None, fast_mode: bool = False, view_mode: str = "monthly") -> None:
     """
     Render a concise, modern dashboard with KPI cards and breakdowns.
 
@@ -85,7 +85,23 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         date_range: Optional date range string to display in footer
         limits_from_db: Pre-fetched limits from database (avoids live fetch)
         fast_mode: If True, show warning that data is from last update
+        view_mode: Display mode - "monthly", "weekly", or "yearly" (default: "monthly")
     """
+    # Optionally clear screen
+    if clear_screen:
+        console.clear()
+
+    # For yearly mode, show heatmap instead of dashboard
+    if view_mode == "yearly":
+        from src.commands.heatmap import _display_heatmap, _load_limits_data
+        limits_data = _load_limits_data()
+        _display_heatmap(console, stats, limits_data, year=None)
+        # Show footer with keyboard shortcuts
+        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
+        console.print()
+        console.print(footer)
+        return
+
     # Create KPI cards with limits (shows spinner if loading limits)
     kpi_section = _create_kpi_section(stats.overall_totals, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db)
 
@@ -93,12 +109,10 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     model_breakdown = _create_model_breakdown(records)
     project_breakdown = _create_project_breakdown(records)
 
-    # Create footer with export info and date range
-    footer = _create_footer(date_range, fast_mode=fast_mode)
+    # Create footer with export info, date range, and view mode
+    footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
 
-    # Optionally clear screen and render all components
-    if clear_screen:
-        console.clear()
+    # Render all components
     console.print(kpi_section, end="")
     console.print()  # Blank line between sections
     console.print(model_breakdown, end="")
@@ -466,16 +480,18 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     )
 
 
-def _create_footer(date_range: str = None, fast_mode: bool = False) -> Text:
+def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: str = "monthly", in_live_mode: bool = False) -> Text:
     """
-    Create footer with export command info and date range.
+    Create footer with export command info, date range, and view mode.
 
     Args:
         date_range: Optional date range string to display
         fast_mode: If True, show warning about fast mode
+        view_mode: Current view mode - "monthly", "weekly", or "yearly"
+        in_live_mode: If True, show keyboard shortcuts for mode switching
 
     Returns:
-        Text with export instructions and date range
+        Text with export instructions, date range, and view mode info
     """
     footer = Text()
 
@@ -497,15 +513,48 @@ def _create_footer(date_range: str = None, fast_mode: bool = False) -> Text:
         else:
             footer.append("⚠ Fast mode: Reading from database (no timestamp available)\n\n", style="bold red")
 
+    # Add current view mode if in live mode
+    if in_live_mode:
+        footer.append("View: ", style=DIM)
+
+        # Show current mode highlighted
+        if view_mode == "monthly":
+            footer.append("[m] Monthly", style=f"bold {ORANGE}")
+        else:
+            footer.append("[m] Monthly", style=DIM)
+        footer.append(" | ", style=DIM)
+
+        if view_mode == "weekly":
+            footer.append("[w] Weekly", style=f"bold {ORANGE}")
+        else:
+            footer.append("[w] Weekly", style=DIM)
+        footer.append(" | ", style=DIM)
+
+        if view_mode == "yearly":
+            footer.append("[y] Yearly", style=f"bold {ORANGE}")
+        else:
+            footer.append("[y] Yearly", style=DIM)
+        footer.append(" | ", style=DIM)
+
+        footer.append("[q] Quit\n", style=DIM)
+
     # Add date range if provided
     if date_range:
-        footer.append("Data range: ", style=DIM)
-        footer.append(f"{date_range}\n", style=f"bold {CYAN}")
+        view_label = {
+            "monthly": "Monthly",
+            "weekly": "Weekly (7-day period)",
+            "yearly": "Yearly"
+        }.get(view_mode, "Monthly")
 
-    # Add export tip
-    footer.append("Tip: ", style=DIM)
-    footer.append("View yearly heatmap with ", style=DIM)
-    footer.append("ccg export --open", style=f"bold {CYAN}")
+        footer.append("Data range: ", style=DIM)
+        footer.append(f"{date_range}", style=f"bold {CYAN}")
+        footer.append(f" ({view_label})\n", style=DIM)
+
+    # Add export tip (only for non-yearly modes)
+    if view_mode != "yearly":
+        footer.append("Tip: ", style=DIM)
+        footer.append("Export heatmap with ", style=DIM)
+        footer.append("ccg export --open", style=f"bold {CYAN}")
 
     return footer
 
