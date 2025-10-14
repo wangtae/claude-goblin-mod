@@ -118,6 +118,11 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     if view_mode == "usage":
         from src.models.pricing import format_cost
 
+        # Show footer at top for usage mode
+        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
+        console.print(footer)
+        console.print()  # Blank line after footer
+
         # Use limits from DB if available, otherwise fetch live
         limits = limits_from_db
         if limits is None and not skip_limits:
@@ -191,11 +196,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
             # Display table without panel wrapper
             console.print(limits_table)
-            console.print()
 
-        # Show footer
-        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
-        console.print(footer)
         return
 
     # Create KPI cards with limits (shows spinner if loading limits)
