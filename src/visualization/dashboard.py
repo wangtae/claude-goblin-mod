@@ -183,21 +183,21 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
     # Row 1 - Main metrics
     cost_card = Panel(
         Text(format_cost(total_cost), style="bold green"),
-        title="비용",
+        title="Cost",
         border_style="white",
         width=24,
     )
 
     prompts_card = Panel(
         Text(_format_number(overall.total_prompts), style="bold white"),
-        title="메시지 수",
+        title="Messages",
         border_style="white",
         width=24,
     )
 
     sessions_card = Panel(
         Text(_format_number(overall.total_sessions), style="bold white"),
-        title="세션 수",
+        title="Sessions",
         border_style="white",
         width=24,
     )
@@ -207,28 +207,28 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
     # Row 2 - Token breakdown
     input_card = Panel(
         Text(_format_number(total_input_tokens), style="bold cyan"),
-        title="입력 토큰",
+        title="Input Tokens",
         border_style="white",
         width=24,
     )
 
     output_card = Panel(
         Text(_format_number(total_output_tokens), style="bold cyan"),
-        title="출력 토큰",
+        title="Output Tokens",
         border_style="white",
         width=24,
     )
 
     cache_write_card = Panel(
         Text(_format_number(total_cache_creation), style="bold magenta"),
-        title="캐시 생성",
+        title="Cache Write",
         border_style="white",
         width=24,
     )
 
     cache_read_card = Panel(
         Text(_format_number(total_cache_read), style="bold magenta"),
-        title="캐시 읽기",
+        title="Cache Read",
         border_style="white",
         width=24,
     )
@@ -632,22 +632,22 @@ def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
     if not hourly_data:
         return Panel(
             Text("No hourly data available", style=DIM),
-            title="[bold]시간별 사용량",
+            title="[bold]Hourly Usage",
             border_style="white",
         )
 
-    # Sort by hour
-    sorted_hours = sorted(hourly_data.items())
+    # Sort by hour in descending order (most recent first)
+    sorted_hours = sorted(hourly_data.items(), reverse=True)
 
-    # Create table with Korean column names matching the screenshot
+    # Create table with English column names
     table = Table(show_header=True, box=None, padding=(0, 2))
-    table.add_column("시간", style="purple", justify="left", width=8)
-    table.add_column("비용", style="green", justify="right", width=10)
-    table.add_column("입력 토큰", style=CYAN, justify="right", width=12)
-    table.add_column("출력 토큰", style=CYAN, justify="right", width=12)
-    table.add_column("캐시 생성", style="magenta", justify="right", width=14)
-    table.add_column("캐시 읽기", style="magenta", justify="right", width=14)
-    table.add_column("메시지 수", style="white", justify="right", width=10)
+    table.add_column("Time", style="purple", justify="left", width=8)
+    table.add_column("Cost", style="green", justify="right", width=10)
+    table.add_column("Input", style=CYAN, justify="right", width=12)
+    table.add_column("Output", style=CYAN, justify="right", width=12)
+    table.add_column("Cache Write", style="magenta", justify="right", width=14)
+    table.add_column("Cache Read", style="magenta", justify="right", width=14)
+    table.add_column("Messages", style="white", justify="right", width=10)
 
     for hour, data in sorted_hours:
         table.add_row(
@@ -662,7 +662,7 @@ def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
 
     return Panel(
         table,
-        title="[bold]시간별 사용량",
+        title="[bold]Hourly Usage",
         border_style="white",
     )
 

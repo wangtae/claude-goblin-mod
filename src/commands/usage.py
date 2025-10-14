@@ -222,8 +222,8 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
     Uses the watchdog library to monitor file system events.
 
     Keyboard shortcuts:
-        m - Switch to monthly mode (default)
-        w - Switch to weekly mode (current week limit period)
+        w - Switch to weekly mode (default, current week limit period)
+        m - Switch to monthly mode
         y - Switch to yearly mode (heatmap view)
         q - Quit
 
@@ -238,11 +238,11 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
     console.print(
         "[dim]Watching for file changes... "
         "Dashboard will update when Claude Code creates or modifies log files.[/dim]\n"
-        "[dim]Keyboard shortcuts: [m] Monthly | [w] Weekly | [y] Yearly | [q] Quit[/dim]\n"
+        "[dim]Keyboard shortcuts: [w] Weekly | [m] Monthly | [y] Yearly | [q] Quit[/dim]\n"
     )
 
     # Track current view mode
-    view_mode_ref = {'mode': VIEW_MODE_MONTHLY, 'changed': False}
+    view_mode_ref = {'mode': VIEW_MODE_WEEKLY, 'changed': False}
     stop_event = threading.Event()
 
     # Display initial dashboard
@@ -295,8 +295,8 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
     Use --watch mode for more efficient file-change-based updates.
 
     Keyboard shortcuts:
-        m - Switch to monthly mode (default)
-        w - Switch to weekly mode (current week limit period)
+        w - Switch to weekly mode (default, current week limit period)
+        m - Switch to monthly mode
         y - Switch to yearly mode (heatmap view)
         q - Quit
 
@@ -308,12 +308,12 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
     """
     console.print(
         f"[dim]Auto-refreshing every {DEFAULT_REFRESH_INTERVAL} seconds.[/dim]\n"
-        "[dim]Keyboard shortcuts: [m] Monthly | [w] Weekly | [y] Yearly | [q] Quit[/dim]\n"
+        "[dim]Keyboard shortcuts: [w] Weekly | [m] Monthly | [y] Yearly | [q] Quit[/dim]\n"
         "[dim]Tip: Use --watch for more efficient file-change-based updates.[/dim]\n"
     )
 
     # Track current view mode
-    view_mode_ref = {'mode': VIEW_MODE_MONTHLY, 'changed': False}
+    view_mode_ref = {'mode': VIEW_MODE_WEEKLY, 'changed': False}
     stop_event = threading.Event()
 
     # Start keyboard listener thread (NOT daemon so we can clean up properly)
@@ -342,7 +342,7 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
         keyboard_thread.join(timeout=1.0)
 
 
-def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False, view_mode: str = VIEW_MODE_MONTHLY) -> None:
+def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False, view_mode: str = VIEW_MODE_WEEKLY) -> None:
     """
     Ingest JSONL data and display dashboard.
 
@@ -355,7 +355,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         console: Rich console for output
         skip_limits: Skip ALL updates, read directly from DB (fast mode)
         anonymize: Anonymize project names to project-001, project-002, etc
-        view_mode: Display mode - monthly (default), weekly, or yearly
+        view_mode: Display mode - weekly (default), monthly, or yearly
     """
     from src.storage.snapshot_db import get_latest_limits, DEFAULT_DB_PATH, get_database_stats
 
