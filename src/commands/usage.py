@@ -113,8 +113,9 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
         updated_files = get_claude_jsonl_files()
         _display_dashboard(updated_files, console, skip_limits, anonymize)
 
-    # Start file watcher
-    watcher = watch_claude_files(on_file_change, debounce_seconds=2.0)
+    # Start file watcher with 10-second debounce to prevent rapid-fire updates
+    # when Claude Code generates multiple responses in succession
+    watcher = watch_claude_files(on_file_change, debounce_seconds=10.0)
     watcher.start()
 
     try:
