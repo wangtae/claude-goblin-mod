@@ -704,17 +704,17 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
     if in_live_mode:
         footer.append("View: ", style=DIM)
 
-        # Show current mode highlighted
-        if view_mode == "monthly":
-            footer.append("[m] Monthly", style=f"bold {ORANGE}")
-        else:
-            footer.append("[m] Monthly", style=DIM)
-        footer.append(" | ", style=DIM)
-
+        # Show current mode highlighted - Weekly first
         if view_mode == "weekly":
             footer.append("[w] Weekly", style=f"bold {ORANGE}")
         else:
             footer.append("[w] Weekly", style=DIM)
+        footer.append(" | ", style=DIM)
+
+        if view_mode == "monthly":
+            footer.append("[m] Monthly", style=f"bold {ORANGE}")
+        else:
+            footer.append("[m] Monthly", style=DIM)
         footer.append(" | ", style=DIM)
 
         if view_mode == "yearly":
