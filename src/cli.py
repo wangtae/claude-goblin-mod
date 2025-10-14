@@ -12,6 +12,7 @@ from src.commands import (
     update_usage,
     stats,
     export,
+    heatmap,
     delete_usage,
     restore_backup,
     help as help_cmd,
@@ -92,6 +93,25 @@ def limits_command():
     limits.run(console)
 
 
+@app.command(name="heatmap")
+def heatmap_command(
+    year: Optional[int] = typer.Option(None, "--year", "-y", help="Year to display (default: current year)"),
+    fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
+):
+    """
+    Show GitHub-style activity heatmap in the terminal.
+
+    Displays your Claude Code activity for the year in a color-coded calendar grid,
+    using the same visual design as PNG export but rendered directly in the terminal.
+
+    Examples:
+        ccg heatmap              Show current year heatmap
+        ccg heatmap -y 2024      Show 2024 heatmap
+        ccg heatmap --fast       Skip data collection, use cached data
+    """
+    heatmap.run(console, year=year, fast=fast)
+
+
 @app.command(name="export")
 def export_command(
     svg: bool = typer.Option(False, "--svg", help="Export as SVG instead of PNG"),
@@ -101,10 +121,10 @@ def export_command(
     output: Optional[str] = typer.Option(None, "--output", "-o", help="Output file path"),
 ):
     """
-    Export yearly heatmap as PNG or SVG.
+    Export yearly heatmap as PNG or SVG file.
 
-    Generates a GitHub-style activity heatmap showing your Claude Code usage
-    throughout the year. By default exports as PNG for the current year.
+    Generates a high-resolution GitHub-style activity heatmap showing your
+    Claude Code usage throughout the year. By default exports as PNG for the current year.
 
     Use --fast to skip all updates and read from database only (requires existing database).
 
@@ -114,6 +134,8 @@ def export_command(
         ccg export --fast                  Export from database without updating
         ccg export -y 2024                 Export specific year
         ccg export -o ~/usage.png          Specify output path
+
+    Tip: Use 'ccg heatmap' to view in terminal without creating a file.
     """
     # Pass parameters via sys.argv for backward compatibility with export command
     import sys
