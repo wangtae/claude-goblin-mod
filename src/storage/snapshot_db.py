@@ -222,6 +222,37 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
             )
         """)
 
+        # Table for user preferences
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Insert default preferences
+        default_prefs = [
+            ('usage_display_mode', '0'),           # M1=0, M2=1, M3=2, M4=3
+            ('color_mode', 'gradient'),            # solid | gradient
+            ('color_solid', '#00A7E1'),            # bright_blue
+            ('color_gradient_low', '#00C853'),     # green
+            ('color_gradient_mid', '#FFD600'),     # yellow
+            ('color_gradient_high', '#FF1744'),    # red
+            ('color_unfilled', '#424242'),         # grey
+            ('storage_mode', 'aggregate'),         # aggregate | detail
+            ('tracking_mode', 'both'),             # both | usage | limits
+            ('machine_name', ''),                  # custom name or empty
+            ('db_path', ''),                       # custom path or empty
+            ('anonymize_projects', '0'),           # 0=off, 1=on
+        ]
+
+        for key, value in default_prefs:
+            cursor.execute("""
+                INSERT OR IGNORE INTO user_preferences (key, value)
+                VALUES (?, ?)
+            """, (key, value))
+
         # Populate pricing data for known models
         pricing_data = [
             # Current models
@@ -971,6 +1002,124 @@ def get_device_statistics(db_path: Path = DEFAULT_DB_PATH) -> list[dict]:
             })
 
         return results
+    finally:
+        conn.close()
+
+
+def save_user_preference(key: str, value: str, db_path: Path = DEFAULT_DB_PATH) -> None:
+    """
+    Save a single user preference to database.
+
+    Args:
+        key: Preference key (e.g., 'color_mode', 'usage_display_mode')
+        value: Preference value (stored as string)
+        db_path: Path to the SQLite database file
+
+    Raises:
+        sqlite3.Error: If database operation fails
+    """
+    init_database(db_path)
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+        timestamp = datetime.now().isoformat()
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO user_preferences (key, value, updated_at)
+            VALUES (?, ?, ?)
+        """, (key, value, timestamp))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def load_user_preferences(db_path: Path = DEFAULT_DB_PATH) -> dict:
+    """
+    Load all user preferences from database with defaults.
+
+    Returns:
+        Dictionary mapping preference keys to their values.
+        Provides default values for any missing keys.
+
+    Raises:
+        sqlite3.Error: If database query fails
+    """
+    # Default preferences (fallback if DB doesn't exist or is empty)
+    defaults = {
+        'usage_display_mode': '0',           # M1=0, M2=1, M3=2, M4=3
+        'color_mode': 'gradient',            # solid | gradient
+        'color_solid': '#00A7E1',            # bright_blue
+        'color_gradient_low': '#00C853',     # green
+        'color_gradient_mid': '#FFD600',     # yellow
+        'color_gradient_high': '#FF1744',    # red
+        'color_unfilled': '#424242',         # grey
+        'storage_mode': 'aggregate',         # aggregate | detail
+        'tracking_mode': 'both',             # both | usage | limits
+        'machine_name': '',                  # custom name or empty
+        'db_path': '',                       # custom path or empty
+        'anonymize_projects': '0',           # 0=off, 1=on
+    }
+
+    if not db_path.exists():
+        return defaults
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+
+        # Ensure user_preferences table exists (migration for existing DBs)
+        try:
+            cursor.execute("SELECT key, value FROM user_preferences")
+            rows = cursor.fetchall()
+        except sqlite3.OperationalError:
+            # Table doesn't exist, initialize database to create it
+            conn.close()
+            init_database(db_path)
+            conn = sqlite3.connect(db_path, timeout=30.0)
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM user_preferences")
+            rows = cursor.fetchall()
+
+        # Merge DB values with defaults
+        prefs = defaults.copy()
+        for key, value in rows:
+            prefs[key] = value
+
+        return prefs
+    finally:
+        conn.close()
+
+
+def save_all_preferences(prefs: dict, db_path: Path = DEFAULT_DB_PATH) -> None:
+    """
+    Save multiple preferences at once (batch update).
+
+    Args:
+        prefs: Dictionary mapping preference keys to values
+        db_path: Path to the SQLite database file
+
+    Raises:
+        sqlite3.Error: If database operation fails
+    """
+    init_database(db_path)
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+        timestamp = datetime.now().isoformat()
+
+        for key, value in prefs.items():
+            cursor.execute("""
+                INSERT OR REPLACE INTO user_preferences (key, value, updated_at)
+                VALUES (?, ?, ?)
+            """, (key, value, timestamp))
+
+        conn.commit()
     finally:
         conn.close()
 

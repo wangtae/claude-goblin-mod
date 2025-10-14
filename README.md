@@ -149,10 +149,11 @@ For most users, just run `usage` regularly and it will handle data tracking auto
 | Command | Description |
 |---------|-------------|
 | **Dashboard & Analytics** | |
-| `ccu usage` | Show usage dashboard with KPI cards and breakdowns |
-| `ccu usage --live` | Auto-refresh dashboard every 5 seconds |
-| `ccu usage --fast` | Skip live limits for faster rendering |
+| `ccu usage` | Show interactive usage dashboard with keyboard shortcuts |
+| `ccu usage --refresh=N` | Auto-refresh every N seconds (default: file watching) |
 | `ccu usage --anon` | Anonymize project names (project-001, project-002, etc.) |
+| `ccu usage --watch-interval=N` | File watch check interval in seconds (default: 60) |
+| `ccu usage --limits-interval=N` | Usage limits update interval in seconds (default: 60) |
 | `ccu limits` | Show current usage limits (session, week, Opus) |
 | `ccu stats` | Show detailed statistics and cost analysis |
 | `ccu stats --fast` | Skip live limits for faster rendering |
@@ -167,6 +168,8 @@ For most users, just run `usage` regularly and it will handle data tracking auto
 | `ccu update-usage` | Update historical database with latest data |
 | `ccu delete-usage --force` | Delete historical database (requires --force) |
 | `ccu restore-backup` | Restore from backup |
+| `ccu reset-db --force` | Reset database (delete and start fresh) |
+| `ccu init-db --force` | Initialize/reset database (alias for reset-db) |
 | **Configuration (Fork Feature)** | |
 | `ccu config show` | Display all configuration settings |
 | `ccu config set-db-path <path>` | Set custom database path (e.g., OneDrive) |
@@ -179,6 +182,28 @@ For most users, just run `usage` regularly and it will handle data tracking auto
 | `ccu setup-hooks audio-tts` | Speak notifications using TTS (macOS, multi-hook) |
 | `ccu setup-hooks png` | Auto-generate PNG after each response |
 | `ccu remove-hooks [type]` | Remove hooks (usage\|audio\|audio-tts\|png, or all) |
+
+### Interactive Dashboard Modes
+
+The `ccu usage` command provides an interactive dashboard with multiple view modes:
+
+**Keyboard Shortcuts:**
+- `u` - Usage mode (current week usage limits with reset dates and costs)
+- `w` - Weekly mode (current week statistics, daily breakdown, hourly breakdown)
+- `m` - Monthly mode (current month statistics, project breakdown, daily breakdown)
+- `y` - Yearly mode (current year statistics, project breakdown, monthly breakdown)
+- `h` - Heatmap mode (GitHub-style activity heatmap)
+- `d` - Devices mode (per-machine statistics)
+- `<` / `>` - Navigate previous/next period (monthly/yearly modes only)
+- `r` - Manual refresh (update data immediately)
+- `q` - Quit
+
+**Features:**
+- **Real-time file watching** - Dashboard updates automatically when Claude Code creates new logs (default)
+- **Periodic refresh mode** - Use `--refresh=N` to update every N seconds instead
+- **Weekly date filtering** - Automatically filters data to current week limit period (from Claude's `/usage` output)
+- **Background limits updater** - Updates usage limits every 60 seconds in a background thread
+- **Device tracking** - Shows usage breakdown by machine name (hostname or custom name)
 
 ## Data Source
 
@@ -322,7 +347,50 @@ python3 -m src.cli config set-machine-name "Home-Desktop"
 
 📖 **Complete guide**: See [docs/MULTI_PC_IMPLEMENTATION_PLAN.md](docs/MULTI_PC_IMPLEMENTATION_PLAN.md)
 
-## --usage TUI dashboard
+## Interactive Dashboard (`ccu usage`)
+
+The dashboard provides multiple interactive views accessible via keyboard shortcuts:
+
+### Usage Mode (Default: `u`)
+Shows current week usage limits with bars, percentages, reset dates, and estimated costs:
+- Current session limit (5-hour window)
+- Current week limit (all models)
+- Current week Opus limit
+
+### Weekly Mode (`w`)
+Displays current week statistics with:
+- KPI cards (Cost, Messages, Input/Output Tokens, Cache metrics)
+- Usage limits (Session, Weekly, Opus) with costs
+- Tokens by Model breakdown
+- Daily usage graph (last 7 days with percentages)
+- Hourly usage breakdown
+
+### Monthly Mode (`m`)
+Shows current month statistics with:
+- KPI cards
+- Tokens by Model
+- Tokens by Project (top 10)
+- Daily usage table (all dates with zero-fill)
+
+### Yearly Mode (`y`)
+Displays current year statistics with:
+- KPI cards
+- Tokens by Model
+- Tokens by Project (top 10)
+- Monthly usage table
+
+### Heatmap Mode (`h`)
+GitHub-style activity visualization showing:
+- Weekly columns with day-of-week labels
+- Color intensity based on token usage
+- Daily token counts on hover
+
+### Devices Mode (`d`)
+Per-machine statistics showing:
+- Machine name (hostname or custom name)
+- Total messages and tokens
+- Estimated cost
+- Date range of activity
 
 Example TUI:
 
@@ -463,7 +531,22 @@ ccu update-usage
 
 # Delete all history
 ccu delete-usage -f
+
+# Reset database (clean slate with new device tracking)
+ccu reset-db --force
+
+# Same as reset-db (alias)
+ccu init-db --force
+
+# Reset but keep backup files
+ccu reset-db --force --keep-backups
 ```
+
+**When to use `reset-db` / `init-db`:**
+- Starting fresh with clean device tracking
+- Switching between storage modes (detailed vs aggregate)
+- Database schema has changed after update
+- Corrupted database that needs rebuilding
 
 ## What It Tracks
 
@@ -472,13 +555,48 @@ ccu delete-usage -f
 - **Sessions**: Unique conversation threads
 - **Models**: Which Claude models you've used (Sonnet, Opus, Haiku)
 - **Projects**: Folders/directories where you've used Claude
-- **Time**: Daily activity patterns throughout the year
-- **Usage Limits**: Real-time session, weekly, and Opus limits
+- **Time**: Daily, hourly, monthly activity patterns throughout the year
+- **Usage Limits**: Real-time session, weekly, and Opus limits with automatic background updates
+- **Devices**: Per-machine statistics (machine name, tokens, cost, date range)
+- **Costs**: Estimated API costs for each limit period (session, weekly, Opus)
 
 It will also compute how much you would have had to pay if you used API pricing instead of a $200 Max plan.
 
 
 ## Technical Details
+
+### Interactive Dashboard Implementation
+
+The dashboard uses multiple advanced features:
+
+**File Watching (Default Mode)**
+- Uses `watchdog` library to monitor `~/.claude/projects/*.jsonl` files
+- Updates dashboard automatically when Claude Code creates/modifies logs
+- More efficient than polling as it only updates on actual file changes
+
+**Periodic Refresh Mode** (`--refresh=N`)
+- Updates every N seconds via polling
+- Good for environments where file watching might not work reliably
+
+**Background Threads**
+- Limits updater thread: Updates usage limits at configurable interval (default: 60 seconds)
+- Keyboard listener thread: Handles mode switching without blocking dashboard
+- Non-blocking architecture allows instant mode switching
+
+**Configurable Intervals**
+- `--watch-interval=N`: File watch check interval in seconds (default: 60)
+- `--limits-interval=N`: Usage limits update interval in seconds (default: 60)
+- Example: `ccu usage --watch-interval=30 --limits-interval=120`
+
+**Weekly Date Filtering**
+- Parses Claude's `/usage` week reset date (e.g., "Oct 17, 10am (Asia/Seoul)")
+- Filters records to current 7-day limit period
+- Shows only relevant data for current week limit
+
+**View Mode System**
+- Multiple display modes with instant switching
+- Time offset navigation for monthly/yearly modes (`<` / `>` keys)
+- Mode-specific breakdowns (daily/hourly for weekly, project/daily for monthly, etc.)
 
 ### Timezone Handling
 
@@ -496,6 +614,7 @@ The token breakdown shows cache efficiency. High "Cache Read" percentages (80-90
 - Python >= 3.10
 - Claude Code (for generating usage data)
 - Rich >= 13.7.0 (terminal UI)
+- watchdog >= 3.0.0 (file watching for real-time dashboard updates)
 - rumps >= 0.4.0 (macOS menu bar app, macOS only)
 - Pillow + CairoSVG (optional, for PNG/SVG export)
 

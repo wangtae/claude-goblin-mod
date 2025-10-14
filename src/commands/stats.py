@@ -22,7 +22,7 @@ from src.storage.snapshot_db import (
 #region Functions
 
 
-def run(console: Console, fast: bool = False) -> None:
+def run(console: Console, fast: bool = False, anon: bool = False) -> None:
     """
     Show statistics about the historical database.
 
@@ -36,9 +36,18 @@ def run(console: Console, fast: bool = False) -> None:
     Args:
         console: Rich console for output
         fast: Skip updates, read directly from database (default: False)
+        anon: Anonymize project names to project-001, project-002, etc (default: False)
     """
     # Check for --fast flag in sys.argv for backward compatibility
     fast_mode = fast or "--fast" in sys.argv
+
+    # Check for --anon flag: CLI flag > DB setting
+    # Load anonymize setting from DB
+    from src.storage.snapshot_db import load_user_preferences
+    prefs = load_user_preferences()
+    anonymize_from_db = prefs.get('anonymize_projects', '0') == '1'
+    # CLI flag takes priority over DB setting
+    anonymize = anon or "--anon" in sys.argv or anonymize_from_db
 
     # Check if database exists when using --fast
     if fast_mode and not DEFAULT_DB_PATH.exists():
@@ -64,7 +73,7 @@ def run(console: Console, fast: bool = False) -> None:
     # Update data unless in fast mode
     if not fast_mode:
         # Step 1: Ingestion - parse JSONL and save to DB
-        with console.status("[bold #ff8800]Updating database...", spinner="dots", spinner_style="#ff8800"):
+        with console.status("[bold #ffffff]Updating database...", spinner="dots", spinner_style="#ffffff"):
             jsonl_files = get_claude_jsonl_files()
             if jsonl_files:
                 current_records = parse_all_jsonl_files(jsonl_files)
@@ -74,7 +83,7 @@ def run(console: Console, fast: bool = False) -> None:
         # Step 2: Update limits data (if enabled)
         tracking_mode = get_tracking_mode()
         if tracking_mode in ["both", "limits"]:
-            with console.status("[bold #ff8800]Updating usage limits...", spinner="dots", spinner_style="#ff8800"):
+            with console.status("[bold #ffffff]Updating usage limits...", spinner="dots", spinner_style="#ffffff"):
                 limits = capture_limits()
                 if limits and "error" not in limits:
                     save_limits_snapshot(

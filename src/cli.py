@@ -20,6 +20,7 @@ from src.commands import (
     limits,
     status_bar,
     config_cmd,
+    settings,
 )
 from src.hooks.manager import setup_hooks, remove_hooks
 
@@ -37,45 +38,55 @@ console = Console()
 
 
 @app.callback(invoke_without_command=True)
-def default_callback(ctx: typer.Context):
+def default_callback(
+    ctx: typer.Context,
+    refresh: Optional[int] = typer.Option(None, "--refresh", help="Refresh interval in seconds (e.g., --refresh=30). Watches file changes if not specified."),
+    anon: bool = typer.Option(False, "--anon", help="Anonymize project names to project-001, project-002, etc"),
+    watch_interval: int = typer.Option(60, "--watch-interval", help="File watch check interval in seconds (default: 60)"),
+    limits_interval: int = typer.Option(60, "--limits-interval", help="Usage limits update interval in seconds (default: 60)"),
+):
     """
-    Default callback when no command is provided.
-    Runs 'usage' command by default.
+    Python CLI for Claude Code utilities and usage tracking/analytics.
+
+    Run without command to show interactive usage dashboard.
     """
     if ctx.invoked_subcommand is None:
-        # No command provided, run usage command
-        usage.run(console, refresh=None, anon=False)
+        # No command provided, run usage command with options
+        usage.run(console, refresh=refresh, anon=anon, watch_interval=watch_interval, limits_interval=limits_interval)
 
 
 @app.command(name="usage", hidden=True)
 def usage_command(
     refresh: Optional[int] = typer.Option(None, "--refresh", help="Refresh interval in seconds (e.g., --refresh=30). Watches file changes if not specified."),
     anon: bool = typer.Option(False, "--anon", help="Anonymize project names to project-001, project-002, etc"),
+    watch_interval: int = typer.Option(60, "--watch-interval", help="File watch check interval in seconds (default: 60)"),
+    limits_interval: int = typer.Option(60, "--limits-interval", help="Usage limits update interval in seconds (default: 60)"),
 ):
-    """Show interactive usage dashboard (hidden, use 'ccu' instead)."""
-    usage.run(console, refresh=refresh, anon=anon)
+    """Show interactive usage dashboard with file watching and keyboard shortcuts (hidden, use 'ccu' instead)."""
+    usage.run(console, refresh=refresh, anon=anon, watch_interval=watch_interval, limits_interval=limits_interval)
 
 
 @app.command(name="stats", hidden=True)
 def stats_command(
     fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
+    anon: bool = typer.Option(False, "--anon", help="Anonymize project names to project-001, project-002, etc"),
 ):
     """Show detailed statistics and cost analysis (hidden)."""
-    stats.run(console, fast=fast)
+    stats.run(console, fast=fast, anon=anon)
 
 
 @app.command(name="limits", hidden=True)
 def limits_command():
-    """Show current usage limits (hidden)."""
+    """Show current usage limits (session, week, Opus) (hidden)."""
     limits.run(console)
 
 
-@app.command(name="heatmap", hidden=True)
+@app.command(name="heatmap")
 def heatmap_command(
     year: Optional[int] = typer.Option(None, "--year", "-y", help="Year to display (default: current year)"),
     fast: bool = typer.Option(False, "--fast", help="Skip updates, read from database only (faster)"),
 ):
-    """Show GitHub-style activity heatmap in the terminal (hidden)."""
+    """Show GitHub-style activity heatmap in the terminal."""
     heatmap.run(console, year=year, fast=fast)
 
 
@@ -130,12 +141,26 @@ def restore_backup_command():
     restore_backup.run(console)
 
 
-@app.command(name="reset-db", hidden=True)
+@app.command(name="reset-db")
 def reset_db_command(
     force: bool = typer.Option(False, "--force", help="Force reset without confirmation"),
     keep_backups: bool = typer.Option(False, "--keep-backups", help="Keep backup files"),
 ):
-    """Reset database (delete and start fresh) (hidden)."""
+    """Reset database (delete and start fresh)."""
+    import sys
+    if force and "--force" not in sys.argv:
+        sys.argv.append("--force")
+    if keep_backups and "--keep-backups" not in sys.argv:
+        sys.argv.append("--keep-backups")
+    reset_db.run(console)
+
+
+@app.command(name="init-db")
+def init_db_command(
+    force: bool = typer.Option(False, "--force", help="Force initialization without confirmation"),
+    keep_backups: bool = typer.Option(False, "--keep-backups", help="Keep backup files"),
+):
+    """Initialize/reset database (alias for reset-db)."""
     import sys
     if force and "--force" not in sys.argv:
         sys.argv.append("--force")
@@ -182,10 +207,16 @@ def config_command(
     config_cmd.run(console, action, value)
 
 
+@app.command(name="settings", hidden=True)
+def settings_command():
+    """Show settings menu (hidden)."""
+    settings.run(console)
+
+
 @app.command(name="help", hidden=True)
 def help_command():
     """
-    Show detailed help message.
+    Show detailed help message (hidden).
 
     Displays comprehensive usage information including:
     - Available commands and their flags

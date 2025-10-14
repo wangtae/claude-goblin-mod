@@ -30,8 +30,11 @@ Automatically saves historical snapshots to preserve data beyond the 30-day roll
   ccu limits                         Show usage percentages (session, week, opus)
   ccu status-bar [type]              Launch macOS menu bar app (session|weekly|opus)
                                      Defaults to weekly if type not specified
-  ccu usage                          Show usage stats (single shot)
-  ccu usage --live                   Show usage with auto-refresh
+  ccu usage                          Show usage stats with file watching (default)
+  ccu usage --refresh=N              Auto-refresh every N seconds (polling mode)
+  ccu usage --anon                   Anonymize project names (project-001, etc.)
+  ccu usage --watch-interval=N       File watch check interval (default: 60 seconds)
+  ccu usage --limits-interval=N      Usage limits update interval (default: 60 seconds)
   ccu update-usage                   Update historical database with latest data
   ccu setup-hooks <type>             Configure Claude Code hooks (usage|audio|png)
   ccu remove-hooks [type]            Remove hooks (usage|audio|png, or all if not specified)
@@ -43,6 +46,9 @@ Automatically saves historical snapshots to preserve data beyond the 30-day roll
   ccu stats                          Show historical database statistics
   ccu restore-backup                 Restore database from backup (.db.bak file)
   ccu delete-usage -f                Delete all historical data (requires --force)
+  ccu config show                    Display configuration settings
+  ccu config set-db-path <path>      Set custom database path
+  ccu config set-machine-name <name> Set friendly machine name
   ccu help                           Show this help message
 
 [bold]Features:[/bold]

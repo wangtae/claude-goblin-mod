@@ -19,7 +19,9 @@ from src.storage.snapshot_db import get_limits_data
 #region Constants
 # Claude-inspired color scheme
 ORANGE = "#ff8800"
-CYAN = "cyan"
+YELLOW = "bright_yellow"
+CYAN = "cyan"  # For percentages
+BLUE = "dodger_blue1"  # More distinct blue for Input/Output tokens (distinct from cyan)
 DIM = "grey50"
 BAR_WIDTH = 20
 #endregion
@@ -72,7 +74,72 @@ def _create_bar(value: int, max_value: int, width: int = BAR_WIDTH, color: str =
     return bar
 
 
-def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None, fast_mode: bool = False, view_mode: str = "usage") -> None:
+def _get_bar_color(percentage: int, color_mode: str, colors: dict) -> str:
+    """
+    Get color based on color mode and usage percentage.
+
+    Args:
+        percentage: Usage percentage (0-100)
+        color_mode: Color mode ("solid" or "gradient")
+        colors: Dictionary with color values:
+            - solid: Color for solid mode (hex or Rich color name)
+            - gradient_low: Color for 0-60% (hex or Rich color name)
+            - gradient_mid: Color for 60-85% (hex or Rich color name)
+            - gradient_high: Color for 85-100% (hex or Rich color name)
+            - unfilled: Color for unfilled portion (hex or Rich color name)
+
+    Returns:
+        Color string (hex or Rich color name) for Rich library
+    """
+    if color_mode == "solid":
+        return colors.get("solid", "#00A7E1")  # Default to bright_blue
+    elif color_mode == "gradient":
+        # Gradation mode: percentage-based colors
+        if percentage < 60:
+            return colors.get("gradient_low", "#00C853")  # Default to green
+        elif percentage < 85:
+            return colors.get("gradient_mid", "#FFD600")  # Default to yellow
+        else:
+            return colors.get("gradient_high", "#FF1744")  # Default to red
+    else:
+        return colors.get("solid", "#00A7E1")  # Fallback to solid color
+
+
+def _create_usage_bar_with_percent(percentage: int, width: int = 50, color_mode: str = "gradient", colors: dict = None) -> Text:
+    """
+    Create a usage bar for usage page with percentage at the end.
+    Format: ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ 8%
+
+    Args:
+        percentage: Percentage value (0-100)
+        width: Total width of bar (excluding percentage text)
+        color_mode: Color mode ("solid" or "gradient")
+        colors: Dictionary with color values (solid, gradient_low/mid/high, unfilled)
+
+    Returns:
+        Rich Text object with bar and percentage
+    """
+    if colors is None:
+        colors = {
+            "solid": "#00A7E1",
+            "gradient_low": "#00C853",
+            "gradient_mid": "#FFD600",
+            "gradient_high": "#FF1744",
+            "unfilled": "#424242",
+        }
+
+    filled = int((percentage / 100) * width)
+    bar_color = _get_bar_color(percentage, color_mode, colors)
+    unfilled_color = colors.get("unfilled", "#424242")
+
+    bar_text = Text()
+    bar_text.append("█" * filled, style=bar_color)
+    bar_text.append("█" * (width - filled), style=unfilled_color)
+    bar_text.append(f" {percentage}%", style="bold white")
+    return bar_text
+
+
+def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None, fast_mode: bool = False, view_mode: str = "usage", is_updating: bool = False, view_mode_ref: dict | None = None) -> None:
     """
     Render a concise, modern dashboard with KPI cards and breakdowns.
 
@@ -86,6 +153,8 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         limits_from_db: Pre-fetched limits from database (avoids live fetch)
         fast_mode: If True, show warning that data is from last update
         view_mode: Display mode - "usage", "weekly", "monthly", "yearly", "heatmap", or "devices" (default: "usage")
+        is_updating: If True, show updating spinner in footer
+        view_mode_ref: Reference dict for view mode state (includes usage_display_mode)
     """
     # Optionally clear screen and reset cursor to top
     if clear_screen:
@@ -99,9 +168,9 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         limits_data = _load_limits_data()
         _display_heatmap(console, stats, limits_data, year=None)
         # Show footer with keyboard shortcuts
-        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
+        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
         console.print()
-        console.print(footer)
+        console.print(footer, end="")
         return
 
     # For devices mode, show device statistics
@@ -109,9 +178,9 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         from src.visualization.device_stats import render_device_statistics
         render_device_statistics(console)
         # Show footer with keyboard shortcuts
-        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
+        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
         console.print()
-        console.print(footer)
+        console.print(footer, end="")
         return
 
     # For usage mode, show only Usage Limits
@@ -121,10 +190,35 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         # Add blank line at top
         console.print()
 
-        # Show footer at top for usage mode
-        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
-        console.print(footer)
-        console.print()  # Blank line after footer
+        # Get usage display mode from view_mode_ref
+        usage_display_mode = view_mode_ref.get('usage_display_mode', 0) if view_mode_ref else 0
+        # 0 = M1 (no border, bar+%), 1 = M2 (no border, separate %), 2 = M3 (border, bar+%), 3 = M4 (border, separate %)
+
+        # Get color mode and colors from view_mode_ref
+        color_mode = view_mode_ref.get('color_mode', 'gradient') if view_mode_ref else 'gradient'
+        colors = view_mode_ref.get('colors', {
+            "solid": "#00A7E1",
+            "gradient_low": "#00C853",
+            "gradient_mid": "#FFD600",
+            "gradient_high": "#FF1744",
+            "unfilled": "#424242",
+        }) if view_mode_ref else {
+            "solid": "#00A7E1",
+            "gradient_low": "#00C853",
+            "gradient_mid": "#FFD600",
+            "gradient_high": "#FF1744",
+            "unfilled": "#424242",
+        }
+
+        # Determine bar width and style based on mode
+        is_m1_mode = usage_display_mode == 0
+        is_m2_mode = usage_display_mode == 1
+        is_m3_mode = usage_display_mode == 2
+        is_m4_mode = usage_display_mode == 3
+
+        # Both modes use terminal width auto-sizing
+        terminal_width = console.width
+        bar_width = max(20, terminal_width - 14)
 
         # Use limits from DB if available, otherwise fetch live
         limits = limits_from_db
@@ -165,48 +259,153 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
             weekly_opus_cost = _calculate_weekly_opus_cost(records)  # Weekly, opus only
 
             # Create table structure with 3 rows per limit
-            limits_table = Table(show_header=False, box=None, padding=(0, 2))
+            # M1/M2 modes use no padding, M3/M4 modes use reduced padding for compact display
+            table_padding = (0, 1) if (is_m3_mode or is_m4_mode) else (0, 0)
+            limits_table = Table(show_header=False, box=None, padding=table_padding)
             limits_table.add_column("Content", justify="left")
 
-            # Session limit (3 rows)
-            limits_table.add_row("Current session")
-            session_bar = _create_bar(limits["session_pct"], 100, width=20, color="red")
-            bar_text = Text()
-            bar_text.append(session_bar)
-            bar_text.append(f"  {limits['session_pct']}%", style="bold white")
-            limits_table.add_row(bar_text)
-            limits_table.add_row(f"Resets {session_reset} ({format_cost(session_cost)})", style=DIM)
-            limits_table.add_row("")  # Blank line
+            # M1 mode: compact style with bar+percentage combined, no border
+            if is_m1_mode:
+                # Session limit (3 rows)
+                limits_table.add_row("Current session")
+                session_bar = _create_usage_bar_with_percent(limits["session_pct"], width=bar_width, color_mode=color_mode, colors=colors)
+                limits_table.add_row(session_bar)
+                limits_table.add_row(f"Resets {session_reset} ({format_cost(session_cost)})", style=DIM)
+                limits_table.add_row("")  # Blank line
 
-            # Week limit (3 rows)
-            limits_table.add_row("Current week (all models)")
-            week_bar = _create_bar(limits["week_pct"], 100, width=20, color="red")
-            bar_text = Text()
-            bar_text.append(week_bar)
-            bar_text.append(f"  {limits['week_pct']}%", style="bold white")
-            limits_table.add_row(bar_text)
-            limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
-            limits_table.add_row("")  # Blank line
+                # Week limit (3 rows)
+                limits_table.add_row("Current week (all models)")
+                week_bar = _create_usage_bar_with_percent(limits["week_pct"], width=bar_width, color_mode=color_mode, colors=colors)
+                limits_table.add_row(week_bar)
+                limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
+                limits_table.add_row("")  # Blank line
 
-            # Opus limit (3 rows)
-            limits_table.add_row("Current week (Opus)")
-            opus_bar = _create_bar(limits["opus_pct"], 100, width=20, color="red")
-            bar_text = Text()
-            bar_text.append(opus_bar)
-            bar_text.append(f"  {limits['opus_pct']}%", style="bold white")
-            limits_table.add_row(bar_text)
-            limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+                # Opus limit (3 rows)
+                limits_table.add_row("Current week (Opus)")
+                opus_bar = _create_usage_bar_with_percent(limits["opus_pct"], width=bar_width, color_mode=color_mode, colors=colors)
+                limits_table.add_row(opus_bar)
+                limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
-            # Display table without panel wrapper
-            console.print(limits_table)
+                # Display table without panel wrapper
+                console.print(limits_table)
+
+            elif is_m2_mode:
+                # M2 mode: M1 style (no border) with M4 bars (percentage separated)
+                # Session limit (3 rows)
+                limits_table.add_row("Current session")
+                session_bar = _create_bar(limits["session_pct"], 100, width=bar_width, color=_get_bar_color(limits["session_pct"], color_mode, colors))
+                bar_text = Text()
+                bar_text.append(session_bar)
+                bar_text.append(f"  {limits['session_pct']}%", style="bold white")
+                limits_table.add_row(bar_text)
+                limits_table.add_row(f"Resets {session_reset} ({format_cost(session_cost)})", style=DIM)
+                limits_table.add_row("")  # Blank line
+
+                # Week limit (3 rows)
+                limits_table.add_row("Current week (all models)")
+                week_bar = _create_bar(limits["week_pct"], 100, width=bar_width, color=_get_bar_color(limits["week_pct"], color_mode, colors))
+                bar_text = Text()
+                bar_text.append(week_bar)
+                bar_text.append(f"  {limits['week_pct']}%", style="bold white")
+                limits_table.add_row(bar_text)
+                limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
+                limits_table.add_row("")  # Blank line
+
+                # Opus limit (3 rows)
+                limits_table.add_row("Current week (Opus)")
+                opus_bar = _create_bar(limits["opus_pct"], 100, width=bar_width, color=_get_bar_color(limits["opus_pct"], color_mode, colors))
+                bar_text = Text()
+                bar_text.append(opus_bar)
+                bar_text.append(f"  {limits['opus_pct']}%", style="bold white")
+                limits_table.add_row(bar_text)
+                limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+
+                # Display table without panel wrapper (like M1)
+                console.print(limits_table)
+
+            elif is_m3_mode:
+                # M3 mode: dashboard style with bar+percentage combined (like M1) and panel wrapper
+                # Session limit (3 rows)
+                limits_table.add_row("Current session")
+                session_bar = _create_usage_bar_with_percent(limits["session_pct"], width=bar_width, color_mode=color_mode, colors=colors)
+                limits_table.add_row(session_bar)
+                limits_table.add_row(f"Resets {session_reset} ({format_cost(session_cost)})", style=DIM)
+                limits_table.add_row("")  # Blank line
+
+                # Week limit (3 rows)
+                limits_table.add_row("Current week (all models)")
+                week_bar = _create_usage_bar_with_percent(limits["week_pct"], width=bar_width, color_mode=color_mode, colors=colors)
+                limits_table.add_row(week_bar)
+                limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
+                limits_table.add_row("")  # Blank line
+
+                # Opus limit (3 rows)
+                limits_table.add_row("Current week (Opus)")
+                opus_bar = _create_usage_bar_with_percent(limits["opus_pct"], width=bar_width, color_mode=color_mode, colors=colors)
+                limits_table.add_row(opus_bar)
+                limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+
+                # Wrap in outer "Usage Limits" panel
+                limits_outer_panel = Panel(
+                    limits_table,
+                    title="[bold]Usage Limits",
+                    border_style="white",
+                    expand=True,
+                )
+                console.print(limits_outer_panel)
+
+            elif is_m4_mode:
+                # M4 mode: dashboard style with percentage separated and panel wrapper
+                # Session limit (3 rows)
+                limits_table.add_row("Current session")
+                session_bar = _create_bar(limits["session_pct"], 100, width=bar_width, color=_get_bar_color(limits["session_pct"], color_mode, colors))
+                bar_text = Text()
+                bar_text.append(session_bar)
+                bar_text.append(f"  {limits['session_pct']}%", style="bold white")
+                limits_table.add_row(bar_text)
+                limits_table.add_row(f"Resets {session_reset} ({format_cost(session_cost)})", style=DIM)
+                limits_table.add_row("")  # Blank line
+
+                # Week limit (3 rows)
+                limits_table.add_row("Current week (all models)")
+                week_bar = _create_bar(limits["week_pct"], 100, width=bar_width, color=_get_bar_color(limits["week_pct"], color_mode, colors))
+                bar_text = Text()
+                bar_text.append(week_bar)
+                bar_text.append(f"  {limits['week_pct']}%", style="bold white")
+                limits_table.add_row(bar_text)
+                limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
+                limits_table.add_row("")  # Blank line
+
+                # Opus limit (3 rows)
+                limits_table.add_row("Current week (Opus)")
+                opus_bar = _create_bar(limits["opus_pct"], 100, width=bar_width, color=_get_bar_color(limits["opus_pct"], color_mode, colors))
+                bar_text = Text()
+                bar_text.append(opus_bar)
+                bar_text.append(f"  {limits['opus_pct']}%", style="bold white")
+                limits_table.add_row(bar_text)
+                limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+
+                # Wrap in outer "Usage Limits" panel
+                limits_outer_panel = Panel(
+                    limits_table,
+                    title="[bold]Usage Limits",
+                    border_style="white",
+                    expand=True,
+                )
+                console.print(limits_outer_panel)
+
+        # Show footer at bottom for usage mode
+        console.print()
+        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
+        console.print(footer, end="")
 
         return
 
     # Create KPI cards with limits (shows spinner if loading limits)
-    kpi_section = _create_kpi_section(stats.overall_totals, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db)
+    kpi_section = _create_kpi_section(stats.overall_totals, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db, view_mode_ref=view_mode_ref)
 
     # Create footer with export info, date range, and view mode
-    footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True)
+    footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
 
     # Always render Summary (and Usage Limits in weekly mode)
     console.print(kpi_section, end="")
@@ -221,6 +420,8 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
     # Add mode-specific breakdown
     if view_mode == "weekly":
+        project_breakdown = _create_project_breakdown(records)
+        sections_to_render.append(("project", project_breakdown))
         daily_breakdown_weekly = _create_daily_breakdown_weekly(records)
         sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
         hourly_breakdown = _create_hourly_breakdown(records)
@@ -242,7 +443,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         console.print()  # Blank line between sections
 
     # Always render footer
-    console.print(footer)
+    console.print(footer, end="")
 
 
 def _calculate_session_cost(records: list[UsageRecord]) -> float:
@@ -345,7 +546,7 @@ def _calculate_weekly_opus_cost(records: list[UsageRecord]) -> float:
     return weekly_cost
 
 
-def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "monthly", skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None) -> Group:
+def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "monthly", skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None, view_mode_ref: dict | None = None) -> Group:
     """
     Create KPI cards with individual limit boxes beneath each (only for weekly mode).
 
@@ -356,6 +557,7 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
         skip_limits: If True, skip fetching current limits (faster)
         console: Console instance for showing spinner
         limits_from_db: Pre-fetched limits from database (avoids live fetch)
+        view_mode_ref: Reference dict for view mode state (includes color settings)
 
     Returns:
         Group containing KPI cards and limit boxes (if weekly mode)
@@ -407,7 +609,7 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
     )
 
     input_tokens_card = Panel(
-        Text(_format_number(total_input_tokens), style="bold cyan"),
+        Text(_format_number(total_input_tokens), style=f"bold {BLUE}"),
         title="Input Tokens",
         border_style="white",
         width=36,
@@ -417,7 +619,7 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
 
     # Row 2: Output Tokens, Cache Creation, Cache Read
     output_tokens_card = Panel(
-        Text(_format_number(total_output_tokens), style="bold cyan"),
+        Text(_format_number(total_output_tokens), style=f"bold {BLUE}"),
         title="Output Tokens",
         border_style="white",
         width=36,
@@ -464,13 +666,29 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
             weekly_sonnet_cost = _calculate_weekly_sonnet_cost(records)  # Weekly, sonnet only
             weekly_opus_cost = _calculate_weekly_opus_cost(records)  # Weekly, opus only
 
+            # Get color mode and colors from view_mode_ref
+            color_mode = view_mode_ref.get('color_mode', 'gradient') if view_mode_ref else 'gradient'
+            colors = view_mode_ref.get('colors', {
+                "solid": "#00A7E1",
+                "gradient_low": "#00C853",
+                "gradient_mid": "#FFD600",
+                "gradient_high": "#FF1744",
+                "unfilled": "#424242",
+            }) if view_mode_ref else {
+                "solid": "#00A7E1",
+                "gradient_low": "#00C853",
+                "gradient_mid": "#FFD600",
+                "gradient_high": "#FF1744",
+                "unfilled": "#424242",
+            }
+
             # Create table structure with 3 rows per limit
             limits_table = Table(show_header=False, box=None, padding=(0, 2))
             limits_table.add_column("Content", justify="left")
 
             # Session limit (3 rows)
             limits_table.add_row("Current session")
-            session_bar = _create_bar(limits["session_pct"], 100, width=50, color="red")
+            session_bar = _create_bar(limits["session_pct"], 100, width=50, color=_get_bar_color(limits["session_pct"], color_mode, colors))
             bar_text = Text()
             bar_text.append(session_bar)
             bar_text.append(f"  {limits['session_pct']}% used", style="bold white")
@@ -480,7 +698,7 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
 
             # Week limit (3 rows)
             limits_table.add_row("Current week (all models)")
-            week_bar = _create_bar(limits["week_pct"], 100, width=50, color="red")
+            week_bar = _create_bar(limits["week_pct"], 100, width=50, color=_get_bar_color(limits["week_pct"], color_mode, colors))
             bar_text = Text()
             bar_text.append(week_bar)
             bar_text.append(f"  {limits['week_pct']}% used", style="bold white")
@@ -490,7 +708,7 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
 
             # Opus limit (3 rows)
             limits_table.add_row("Current week (Opus)")
-            opus_bar = _create_bar(limits["opus_pct"], 100, width=50, color="red")
+            opus_bar = _create_bar(limits["opus_pct"], 100, width=50, color=_get_bar_color(limits["opus_pct"], color_mode, colors))
             bar_text = Text()
             bar_text.append(opus_bar)
             bar_text.append(f"  {limits['opus_pct']}% used", style="bold white")
@@ -694,7 +912,7 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
             display_name,
             bar,
             _format_number(tokens),
-            f"{percentage:.1f}%",
+            f"[cyan]{percentage:.1f}%[/cyan]",
             format_cost(data["cost"]),
         )
 
@@ -706,7 +924,7 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
         "[bold]Total",
         Text(""),
         f"[bold]{_format_number(total_tokens)}",
-        "[bold]100.0%",
+        "[bold cyan]100.0%",
         f"[bold green]{format_cost(total_cost)}",
     )
 
@@ -797,7 +1015,7 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
             display_name,
             bar,
             _format_number(tokens),
-            f"{percentage:.1f}%",
+            f"[cyan]{percentage:.1f}%[/cyan]",
             format_cost(data["cost"]),
         )
 
@@ -899,8 +1117,8 @@ def _create_daily_breakdown(records: list[UsageRecord]) -> Panel:
     table = Table(show_header=True, box=None, padding=(0, 2))
     table.add_column("Date", style="purple", justify="left", width=12)
     table.add_column("Cost", style="green", justify="right", width=10)
-    table.add_column("Input", style=CYAN, justify="right", width=12)
-    table.add_column("Output", style=CYAN, justify="right", width=12)
+    table.add_column("Input", style=BLUE, justify="right", width=12)
+    table.add_column("Output", style=BLUE, justify="right", width=12)
     table.add_column("Cache Write", style="magenta", justify="right", width=14)
     table.add_column("Cache Read", style="magenta", justify="right", width=14)
     table.add_column("Messages", style="white", justify="right", width=10)
@@ -997,7 +1215,7 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
             date_with_day,
             bar,
             _format_number(tokens),
-            f"{percentage:.1f}%",
+            f"[cyan]{percentage:.1f}%[/cyan]",
             format_cost(data["cost"]),
         )
 
@@ -1066,8 +1284,8 @@ def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
     table = Table(show_header=True, box=None, padding=(0, 2))
     table.add_column("Time", style="purple", justify="left", width=8)
     table.add_column("Cost", style="green", justify="right", width=10)
-    table.add_column("Input", style=CYAN, justify="right", width=12)
-    table.add_column("Output", style=CYAN, justify="right", width=12)
+    table.add_column("Input", style=BLUE, justify="right", width=12)
+    table.add_column("Output", style=BLUE, justify="right", width=12)
     table.add_column("Cache Write", style="magenta", justify="right", width=14)
     table.add_column("Cache Read", style="magenta", justify="right", width=14)
     table.add_column("Messages", style="white", justify="right", width=10)
@@ -1148,8 +1366,8 @@ def _create_monthly_breakdown(records: list[UsageRecord]) -> Panel:
     table = Table(show_header=True, box=None, padding=(0, 2))
     table.add_column("Month", style="purple", justify="left", width=10)
     table.add_column("Cost", style="green", justify="right", width=10)
-    table.add_column("Input", style=CYAN, justify="right", width=12)
-    table.add_column("Output", style=CYAN, justify="right", width=12)
+    table.add_column("Input", style=BLUE, justify="right", width=12)
+    table.add_column("Output", style=BLUE, justify="right", width=12)
     table.add_column("Cache Write", style="magenta", justify="right", width=14)
     table.add_column("Cache Read", style="magenta", justify="right", width=14)
     table.add_column("Messages", style="white", justify="right", width=10)
@@ -1173,7 +1391,7 @@ def _create_monthly_breakdown(records: list[UsageRecord]) -> Panel:
     )
 
 
-def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: str = "monthly", in_live_mode: bool = False) -> Text:
+def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: str = "monthly", in_live_mode: bool = False, is_updating: bool = False, view_mode_ref: dict | None = None) -> Text:
     """
     Create footer with export command info, date range, and view mode.
 
@@ -1182,11 +1400,29 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
         fast_mode: If True, show warning about fast mode
         view_mode: Current view mode - "monthly", "weekly", or "yearly"
         in_live_mode: If True, show keyboard shortcuts for mode switching
+        is_updating: If True, show updating spinner instead of last update time
+        view_mode_ref: Reference dict for view mode state (includes usage_display_mode)
 
     Returns:
         Text with export instructions, date range, and view mode info
     """
     footer = Text()
+
+    # Get last update time from database (only if not currently updating)
+    last_update_time = None
+    if not is_updating:
+        try:
+            from src.storage.snapshot_db import get_database_stats
+            db_stats = get_database_stats()
+            if db_stats.get("newest_timestamp"):
+                timestamp_str = db_stats["newest_timestamp"]
+                try:
+                    dt = datetime.fromisoformat(timestamp_str)
+                    last_update_time = dt.strftime("%H:%M:%S")
+                except (ValueError, AttributeError):
+                    pass
+        except Exception:
+            pass
 
     # Add fast mode warning if enabled
     if fast_mode:
@@ -1208,65 +1444,120 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
     # Add current view mode if in live mode
     if in_live_mode:
-        footer.append("View: ", style=DIM)
-
-        # Show current mode highlighted - simplified format
-        # Usage
+        # Show "Shortcut:" for usage mode, "View:" for others
         if view_mode == "usage":
-            footer.append("[u]sage ", style=f"bold {ORANGE}")
+            footer.append("Shortcut: ", style=DIM)
         else:
-            footer.append("[u]sage ", style=DIM)
+            footer.append("View: ", style=DIM)
 
-        # Weekly
-        if view_mode == "weekly":
-            footer.append("[w]eekly ", style=f"bold {ORANGE}")
+        # Show simplified format for usage mode, full names for others
+        if view_mode == "usage":
+            # Simplified format for usage mode (only show main view modes, no settings/quit)
+            footer.append("[u]sage ", style=f"bold {YELLOW}")
+            footer.append("[w] ", style=DIM)
+            footer.append("[m] ", style=DIM)
+            footer.append("[y] ", style=DIM)
         else:
-            footer.append("[w]eekly ", style=DIM)
+            # Full names for other modes
+            # Usage
+            if view_mode == "usage":
+                footer.append("[u]sage ", style=f"bold {YELLOW}")
+            else:
+                footer.append("[u]sage ", style=DIM)
 
-        # Monthly
-        if view_mode == "monthly":
-            footer.append("[m]onthly ", style=f"bold {ORANGE}")
-        else:
-            footer.append("[m]onthly ", style=DIM)
+            # Weekly
+            if view_mode == "weekly":
+                footer.append("[w]eekly ", style=f"bold {YELLOW}")
+            else:
+                footer.append("[w]eekly ", style=DIM)
 
-        # Yearly
-        if view_mode == "yearly":
-            footer.append("[y]early ", style=f"bold {ORANGE}")
-        else:
-            footer.append("[y]early ", style=DIM)
+            # Monthly
+            if view_mode == "monthly":
+                footer.append("[m]onthly ", style=f"bold {YELLOW}")
+            else:
+                footer.append("[m]onthly ", style=DIM)
 
-        # Heatmap
-        if view_mode == "heatmap":
-            footer.append("[h]eatmap ", style=f"bold {ORANGE}")
-        else:
-            footer.append("[h]eatmap ", style=DIM)
+            # Yearly
+            if view_mode == "yearly":
+                footer.append("[y]early ", style=f"bold {YELLOW}")
+            else:
+                footer.append("[y]early ", style=DIM)
 
-        # Devices
-        if view_mode == "devices":
-            footer.append("[d]evices ", style=f"bold {ORANGE}")
-        else:
-            footer.append("[d]evices ", style=DIM)
+            # Heatmap
+            if view_mode == "heatmap":
+                footer.append("[h]eatmap ", style=f"bold {YELLOW}")
+            else:
+                footer.append("[h]eatmap ", style=DIM)
 
-        # Quit
-        footer.append("[q]uit", style=DIM)
+            # Devices
+            if view_mode == "devices":
+                footer.append("[d]evices ", style=f"bold {YELLOW}")
+            else:
+                footer.append("[d]evices ", style=DIM)
 
-        # Add date range if provided (on same line)
-        if date_range:
+            # Settings
+            footer.append("[s]ettings", style=DIM)
+
+        # Add date range if provided (on same line), but not for usage mode
+        if date_range and view_mode != "usage":
             footer.append("  ", style=DIM)
             footer.append(f"{date_range}", style="bold cyan")
 
         # Add newline at end
         footer.append("\n")
 
-        # Add arrow keys hint for monthly/yearly modes (second line)
-        if view_mode in ["monthly", "yearly"]:
+        # Add navigation hint for usage mode (second line) - change display mode and color
+        if view_mode == "usage":
+            # Get current display mode
+            usage_display_mode = view_mode_ref.get('usage_display_mode', 0) if view_mode_ref else 0
+
+            # Get current color mode
+            color_mode = view_mode_ref.get('color_mode', 'gradient') if view_mode_ref else 'gradient'
+
+            # Build mode name: S1-S4 for Solid, G1-G4 for Gradient
+            mode_prefix = "S" if color_mode == "solid" else "G"
+            mode_number = (usage_display_mode % 4) + 1  # Convert 0-3 to 1-4
+            current_mode_name = f"{mode_prefix}{mode_number}"
+
             footer.append("Use ", style=DIM)
-            footer.append("←", style=f"bold {ORANGE}")
-            footer.append(" ", style=DIM)
-            footer.append("→", style=f"bold {ORANGE}")
-            period_label = "month" if view_mode == "monthly" else "year"
-            footer.append(f" to navigate {period_label}s", style=DIM)
+            footer.append("tab", style=f"bold {YELLOW}")
+            footer.append(" to change mode. (", style=DIM)
+            footer.append(current_mode_name, style="white")
+            footer.append(")", style=DIM)
             footer.append("\n")
+
+        # Add navigation hint for non-usage modes (second line)
+        if view_mode in ["weekly", "monthly", "yearly"]:
+            # Navigation for weekly/monthly/yearly modes
+            footer.append("Use ", style=DIM)
+            footer.append("<", style=f"bold {YELLOW}")
+            footer.append(" ", style=DIM)
+            footer.append(">", style=f"bold {YELLOW}")
+            if view_mode == "weekly":
+                period_label = "week"
+            elif view_mode == "monthly":
+                period_label = "month"
+            else:
+                period_label = "year"
+            footer.append(f" to navigate {period_label}s, ", style=DIM)
+            footer.append("esc", style=f"bold {YELLOW}")
+            footer.append(" key to quit.", style=DIM)
+            footer.append("\n")
+        elif view_mode in ["heatmap", "devices"]:
+            # Quit instruction for heatmap and devices modes
+            footer.append("Use ", style=DIM)
+            footer.append("esc", style=f"bold {YELLOW}")
+            footer.append(" key to quit.", style=DIM)
+            footer.append("\n")
+
+        # Add auto update time or updating status (last line, so cursor appears on right)
+        if is_updating:
+            footer.append("Auto [r]efresh: ", style=DIM)
+            footer.append("Updating... ", style="bold yellow")
+            footer.append("◼", style="bold yellow blink")
+        elif last_update_time:
+            footer.append("Auto [r]efresh: ", style=DIM)
+            footer.append(f"{last_update_time} ", style="bold cyan")
 
     else:
         # No live mode, just date range if provided

@@ -15,21 +15,14 @@ class JSONLFileHandler(FileSystemEventHandler):
     File system event handler for JSONL files.
 
     Monitors Claude Code project directories for changes to .jsonl files
-    and triggers a callback when changes are detected.
+    and sets a flag when changes are detected (instead of triggering immediate callback).
     """
 
-    def __init__(self, callback: Callable[[], None], debounce_seconds: float = 1.0):
-        """
-        Initialize the JSONL file handler.
-
-        Args:
-            callback: Function to call when JSONL files change
-            debounce_seconds: Minimum seconds between callback invocations (prevents rapid-fire updates)
-        """
+    def __init__(self):
+        """Initialize the JSONL file handler."""
         super().__init__()
-        self.callback = callback
-        self.debounce_seconds = debounce_seconds
-        self.last_triggered = 0.0
+        self.has_changes = False
+        self.last_change_time = 0.0
 
     def on_modified(self, event: FileModifiedEvent) -> None:
         """
@@ -42,7 +35,8 @@ class JSONLFileHandler(FileSystemEventHandler):
             return
 
         if event.src_path.endswith('.jsonl'):
-            self._trigger_callback()
+            self.has_changes = True
+            self.last_change_time = time.time()
 
     def on_created(self, event: FileCreatedEvent) -> None:
         """
@@ -55,20 +49,20 @@ class JSONLFileHandler(FileSystemEventHandler):
             return
 
         if event.src_path.endswith('.jsonl'):
-            self._trigger_callback()
+            self.has_changes = True
+            self.last_change_time = time.time()
 
-    def _trigger_callback(self) -> None:
+    def get_and_reset_changes(self) -> bool:
         """
-        Trigger the callback with debouncing.
+        Check if changes occurred and reset the flag.
 
-        Prevents rapid-fire callbacks when multiple files change simultaneously.
+        Returns:
+            True if changes were detected since last check, False otherwise
         """
-        current_time = time.time()
-
-        # Debounce: only trigger if enough time has passed since last trigger
-        if current_time - self.last_triggered >= self.debounce_seconds:
-            self.last_triggered = current_time
-            self.callback()
+        if self.has_changes:
+            self.has_changes = False
+            return True
+        return False
 
 
 class FileWatcher:
@@ -76,21 +70,19 @@ class FileWatcher:
     File watcher for monitoring Claude Code JSONL files.
 
     Uses watchdog to efficiently monitor file system changes without polling.
+    Changes are tracked via a flag that can be checked periodically.
     """
 
-    def __init__(self, watch_path: Path, callback: Callable[[], None], debounce_seconds: float = 1.0):
+    def __init__(self, watch_path: Path):
         """
         Initialize the file watcher.
 
         Args:
             watch_path: Directory to watch for changes
-            callback: Function to call when files change
-            debounce_seconds: Minimum seconds between callback invocations
         """
         self.watch_path = watch_path
-        self.callback = callback
-        self.debounce_seconds = debounce_seconds
         self.observer: Optional[Observer] = None
+        self.event_handler: Optional[JSONLFileHandler] = None
 
     def start(self) -> None:
         """
@@ -102,11 +94,11 @@ class FileWatcher:
         if not self.watch_path.exists():
             raise FileNotFoundError(f"Watch path does not exist: {self.watch_path}")
 
-        event_handler = JSONLFileHandler(self.callback, self.debounce_seconds)
+        self.event_handler = JSONLFileHandler()
         self.observer = Observer()
 
         # Watch recursively (includes subdirectories)
-        self.observer.schedule(event_handler, str(self.watch_path), recursive=True)
+        self.observer.schedule(self.event_handler, str(self.watch_path), recursive=True)
         self.observer.start()
 
     def stop(self) -> None:
@@ -124,36 +116,45 @@ class FileWatcher:
         """
         return self.observer is not None and self.observer.is_alive()
 
+    def get_and_reset_changes(self) -> bool:
+        """
+        Check if file changes occurred since last check and reset the flag.
+
+        Returns:
+            True if changes were detected, False otherwise
+        """
+        if self.event_handler:
+            return self.event_handler.get_and_reset_changes()
+        return False
+
 
 #endregion
 
 
 #region Functions
 
-def watch_claude_files(callback: Callable[[], None], debounce_seconds: float = 1.0) -> FileWatcher:
+def watch_claude_files() -> FileWatcher:
     """
     Create a file watcher for Claude Code JSONL files.
 
-    Args:
-        callback: Function to call when files change
-        debounce_seconds: Minimum seconds between callback invocations
+    The watcher monitors file changes but doesn't trigger immediate callbacks.
+    Instead, use `watcher.get_and_reset_changes()` to check for changes periodically.
 
     Returns:
         FileWatcher instance
 
     Example:
-        >>> def on_change():
-        ...     print("Files changed!")
-        >>>
-        >>> watcher = watch_claude_files(on_change)
+        >>> watcher = watch_claude_files()
         >>> watcher.start()
         >>>
-        >>> # Do other work...
+        >>> # In your main loop:
+        >>> if watcher.get_and_reset_changes():
+        ...     print("Files changed!")
         >>>
         >>> watcher.stop()
     """
     from src.config.settings import CLAUDE_DATA_DIR
-    return FileWatcher(CLAUDE_DATA_DIR, callback, debounce_seconds)
+    return FileWatcher(CLAUDE_DATA_DIR)
 
 
 #endregion
