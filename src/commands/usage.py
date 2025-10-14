@@ -28,9 +28,10 @@ from src.visualization.dashboard import render_dashboard
 
 #region Constants
 # View modes for dashboard
-VIEW_MODE_MONTHLY = "monthly"
 VIEW_MODE_WEEKLY = "weekly"
+VIEW_MODE_MONTHLY = "monthly"
 VIEW_MODE_YEARLY = "yearly"
+VIEW_MODE_HEATMAP = "heatmap"
 #endregion
 
 
@@ -124,14 +125,17 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
             if select.select([sys.stdin], [], [], 0.1)[0]:
                 key = sys.stdin.read(1).lower()
 
-                if key == 'm':
-                    view_mode_ref['mode'] = VIEW_MODE_MONTHLY
-                    view_mode_ref['changed'] = True
-                elif key == 'w':
+                if key == 'w':
                     view_mode_ref['mode'] = VIEW_MODE_WEEKLY
+                    view_mode_ref['changed'] = True
+                elif key == 'm':
+                    view_mode_ref['mode'] = VIEW_MODE_MONTHLY
                     view_mode_ref['changed'] = True
                 elif key == 'y':
                     view_mode_ref['mode'] = VIEW_MODE_YEARLY
+                    view_mode_ref['changed'] = True
+                elif key == 'h':
+                    view_mode_ref['mode'] = VIEW_MODE_HEATMAP
                     view_mode_ref['changed'] = True
                 elif key == 'q':
                     stop_event.set()
@@ -224,7 +228,8 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
     Keyboard shortcuts:
         w - Switch to weekly mode (default, current week limit period)
         m - Switch to monthly mode
-        y - Switch to yearly mode (heatmap view)
+        y - Switch to yearly mode (monthly statistics)
+        h - Switch to heatmap view
         q - Quit
 
     Args:
@@ -238,7 +243,7 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
     console.print(
         "[dim]Watching for file changes... "
         "Dashboard will update when Claude Code creates or modifies log files.[/dim]\n"
-        "[dim]Keyboard shortcuts: [w] Weekly | [m] Monthly | [y] Yearly | [q] Quit[/dim]\n"
+        "[dim]Keyboard shortcuts: [w] Weekly | [m] Monthly | [y] Yearly | [h] Heatmap | [q] Quit[/dim]\n"
     )
 
     # Track current view mode
@@ -297,7 +302,8 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
     Keyboard shortcuts:
         w - Switch to weekly mode (default, current week limit period)
         m - Switch to monthly mode
-        y - Switch to yearly mode (heatmap view)
+        y - Switch to yearly mode (monthly statistics)
+        h - Switch to heatmap view
         q - Quit
 
     Args:
@@ -308,7 +314,7 @@ def _run_live_dashboard(jsonl_files: list[Path], console: Console, skip_limits: 
     """
     console.print(
         f"[dim]Auto-refreshing every {DEFAULT_REFRESH_INTERVAL} seconds.[/dim]\n"
-        "[dim]Keyboard shortcuts: [w] Weekly | [m] Monthly | [y] Yearly | [q] Quit[/dim]\n"
+        "[dim]Keyboard shortcuts: [w] Weekly | [m] Monthly | [y] Yearly | [h] Heatmap | [q] Quit[/dim]\n"
         "[dim]Tip: Use --watch for more efficient file-change-based updates.[/dim]\n"
     )
 
@@ -355,7 +361,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         console: Rich console for output
         skip_limits: Skip ALL updates, read directly from DB (fast mode)
         anonymize: Anonymize project names to project-001, project-002, etc
-        view_mode: Display mode - weekly (default), monthly, or yearly
+        view_mode: Display mode - weekly (default), monthly, yearly, or heatmap
     """
     from src.storage.snapshot_db import get_latest_limits, DEFAULT_DB_PATH, get_database_stats
 

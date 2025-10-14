@@ -85,14 +85,14 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         date_range: Optional date range string to display in footer
         limits_from_db: Pre-fetched limits from database (avoids live fetch)
         fast_mode: If True, show warning that data is from last update
-        view_mode: Display mode - "monthly", "weekly", or "yearly" (default: "monthly")
+        view_mode: Display mode - "monthly", "weekly", "yearly", or "heatmap" (default: "monthly")
     """
     # Optionally clear screen
     if clear_screen:
         console.clear()
 
-    # For yearly mode, show heatmap instead of dashboard
-    if view_mode == "yearly":
+    # For heatmap mode, show heatmap instead of dashboard
+    if view_mode == "heatmap":
         from src.commands.heatmap import _display_heatmap, _load_limits_data
         limits_data = _load_limits_data()
         _display_heatmap(console, stats, limits_data, year=None)
@@ -126,6 +126,11 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         project_breakdown = _create_project_breakdown(records)
         console.print()  # Blank line between sections
         console.print(project_breakdown, end="")
+    # Show monthly breakdown in yearly mode
+    elif view_mode == "yearly":
+        monthly_breakdown = _create_monthly_breakdown(records)
+        console.print()  # Blank line between sections
+        console.print(monthly_breakdown, end="")
 
     console.print()  # Blank line before footer
     console.print(footer)
@@ -773,6 +778,87 @@ def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
     )
 
 
+def _create_monthly_breakdown(records: list[UsageRecord]) -> Panel:
+    """
+    Create table showing monthly usage breakdown for yearly mode.
+
+    Args:
+        records: List of usage records
+
+    Returns:
+        Panel with monthly breakdown table
+    """
+    from src.models.pricing import calculate_cost, format_cost
+
+    # Aggregate by month (format: "YYYY-MM")
+    monthly_data: dict[str, dict] = defaultdict(lambda: {
+        "cost": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation": 0,
+        "cache_read": 0,
+        "messages": 0
+    })
+
+    for record in records:
+        if record.token_usage:
+            # Extract year-month from timestamp
+            month = record.timestamp.strftime("%Y-%m")
+
+            monthly_data[month]["input_tokens"] += record.token_usage.input_tokens
+            monthly_data[month]["output_tokens"] += record.token_usage.output_tokens
+            monthly_data[month]["cache_creation"] += record.token_usage.cache_creation_tokens
+            monthly_data[month]["cache_read"] += record.token_usage.cache_read_tokens
+            monthly_data[month]["messages"] += 1
+
+            if record.model and record.model != "<synthetic>":
+                cost = calculate_cost(
+                    record.token_usage.input_tokens,
+                    record.token_usage.output_tokens,
+                    record.model,
+                    record.token_usage.cache_creation_tokens,
+                    record.token_usage.cache_read_tokens,
+                )
+                monthly_data[month]["cost"] += cost
+
+    if not monthly_data:
+        return Panel(
+            Text("No monthly data available", style=DIM),
+            title="[bold]Monthly Usage",
+            border_style="white",
+        )
+
+    # Sort by month in descending order (most recent first)
+    sorted_months = sorted(monthly_data.items(), reverse=True)
+
+    # Create table with English column names
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("Month", style="purple", justify="left", width=10)
+    table.add_column("Cost", style="green", justify="right", width=10)
+    table.add_column("Input", style=CYAN, justify="right", width=12)
+    table.add_column("Output", style=CYAN, justify="right", width=12)
+    table.add_column("Cache Write", style="magenta", justify="right", width=14)
+    table.add_column("Cache Read", style="magenta", justify="right", width=14)
+    table.add_column("Messages", style="white", justify="right", width=10)
+
+    for month, data in sorted_months:
+        table.add_row(
+            month,
+            format_cost(data["cost"]),
+            _format_number(data["input_tokens"]),
+            _format_number(data["output_tokens"]),
+            _format_number(data["cache_creation"]),
+            _format_number(data["cache_read"]),
+            str(data["messages"]),
+        )
+
+    return Panel(
+        table,
+        title="[bold]Monthly Usage",
+        border_style="white",
+    )
+
+
 def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: str = "monthly", in_live_mode: bool = False) -> Text:
     """
     Create footer with export command info, date range, and view mode.
@@ -829,6 +915,12 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             footer.append("[y] Yearly", style=DIM)
         footer.append(" | ", style=DIM)
 
+        if view_mode == "heatmap":
+            footer.append("[h] Heatmap", style=f"bold {ORANGE}")
+        else:
+            footer.append("[h] Heatmap", style=DIM)
+        footer.append(" | ", style=DIM)
+
         footer.append("[q] Quit\n", style=DIM)
 
     # Add date range if provided
@@ -836,15 +928,16 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
         view_label = {
             "monthly": "Monthly",
             "weekly": "Weekly (7-day period)",
-            "yearly": "Yearly"
+            "yearly": "Yearly",
+            "heatmap": "Heatmap"
         }.get(view_mode, "Monthly")
 
         footer.append("Data range: ", style=DIM)
         footer.append(f"{date_range}", style=f"bold {CYAN}")
         footer.append(f" ({view_label})\n", style=DIM)
 
-    # Add export tip (only for non-yearly modes)
-    if view_mode != "yearly":
+    # Add export tip (only for dashboard modes, not heatmap)
+    if view_mode != "heatmap":
         footer.append("Tip: ", style=DIM)
         footer.append("Export heatmap with ", style=DIM)
         footer.append("ccg export --open", style=f"bold {CYAN}")
