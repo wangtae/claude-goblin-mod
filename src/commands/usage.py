@@ -507,7 +507,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
 
     # Apply view mode filter
     display_records = all_records
-    if view_mode == VIEW_MODE_WEEKLY and limits_from_db and limits_from_db.get("week_reset"):
+    if view_mode in [VIEW_MODE_WEEKLY, "usage"] and limits_from_db and limits_from_db.get("week_reset"):
         # Parse week reset date and filter records
         week_reset_date = _parse_week_reset_date(limits_from_db["week_reset"])
         if week_reset_date:
