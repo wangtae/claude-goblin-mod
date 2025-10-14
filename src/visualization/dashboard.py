@@ -103,7 +103,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         return
 
     # Create KPI cards with limits (shows spinner if loading limits)
-    kpi_section = _create_kpi_section(stats.overall_totals, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db)
+    kpi_section = _create_kpi_section(stats.overall_totals, records, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db)
 
     # Create breakdowns
     model_breakdown = _create_model_breakdown(records)
@@ -122,12 +122,13 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     console.print(footer)
 
 
-def _create_kpi_section(overall, skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None) -> Group:
+def _create_kpi_section(overall, records: list[UsageRecord], skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None) -> Group:
     """
     Create KPI cards with individual limit boxes beneath each.
 
     Args:
         overall: Overall statistics
+        records: List of usage records (for cost calculation)
         skip_limits: If True, skip fetching current limits (faster)
         console: Console instance for showing spinner
         limits_from_db: Pre-fetched limits from database (avoids live fetch)
@@ -135,6 +136,21 @@ def _create_kpi_section(overall, skip_limits: bool = False, console: Console = N
     Returns:
         Group containing KPI cards and limit boxes
     """
+    from src.models.pricing import calculate_cost, format_cost
+
+    # Calculate total cost from records (including cache tokens)
+    total_cost = 0.0
+    for record in records:
+        if record.model and record.token_usage and record.model != "<synthetic>":
+            cost = calculate_cost(
+                record.token_usage.input_tokens,
+                record.token_usage.output_tokens,
+                record.model,
+                record.token_usage.cache_creation_tokens,
+                record.token_usage.cache_read_tokens,
+            )
+            total_cost += cost
+
     # Use limits from DB if provided, otherwise fetch live (unless skipped)
     limits = limits_from_db
     if limits is None and not skip_limits:
@@ -145,8 +161,9 @@ def _create_kpi_section(overall, skip_limits: bool = False, console: Console = N
         else:
             limits = capture_limits()
 
-    # Create KPI cards
+    # Create KPI cards - now with 4 columns
     kpi_grid = Table.grid(padding=(0, 2), expand=False)
+    kpi_grid.add_column(justify="center")
     kpi_grid.add_column(justify="center")
     kpi_grid.add_column(justify="center")
     kpi_grid.add_column(justify="center")
@@ -156,7 +173,15 @@ def _create_kpi_section(overall, skip_limits: bool = False, console: Console = N
         Text(_format_number(overall.total_tokens), style=f"bold {ORANGE}"),
         title="Total Tokens",
         border_style="white",
-        width=28,
+        width=22,
+    )
+
+    # Total Cost card
+    cost_card = Panel(
+        Text(format_cost(total_cost), style="bold green"),
+        title="Total Cost",
+        border_style="white",
+        width=22,
     )
 
     # Total Prompts card
@@ -164,7 +189,7 @@ def _create_kpi_section(overall, skip_limits: bool = False, console: Console = N
         Text(_format_number(overall.total_prompts), style="bold white"),
         title="Prompts Sent",
         border_style="white",
-        width=28,
+        width=22,
     )
 
     # Total Sessions card
@@ -172,10 +197,10 @@ def _create_kpi_section(overall, skip_limits: bool = False, console: Console = N
         Text(_format_number(overall.total_sessions), style="bold white"),
         title="Active Sessions",
         border_style="white",
-        width=28,
+        width=22,
     )
 
-    kpi_grid.add_row(tokens_card, prompts_card, sessions_card)
+    kpi_grid.add_row(tokens_card, cost_card, prompts_card, sessions_card)
 
     # Create individual limit boxes if available
     if limits and "error" not in limits:
@@ -345,34 +370,54 @@ def _create_limits_bars() -> Panel | None:
 
 def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
     """
-    Create table showing token usage per model.
+    Create table showing token usage and cost per model.
 
     Args:
         records: List of usage records
 
     Returns:
-        Panel with model breakdown table
+        Panel with model breakdown table including costs
     """
-    # Aggregate tokens by model
-    model_tokens: dict[str, int] = defaultdict(int)
+    from src.models.pricing import calculate_cost, format_cost
+
+    # Aggregate tokens and costs by model
+    model_data: dict[str, dict] = defaultdict(lambda: {
+        "total_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost": 0.0
+    })
 
     for record in records:
         if record.model and record.token_usage and record.model != "<synthetic>":
-            model_tokens[record.model] += record.token_usage.total_tokens
+            model_data[record.model]["total_tokens"] += record.token_usage.total_tokens
+            model_data[record.model]["input_tokens"] += record.token_usage.input_tokens
+            model_data[record.model]["output_tokens"] += record.token_usage.output_tokens
 
-    if not model_tokens:
+            # Calculate cost for this record (including cache tokens)
+            cost = calculate_cost(
+                record.token_usage.input_tokens,
+                record.token_usage.output_tokens,
+                record.model,
+                record.token_usage.cache_creation_tokens,
+                record.token_usage.cache_read_tokens,
+            )
+            model_data[record.model]["cost"] += cost
+
+    if not model_data:
         return Panel(
             Text("No model data available", style=DIM),
             title="[bold]Tokens by Model",
             border_style="white",
         )
 
-    # Calculate total and max
-    total_tokens = sum(model_tokens.values())
-    max_tokens = max(model_tokens.values())
+    # Calculate totals
+    total_tokens = sum(data["total_tokens"] for data in model_data.values())
+    total_cost = sum(data["cost"] for data in model_data.values())
+    max_tokens = max(data["total_tokens"] for data in model_data.values())
 
     # Sort by usage
-    sorted_models = sorted(model_tokens.items(), key=lambda x: x[1], reverse=True)
+    sorted_models = sorted(model_data.items(), key=lambda x: x[1]["total_tokens"], reverse=True)
 
     # Create table
     table = Table(show_header=False, box=None, padding=(0, 2))
@@ -380,13 +425,15 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
     table.add_column("Bar", justify="left")
     table.add_column("Tokens", style=ORANGE, justify="right")
     table.add_column("Percentage", style=CYAN, justify="right")
+    table.add_column("Cost", style="green", justify="right", width=10)
 
-    for model, tokens in sorted_models:
+    for model, data in sorted_models:
         # Shorten model name
         display_name = model.split("/")[-1] if "/" in model else model
         if "claude" in display_name.lower():
             display_name = display_name.replace("claude-", "")
 
+        tokens = data["total_tokens"]
         percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
 
         # Create bar
@@ -397,7 +444,17 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
             bar,
             _format_number(tokens),
             f"{percentage:.1f}%",
+            format_cost(data["cost"]),
         )
+
+    # Add total row
+    table.add_row(
+        "[bold]Total",
+        Text(""),
+        f"[bold]{_format_number(total_tokens)}",
+        "[bold]100.0%",
+        f"[bold green]{format_cost(total_cost)}",
+    )
 
     return Panel(
         table,
