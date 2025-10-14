@@ -21,8 +21,9 @@ def run(console: Console, year: Optional[int] = None, fast: bool = False) -> Non
     """
     Display GitHub-style activity heatmap in the terminal.
 
-    Shows token usage across the year with the same visual design as PNG export
-    but rendered directly in the terminal using Unicode block characters and colors.
+    Shows 3 heatmaps: token usage, week limit %, and opus limit %
+    with the same visual design as PNG export but rendered directly
+    in the terminal using Unicode block characters and colors.
 
     Args:
         console: Rich console for output
@@ -69,8 +70,11 @@ def run(console: Console, year: Optional[int] = None, fast: bool = False) -> Non
         # Aggregate statistics
         stats = aggregate_all(all_records)
 
-        # Display heatmap
-        _display_heatmap(console, stats, year)
+        # Load limits data
+        limits_data = _load_limits_data()
+
+        # Display heatmaps
+        _display_heatmap(console, stats, limits_data, year)
 
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -85,15 +89,16 @@ def run(console: Console, year: Optional[int] = None, fast: bool = False) -> Non
         sys.exit(1)
 
 
-def _display_heatmap(console: Console, stats, year: Optional[int] = None) -> None:
+def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[int] = None) -> None:
     """
-    Display GitHub-style heatmap in terminal.
+    Display 3 GitHub-style heatmaps in terminal: tokens, week %, opus %.
 
     Uses the same visual design as PNG export with Claude theme colors.
 
     Args:
         console: Rich console for output
         stats: Aggregated statistics
+        limits_data: Dictionary mapping dates to week_pct and opus_pct
         year: Year to display (defaults to current year)
     """
     # Determine year
@@ -145,79 +150,109 @@ def _display_heatmap(console: Console, stats, year: Optional[int] = None) -> Non
     console.print(title)
     console.print()
 
-    # Create heatmap table
-    table = Table(show_header=False, show_edge=False, pad_edge=False, padding=(0, 0), box=None)
-
-    # Add day labels column
-    table.add_column("", justify="right", width=4, style="dim")
-
-    # Add month label row with proper spacing
-    month_row = [""]
-    last_month = None
-    for week_idx, week in enumerate(weeks):
-        for day_stats, date in week:
-            if date is not None:
-                month = date.month
-                if month != last_month:
-                    month_name = date.strftime("%b")
-                    month_row.append(month_name)
-                    last_month = month
-                else:
-                    month_row.append("")
-                break
-        else:
-            month_row.append("")
-
-    # Add week columns (one per week)
-    for _ in range(len(weeks)):
-        table.add_column("", width=2)
-
-    # Add month labels row
-    table.add_row(*[Text(m, style="dim") for m in month_row])
-
     # Day names
     day_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
-    # Add heatmap rows (one per day of week)
-    for day_idx in range(7):
-        row = [Text(day_names[day_idx], style="dim")]
+    # Helper function to display one heatmap
+    def display_single_heatmap(heatmap_title: str, color_func, legend_colors, legend_left: str, legend_right: str):
+        console.print(f"[dim]{heatmap_title}[/dim]")
+        console.print()
 
+        # Build month label line
+        month_line = "    "  # Space for day labels
+        last_month = None
         for week in weeks:
-            day_stats, date = week[day_idx]
+            month_added = False
+            for day_stats, date in week:
+                if date is not None and not month_added:
+                    month = date.month
+                    if month != last_month:
+                        month_name = date.strftime("%b")
+                        # Take first char + "…" for compact display
+                        month_line += month_name[0] + "… "
+                        last_month = month
+                        month_added = True
+                    break
+            if not month_added:
+                month_line += "   "  # 3 spaces to match cell width
 
-            if date is None:
-                # Empty cell
-                cell = Text("  ")
-            else:
-                # Get color based on activity
-                color_style = _get_cell_style(day_stats, max_tokens, date, today)
-                cell = Text("██", style=color_style)
+        console.print(Text(month_line, style="dim"))
 
-            row.append(cell)
+        # Display 7 rows (one per day of week)
+        for day_idx in range(7):
+            line = Text()
+            line.append(day_names[day_idx], style="dim")
+            line.append(" ", style="")
 
-        table.add_row(*row)
+            for week_idx, week in enumerate(weeks):
+                day_stats, date = week[day_idx]
 
-    console.print(table)
-    console.print()
+                if date is None:
+                    line.append("   ", style="")  # 3 spaces: 2 for cell + 1 for gap
+                else:
+                    color_style = color_func(day_stats, date)
+                    line.append("██", style=color_style)
+                    line.append(" ", style="")  # Gap between cells
 
-    # Legend
-    legend = Text()
-    legend.append("Less ", style="dim")
-    legend.append("██", style="#3C3C3A")  # Dark grey (no activity)
-    legend.append(" ", style="")
-    legend.append("██", style="#7E5E54")  # 20% orange
-    legend.append(" ", style="")
-    legend.append("██", style="#9F7A68")  # 40% orange
-    legend.append(" ", style="")
-    legend.append("██", style="#BF977C")  # 60% orange
-    legend.append(" ", style="")
-    legend.append("██", style="#E0B491")  # 80% orange
-    legend.append(" ", style="")
-    legend.append("██", style="#CB7B5D")  # Full orange
-    legend.append(" More", style="dim")
+            console.print(line)
 
-    console.print(legend)
-    console.print()
+        console.print()
+
+        # Legend
+        legend = Text()
+        legend.append(legend_left + " ", style="dim")
+        for color in legend_colors:
+            legend.append("██", style=color)
+            legend.append(" ", style="")
+        legend.append(legend_right, style="dim")
+
+        console.print(legend)
+        console.print()
+
+    # 1. Token Usage heatmap
+    def tokens_color_func(day_stats, date):
+        return _get_tokens_style(day_stats, max_tokens, date, today)
+
+    # Legend colors matching PNG export: dark grey + 4 orange shades
+    token_legend_colors = [
+        "#3C3C3A",  # Dark grey (no activity)
+        "#66554D",  # 20% orange
+        "#8A6E61",  # 40% orange
+        "#AE8775",  # 60% orange
+        "#D2A089",  # 80% orange
+        "#CB7B5D",  # Full orange
+    ]
+    display_single_heatmap("Token Usage", tokens_color_func, token_legend_colors, "Less", "More")
+
+    # 2. Week Limit % heatmap (blue → red gradient)
+    def week_color_func(day_stats, date):
+        date_key = date.strftime("%Y-%m-%d")
+        week_pct = limits_data.get(date_key, {}).get("week_pct", 0)
+        return _get_limits_style(week_pct, (93, 150, 203), date, today)
+
+    # Legend: blue → red → dark red
+    week_legend_colors = [
+        "#5D96CB",  # Blue (0%)
+        "#A36BA8",  # 33%
+        "#CB5D5D",  # Red (100%)
+        "#782850",  # Dark red (>100%)
+    ]
+    display_single_heatmap("Week Limit %", week_color_func, week_legend_colors, "0%", "100%+")
+
+    # 3. Opus Limit % heatmap (green → red gradient)
+    def opus_color_func(day_stats, date):
+        date_key = date.strftime("%Y-%m-%d")
+        opus_pct = limits_data.get(date_key, {}).get("opus_pct", 0)
+        return _get_limits_style(opus_pct, (93, 203, 123), date, today)
+
+    # Legend: green → red → dark red
+    opus_legend_colors = [
+        "#5DCB7B",  # Green (0%)
+        "#A36B99",  # 33%
+        "#CB5D5D",  # Red (100%)
+        "#782850",  # Dark red (>100%)
+    ]
+    display_single_heatmap("Opus Limit %", opus_color_func, opus_legend_colors, "0%", "100%+")
 
     # Summary stats
     total_days = sum(1 for s in stats.daily_stats.values() if s.total_tokens > 0)
@@ -227,11 +262,49 @@ def _display_heatmap(console: Console, stats, year: Optional[int] = None) -> Non
     console.print("[dim]Tip: Use [bold]ccg export --open[/bold] for high-resolution PNG[/dim]")
 
 
-def _get_cell_style(day_stats, max_tokens: int, date, today) -> str:
+def _load_limits_data() -> dict:
     """
-    Get Rich color style for a cell based on activity level.
+    Load limits data from database.
 
-    Uses the same color logic as PNG export with Claude theme colors.
+    Returns:
+        Dictionary mapping dates to {"week_pct": int, "opus_pct": int}
+    """
+    from src.storage.snapshot_db import DEFAULT_DB_PATH
+    import sqlite3
+
+    limits_data = {}
+
+    try:
+        conn = sqlite3.connect(DEFAULT_DB_PATH)
+        cursor = conn.cursor()
+
+        # Load limits snapshots
+        cursor.execute("""
+            SELECT date, week_used, week_limit, opus_used, opus_limit
+            FROM limits_snapshots
+            ORDER BY timestamp DESC
+        """)
+
+        for row in cursor.fetchall():
+            date_str, week_used, week_limit, opus_used, opus_limit = row
+            week_pct = int((week_used / week_limit * 100)) if week_limit > 0 else 0
+            opus_pct = int((opus_used / opus_limit * 100)) if opus_limit > 0 else 0
+
+            limits_data[date_str] = {
+                "week_pct": week_pct,
+                "opus_pct": opus_pct
+            }
+
+        conn.close()
+    except:
+        pass
+
+    return limits_data
+
+
+def _get_tokens_style(day_stats, max_tokens: int, date, today) -> str:
+    """
+    Get Rich color style for token usage (same as PNG export).
 
     Args:
         day_stats: Statistics for the day
@@ -263,6 +336,44 @@ def _get_cell_style(day_stats, max_tokens: int, date, today) -> str:
     r = int(dark_grey[0] + (orange[0] - dark_grey[0]) * ratio)
     g = int(dark_grey[1] + (orange[1] - dark_grey[1]) * ratio)
     b = int(dark_grey[2] + (orange[2] - dark_grey[2]) * ratio)
+
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _get_limits_style(pct: int, base_color_rgb: tuple[int, int, int], date, today) -> str:
+    """
+    Get Rich color style for limits percentage (same as PNG export).
+
+    0% = base_color (blue/green), 100% = red, >100% = dark red/purple
+
+    Args:
+        pct: Usage percentage (0-100+)
+        base_color_rgb: Base color (blue for week, green for opus)
+        date: The date of this cell
+        today: Today's date
+
+    Returns:
+        Rich color style string
+    """
+    # Future days: light grey
+    if date > today:
+        return "#6B6B68"
+
+    # Past days with no data: dark grey
+    if pct == 0:
+        return "#3C3C3A"
+
+    # >100%: dark red/purple
+    if pct > 100:
+        return "#782850"
+
+    # 0-100%: interpolate from base_color to red
+    ratio = pct / 100.0
+    red = (203, 93, 93)
+
+    r = int(base_color_rgb[0] + (red[0] - base_color_rgb[0]) * ratio)
+    g = int(base_color_rgb[1] + (red[1] - base_color_rgb[1]) * ratio)
+    b = int(base_color_rgb[2] + (red[2] - base_color_rgb[2]) * ratio)
 
     return f"#{r:02x}{g:02x}{b:02x}"
 
