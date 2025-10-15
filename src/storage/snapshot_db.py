@@ -189,6 +189,12 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
         if "content" not in columns:
             cursor.execute("ALTER TABLE usage_records ADD COLUMN content TEXT")
 
+        # Migration: Add cost column if it doesn't exist
+        cursor.execute("PRAGMA table_info(usage_records)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "cost" not in columns:
+            cursor.execute("ALTER TABLE usage_records ADD COLUMN cost REAL")
+
         # Index for faster date-based queries
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_usage_records_date
@@ -237,23 +243,11 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
             )
         """)
 
-        # Insert default preferences
-        default_prefs = [
-            ('usage_display_mode', '0'),           # M1=0, M2=1, M3=2, M4=3
-            ('color_mode', 'gradient'),            # solid | gradient
-            ('color_solid', '#00A7E1'),            # bright_blue
-            ('color_gradient_low', '#00C853'),     # green
-            ('color_gradient_mid', '#FFD600'),     # yellow
-            ('color_gradient_high', '#FF1744'),    # red
-            ('color_unfilled', '#424242'),         # grey
-            ('tracking_mode', 'both'),             # both | usage | limits
-            ('machine_name', ''),                  # custom name or empty
-            ('db_path', ''),                       # custom path or empty
-            ('anonymize_projects', '0'),           # 0=off, 1=on
-            ('timezone', 'auto'),                  # auto | UTC | Asia/Seoul | ...
-        ]
+        # Insert default preferences from defaults.py
+        from src.config.defaults import get_all_defaults
 
-        for key, value in default_prefs:
+        default_prefs_dict = get_all_defaults()
+        for key, value in default_prefs_dict.items():
             cursor.execute("""
                 INSERT OR IGNORE INTO user_preferences (key, value)
                 VALUES (?, ?)
@@ -298,31 +292,26 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
             ON device_model_aggregates(machine_name)
         """)
 
-        # Populate pricing data for known models
-        pricing_data = [
-            # Current models
-            ('claude-opus-4-1-20250805', 15.00, 75.00, 18.75, 1.50, 'Current flagship model'),
-            ('claude-sonnet-4-5-20250929', 3.00, 15.00, 3.75, 0.30, 'Current balanced model (≤200K tokens)'),
-            ('claude-haiku-3-5-20241022', 0.80, 4.00, 1.00, 0.08, 'Current fast model'),
-
-            # Legacy models (approximate pricing)
-            ('claude-sonnet-4-20250514', 3.00, 15.00, 3.75, 0.30, 'Legacy Sonnet 4'),
-            ('claude-opus-4-20250514', 15.00, 75.00, 18.75, 1.50, 'Legacy Opus 4'),
-            ('claude-sonnet-3-7-20250219', 3.00, 15.00, 3.75, 0.30, 'Legacy Sonnet 3.7'),
-
-            # Synthetic/test models
-            ('<synthetic>', 0.00, 0.00, 0.00, 0.00, 'Test/synthetic model - no cost'),
-        ]
+        # Populate pricing data from defaults.py
+        from src.config.defaults import DEFAULT_MODEL_PRICING
 
         timestamp = datetime.now(timezone.utc).isoformat()
-        for model_name, input_price, output_price, cache_write, cache_read, notes in pricing_data:
+        for model_name, pricing_info in DEFAULT_MODEL_PRICING.items():
             cursor.execute("""
                 INSERT OR REPLACE INTO model_pricing (
                     model_name, input_price_per_mtok, output_price_per_mtok,
                     cache_write_price_per_mtok, cache_read_price_per_mtok,
                     last_updated, notes
                 ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (model_name, input_price, output_price, cache_write, cache_read, timestamp, notes))
+            """, (
+                model_name,
+                pricing_info['input_price'],
+                pricing_info['output_price'],
+                pricing_info['cache_write_price'],
+                pricing_info['cache_read_price'],
+                timestamp,
+                pricing_info.get('notes', '')
+            ))
 
         conn.commit()
     finally:
@@ -371,6 +360,26 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
             cache_read_tokens = record.token_usage.cache_read_tokens if record.token_usage else 0
             total_tokens = record.token_usage.total_tokens if record.token_usage else 0
 
+            # Calculate cost from model pricing table
+            cost = None
+            if record.model and record.token_usage:
+                cursor.execute("""
+                    SELECT input_price_per_mtok, output_price_per_mtok,
+                           cache_write_price_per_mtok, cache_read_price_per_mtok
+                    FROM model_pricing
+                    WHERE model_name = ?
+                """, (record.model,))
+                pricing_row = cursor.fetchone()
+
+                if pricing_row:
+                    input_price, output_price, cache_write_price, cache_read_price = pricing_row
+                    cost = (
+                        (input_tokens / 1_000_000) * input_price +
+                        (output_tokens / 1_000_000) * output_price +
+                        (cache_creation_tokens / 1_000_000) * cache_write_price +
+                        (cache_read_tokens / 1_000_000) * cache_read_price
+                    )
+
             try:
                 cursor.execute("""
                     INSERT INTO usage_records (
@@ -378,8 +387,8 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
                         model, folder, git_branch, version,
                         input_tokens, output_tokens,
                         cache_creation_tokens, cache_read_tokens, total_tokens,
-                        machine_name, content
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        machine_name, content, cost
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     record.date_key,
                     record.timestamp.isoformat(),
@@ -397,6 +406,7 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
                     total_tokens,
                     machine_name,
                     record.content,  # Save content field
+                    cost,  # Save calculated cost
                 ))
                 saved_count += 1
             except sqlite3.IntegrityError:
@@ -570,7 +580,7 @@ def load_historical_records(
                 # Row columns: id, date, timestamp, session_id, message_uuid, message_type,
                 #              model, folder, git_branch, version,
                 #              input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, total_tokens,
-                #              machine_name, content
+                #              machine_name, content, cost
 
                 # Only create TokenUsage if tokens exist (assistant messages)
                 token_usage = None
@@ -593,6 +603,8 @@ def load_historical_records(
                     version=row[9],
                     token_usage=token_usage,
                     content=row[16] if len(row) > 16 else None,  # Load content field
+                    # Note: cost (row[17]) is stored in DB but not used by UsageRecord class
+                    # Cost is calculated dynamically when needed for display
                 )
                 records.append(record)
 
@@ -1150,20 +1162,9 @@ def load_user_preferences(db_path: Path = DEFAULT_DB_PATH) -> dict:
         sqlite3.Error: If database query fails
     """
     # Default preferences (fallback if DB doesn't exist or is empty)
-    defaults = {
-        'usage_display_mode': '0',           # M1=0, M2=1, M3=2, M4=3
-        'color_mode': 'gradient',            # solid | gradient
-        'color_solid': '#00A7E1',            # bright_blue
-        'color_gradient_low': '#00C853',     # green
-        'color_gradient_mid': '#FFD600',     # yellow
-        'color_gradient_high': '#FF1744',    # red
-        'color_unfilled': '#424242',         # grey
-        'tracking_mode': 'both',             # both | usage | limits
-        'machine_name': '',                  # custom name or empty
-        'db_path': '',                       # custom path or empty
-        'anonymize_projects': '0',           # 0=off, 1=on
-        'timezone': 'auto',                  # auto | UTC | Asia/Seoul | ...
-    }
+    from src.config.defaults import get_all_defaults
+
+    defaults = get_all_defaults()
 
     if not db_path.exists():
         return defaults
@@ -1316,7 +1317,7 @@ def load_messages_by_hour(
             # Row columns: id, date, timestamp, session_id, message_uuid, message_type,
             #              model, folder, git_branch, version,
             #              input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, total_tokens,
-            #              machine_name, content
+            #              machine_name, content, cost
 
             # Only create TokenUsage if tokens exist (assistant messages)
             token_usage = None
@@ -1339,6 +1340,7 @@ def load_messages_by_hour(
                 version=row[9],
                 token_usage=token_usage,
                 content=row[16] if len(row) > 16 else None,  # Load content field
+                # Note: cost (row[17]) is stored in DB but not used by UsageRecord class
             )
             records.append(record)
 
@@ -1498,4 +1500,186 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
         }
     finally:
         conn.close()
+
+
+def reset_pricing_to_defaults(db_path: Path = DEFAULT_DB_PATH) -> None:
+    """
+    Reset all model pricing to default values from defaults.py.
+
+    This updates all models in the model_pricing table with prices from defaults.py.
+    Use this when user presses 'r' in Settings to reset all settings.
+
+    Args:
+        db_path: Path to the SQLite database file
+
+    Raises:
+        sqlite3.Error: If database operation fails
+    """
+    init_database(db_path)
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+        from src.config.defaults import DEFAULT_MODEL_PRICING
+
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        for model_name, pricing_info in DEFAULT_MODEL_PRICING.items():
+            cursor.execute("""
+                INSERT OR REPLACE INTO model_pricing (
+                    model_name, input_price_per_mtok, output_price_per_mtok,
+                    cache_write_price_per_mtok, cache_read_price_per_mtok,
+                    last_updated, notes
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                model_name,
+                pricing_info['input_price'],
+                pricing_info['output_price'],
+                pricing_info['cache_write_price'],
+                pricing_info['cache_read_price'],
+                timestamp,
+                pricing_info.get('notes', '')
+            ))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def update_model_pricing_group(
+    group_key: str,
+    input_price: float,
+    output_price: float,
+    db_path: Path = DEFAULT_DB_PATH
+) -> None:
+    """
+    Update pricing for a group of models (e.g., all Sonnet 4.x or Opus 4.x models).
+
+    This updates all models in the specified group to have the same input/output prices.
+    Cache prices are recalculated proportionally:
+    - cache_write = input_price * 1.25
+    - cache_read = input_price * 0.10
+
+    Args:
+        group_key: Group identifier from SETTINGS_MODEL_GROUPS (e.g., "sonnet-4.5", "opus-4")
+        input_price: New input price per million tokens (USD)
+        output_price: New output price per million tokens (USD)
+        db_path: Path to the SQLite database file
+
+    Raises:
+        sqlite3.Error: If database operation fails
+        ValueError: If group_key is not found in SETTINGS_MODEL_GROUPS
+    """
+    from src.config.defaults import SETTINGS_MODEL_GROUPS
+
+    # Find the group
+    group = None
+    for g in SETTINGS_MODEL_GROUPS:
+        if g['key'] == group_key:
+            group = g
+            break
+
+    if not group:
+        raise ValueError(f"Unknown model group: {group_key}")
+
+    init_database(db_path)
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+        timestamp = datetime.now(timezone.utc).isoformat()
+
+        # Calculate cache prices proportionally
+        cache_write_price = input_price * 1.25
+        cache_read_price = input_price * 0.10
+
+        # Update all models in the group
+        for model_id in group['model_ids']:
+            cursor.execute("""
+                UPDATE model_pricing
+                SET input_price_per_mtok = ?,
+                    output_price_per_mtok = ?,
+                    cache_write_price_per_mtok = ?,
+                    cache_read_price_per_mtok = ?,
+                    last_updated = ?
+                WHERE model_name = ?
+            """, (input_price, output_price, cache_write_price, cache_read_price, timestamp, model_id))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_model_pricing_for_settings(db_path: Path = DEFAULT_DB_PATH) -> dict:
+    """
+    Get model pricing information formatted for Settings UI.
+
+    Returns pricing for model groups (e.g., Sonnet 4.5, Opus 4) by taking
+    the first model in each group as representative.
+
+    Args:
+        db_path: Path to the SQLite database file
+
+    Returns:
+        Dictionary with group keys mapped to pricing info:
+        {
+            "sonnet-4.5": {
+                "display_name": "Sonnet 4.5",
+                "input_price": 3.0,
+                "output_price": 15.0,
+            },
+            "opus-4": {
+                "display_name": "Opus 4",
+                "input_price": 15.0,
+                "output_price": 75.0,
+            },
+        }
+    """
+    from src.config.defaults import SETTINGS_MODEL_GROUPS
+
+    if not db_path.exists():
+        # Return defaults if DB doesn't exist
+        return {
+            "sonnet-4.5": {"display_name": "Sonnet 4.5", "input_price": 3.0, "output_price": 15.0},
+            "opus-4": {"display_name": "Opus 4", "input_price": 15.0, "output_price": 75.0},
+        }
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+        result = {}
+
+        for group in SETTINGS_MODEL_GROUPS:
+            # Get pricing from the first model in the group (all models in group have same price)
+            representative_model = group['model_ids'][0]
+
+            cursor.execute("""
+                SELECT input_price_per_mtok, output_price_per_mtok
+                FROM model_pricing
+                WHERE model_name = ?
+            """, (representative_model,))
+
+            row = cursor.fetchone()
+            if row:
+                result[group['key']] = {
+                    "display_name": group['display_name'],
+                    "input_price": row[0],
+                    "output_price": row[1],
+                }
+            else:
+                # Fallback to defaults if not found in DB
+                result[group['key']] = {
+                    "display_name": group['display_name'],
+                    "input_price": 3.0 if 'sonnet' in group['key'] else 15.0,
+                    "output_price": 15.0 if 'sonnet' in group['key'] else 75.0,
+                }
+
+        return result
+    finally:
+        conn.close()
+
+
 #endregion

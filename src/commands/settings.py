@@ -37,20 +37,26 @@ def run(console: Console) -> None:
         _display_settings_menu(console, prefs, machine_name, db_path)
 
         # Wait for user input
-        console.print("\n[dim]Enter setting key to edit ([#ff8800]1-9, a-b[/#ff8800]), [#ff8800][r][/#ff8800]eset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
+        console.print("\n[dim]Enter setting key to edit ([#ff8800]1-5, 8-9, a-d[/#ff8800]), [#ff8800][r][/#ff8800]eset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
 
         key = _read_key()
 
         if key == '\x1b':  # ESC
             break
-        elif key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
+        elif key in ['1', '2', '3', '4', '5', '8', '9']:
             setting_num = int(key)
             _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key.lower() == 'a':  # 10th setting (Backup Retention)
+        elif key.lower() == 'a':  # Auto Backup
             setting_num = 10
             _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key.lower() == 'b':  # 11th setting (Display Timezone)
+        elif key.lower() == 'b':  # Keep Monthly Backups
             setting_num = 11
+            _edit_setting(console, setting_num, prefs, save_user_preference)
+        elif key.lower() == 'c':  # Backup Retention
+            setting_num = 12
+            _edit_setting(console, setting_num, prefs, save_user_preference)
+        elif key.lower() == 'd':  # Display Timezone
+            setting_num = 13
             _edit_setting(console, setting_num, prefs, save_user_preference)
         elif key.lower() == 'r':  # Reset to defaults
             _reset_to_defaults(console, save_user_preference)
@@ -151,23 +157,39 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     console.print()
 
     # Settings section (editable)
+    from src.config.defaults import DEFAULT_COLORS, DEFAULT_INTERVALS
+
     settings_table = Table(show_header=True, box=None, padding=(0, 2))
     settings_table.add_column("#", style="dim", justify="right", width=5)
     settings_table.add_column("Setting", style="white", justify="left", width=30)
     settings_table.add_column("Value", style="cyan", justify="left")
 
-    settings_table.add_row("[#ff8800][1][/#ff8800]", "Solid Color", prefs.get('color_solid', '#00A7E1'))
-    settings_table.add_row("[#ff8800][2][/#ff8800]", "Gradient Low (0-60%)", prefs.get('color_gradient_low', '#00C853'))
-    settings_table.add_row("[#ff8800][3][/#ff8800]", "Gradient Mid (60-85%)", prefs.get('color_gradient_mid', '#FFD600'))
-    settings_table.add_row("[#ff8800][4][/#ff8800]", "Gradient High (85-100%)", prefs.get('color_gradient_high', '#FF1744'))
-    settings_table.add_row("[#ff8800][5][/#ff8800]", "Unfilled Color", prefs.get('color_unfilled', '#424242'))
+    settings_table.add_row("[#ff8800][1][/#ff8800]", "Solid Color", prefs.get('color_solid', DEFAULT_COLORS['color_solid']))
+    settings_table.add_row("[#ff8800][2][/#ff8800]", "Gradient Low (0-60%)", prefs.get('color_gradient_low', DEFAULT_COLORS['color_gradient_low']))
+    settings_table.add_row("[#ff8800][3][/#ff8800]", "Gradient Mid (60-85%)", prefs.get('color_gradient_mid', DEFAULT_COLORS['color_gradient_mid']))
+    settings_table.add_row("[#ff8800][4][/#ff8800]", "Gradient High (85-100%)", prefs.get('color_gradient_high', DEFAULT_COLORS['color_gradient_high']))
+    settings_table.add_row("[#ff8800][5][/#ff8800]", "Unfilled Color", prefs.get('color_unfilled', DEFAULT_COLORS['color_unfilled']))
+
+    # Model pricing settings (read-only - edit src/config/defaults.py to change)
+    from src.storage.snapshot_db import get_model_pricing_for_settings
+    pricing_data = get_model_pricing_for_settings()
+
+    sonnet_pricing = pricing_data.get('sonnet-4.5', {})
+    sonnet_in = sonnet_pricing.get('input_price', 3.0)
+    sonnet_out = sonnet_pricing.get('output_price', 15.0)
+    settings_table.add_row("[dim][6][/dim]", "Sonnet 4.5 Pricing (In/Out)", f"[dim]${sonnet_in:.2f}/${sonnet_out:.2f}[/dim]")
+
+    opus_pricing = pricing_data.get('opus-4', {})
+    opus_in = opus_pricing.get('input_price', 15.0)
+    opus_out = opus_pricing.get('output_price', 75.0)
+    settings_table.add_row("[dim][7][/dim]", "Opus 4 Pricing (In/Out)", f"[dim]${opus_in:.2f}/${opus_out:.2f}[/dim]")
 
     # Auto refresh settings
-    refresh_interval = prefs.get('refresh_interval', '30')
-    settings_table.add_row("[#ff8800][6][/#ff8800]", "Auto Refresh Interval (sec)", refresh_interval)
+    refresh_interval = prefs.get('refresh_interval', DEFAULT_INTERVALS['refresh_interval'])
+    settings_table.add_row("[#ff8800][8][/#ff8800]", "Auto Refresh Interval (sec)", refresh_interval)
 
-    watch_interval = prefs.get('watch_interval', '60')
-    settings_table.add_row("[#ff8800][7][/#ff8800]", "File Watch Interval (sec)", watch_interval)
+    watch_interval = prefs.get('watch_interval', DEFAULT_INTERVALS['watch_interval'])
+    settings_table.add_row("[#ff8800][9][/#ff8800]", "File Watch Interval (sec)", watch_interval)
 
     # Backup settings
     from src.config.user_config import (
@@ -177,13 +199,13 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     )
 
     backup_enabled = get_backup_enabled()
-    settings_table.add_row("[#ff8800][8][/#ff8800]", "Auto Backup", "Enabled" if backup_enabled else "Disabled")
+    settings_table.add_row("[#ff8800]\\[a][/#ff8800]", "Auto Backup", "Enabled" if backup_enabled else "Disabled")
 
     keep_monthly = get_backup_keep_monthly()
-    settings_table.add_row("[#ff8800][9][/#ff8800]", "Keep Monthly Backups", "Yes" if keep_monthly else "No")
+    settings_table.add_row("[#ff8800]\\[b][/#ff8800]", "Keep Monthly Backups", "Yes" if keep_monthly else "No")
 
     retention_days = get_backup_retention_days()
-    settings_table.add_row("[#ff8800]\\[a][/#ff8800]", "Backup Retention (days)", str(retention_days))
+    settings_table.add_row("[#ff8800]\\[c][/#ff8800]", "Backup Retention (days)", str(retention_days))
 
     # Timezone setting
     tz_setting = prefs.get('timezone', 'auto')
@@ -191,11 +213,12 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
         tz_value = f"Auto ({tz_info['abbr']})"
     else:
         tz_value = f"{tz_setting} ({tz_info['abbr']})"
-    settings_table.add_row("[#ff8800]\\[b][/#ff8800]", "Display Timezone", tz_value)
+    settings_table.add_row("[#ff8800]\\[d][/#ff8800]", "Display Timezone", tz_value)
 
     settings_panel = Panel(
         settings_table,
         title="[bold]Settings (Editable)",
+        subtitle="[dim]Note: Edit src/config/defaults.py to change model pricing[/dim]",
         border_style="white",
         expand=True,
     )
@@ -208,27 +231,31 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
 
     Args:
         console: Rich console for rendering
-        setting_num: Number of the setting to edit (1-11)
+        setting_num: Number of the setting to edit (1-13)
         prefs: Current preferences dictionary
         save_func: Function to save preference
     """
+    from src.config.defaults import DEFAULT_COLORS, DEFAULT_INTERVALS
+
     setting_map = {
-        1: ('color_solid', 'Solid Color', '#00A7E1'),
-        2: ('color_gradient_low', 'Gradient Low (0-60%)', '#00C853'),
-        3: ('color_gradient_mid', 'Gradient Mid (60-85%)', '#FFD600'),
-        4: ('color_gradient_high', 'Gradient High (85-100%)', '#FF1744'),
-        5: ('color_unfilled', 'Unfilled Color', '#424242'),
-        6: ('refresh_interval', 'Auto Refresh Interval (seconds)', '30'),
-        7: ('watch_interval', 'File Watch Interval (seconds)', '60'),
+        1: ('color_solid', 'Solid Color', DEFAULT_COLORS['color_solid']),
+        2: ('color_gradient_low', 'Gradient Low (0-60%)', DEFAULT_COLORS['color_gradient_low']),
+        3: ('color_gradient_mid', 'Gradient Mid (60-85%)', DEFAULT_COLORS['color_gradient_mid']),
+        4: ('color_gradient_high', 'Gradient High (85-100%)', DEFAULT_COLORS['color_gradient_high']),
+        5: ('color_unfilled', 'Unfilled Color', DEFAULT_COLORS['color_unfilled']),
+        8: ('refresh_interval', 'Auto Refresh Interval (seconds)', DEFAULT_INTERVALS['refresh_interval']),
+        9: ('watch_interval', 'File Watch Interval (seconds)', DEFAULT_INTERVALS['watch_interval']),
     }
 
-    # Handle backup settings separately (8, 9, 10)
-    if setting_num in [8, 9, 10]:
+    # Note: Model pricing (6, 7) is read-only - edit src/config/defaults.py to change
+
+    # Handle backup settings separately (10, 11, 12)
+    if setting_num in [10, 11, 12]:
         _edit_backup_setting(console, setting_num)
         return
 
-    # Handle timezone setting separately (11)
-    if setting_num == 11:
+    # Handle timezone setting separately (13)
+    if setting_num == 13:
         _edit_timezone_setting(console, prefs, save_func)
         return
 
@@ -291,11 +318,11 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
 
 def _edit_backup_setting(console: Console, setting_num: int) -> None:
     """
-    Edit backup-related settings (8, 9, 10).
+    Edit backup-related settings (10, 11, 12).
 
     Args:
         console: Rich console for rendering
-        setting_num: Setting number (8, 9, or 10)
+        setting_num: Setting number (10, 11, or 12)
     """
     from src.config.user_config import (
         get_backup_enabled,
@@ -308,7 +335,7 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
 
     console.print()
 
-    if setting_num == 8:
+    if setting_num == 10:
         # Auto Backup (True/False)
         current = get_backup_enabled()
         console.print("[bold]Edit Auto Backup[/bold]")
@@ -329,7 +356,7 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
         except (EOFError, KeyboardInterrupt):
             console.print("\n[yellow]Input cancelled[/yellow]")
 
-    elif setting_num == 9:
+    elif setting_num == 11:
         # Keep Monthly Backups (True/False)
         current = get_backup_keep_monthly()
         console.print("[bold]Edit Keep Monthly Backups[/bold]")
@@ -351,7 +378,7 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
         except (EOFError, KeyboardInterrupt):
             console.print("\n[yellow]Input cancelled[/yellow]")
 
-    elif setting_num == 10:
+    elif setting_num == 12:
         # Backup Retention Days (int)
         current = get_backup_retention_days()
         console.print("[bold]Edit Backup Retention (days)[/bold]")
@@ -382,7 +409,7 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
 
 def _edit_timezone_setting(console: Console, prefs: dict, save_func) -> None:
     """
-    Edit timezone setting (11).
+    Edit timezone setting (13).
 
     Args:
         console: Rich console for rendering
@@ -487,6 +514,7 @@ def _reset_to_defaults(console: Console, save_func) -> None:
     console.print()
     console.print("[dim]This will reset the following settings to their default values:[/dim]")
     console.print("[dim]  • Color settings (Solid, Gradient Low/Mid/High, Unfilled)[/dim]")
+    console.print("[dim]  • Model Pricing (loaded from src/config/defaults.py)[/dim]")
     console.print("[dim]  • Auto Refresh Interval (30 seconds)[/dim]")
     console.print("[dim]  • File Watch Interval (60 seconds)[/dim]")
     console.print("[dim]  • Auto Backup (Enabled)[/dim]")
@@ -503,17 +531,11 @@ def _reset_to_defaults(console: Console, save_func) -> None:
         confirmation = input().strip().lower()
 
         if confirmation == 'yes':
-            # Default values
-            defaults = {
-                'color_solid': '#00A7E1',
-                'color_gradient_low': '#00C853',
-                'color_gradient_mid': '#FFD600',
-                'color_gradient_high': '#FF1744',
-                'color_unfilled': '#424242',
-                'refresh_interval': '30',
-                'watch_interval': '60',
-                'timezone': 'auto',
-            }
+            # Load defaults from config
+            from src.config.defaults import get_all_defaults
+
+            # Get all defaults
+            defaults = get_all_defaults()
 
             # Save all defaults
             for key, value in defaults.items():
@@ -528,6 +550,10 @@ def _reset_to_defaults(console: Console, save_func) -> None:
             set_backup_enabled(True)
             set_backup_keep_monthly(True)
             set_backup_retention_days(30)
+
+            # Reset model pricing
+            from src.storage.snapshot_db import reset_pricing_to_defaults
+            reset_pricing_to_defaults()
 
             console.print()
             console.print("[green]✓ All settings have been reset to defaults[/green]")

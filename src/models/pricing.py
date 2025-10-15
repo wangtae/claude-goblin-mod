@@ -1,43 +1,63 @@
 #region Imports
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict
+import sqlite3
+from pathlib import Path
 #endregion
 
 
-#region Constants
-# Claude API Pricing (per million tokens)
-# Source: https://claude.com/pricing (as of 2025-10-14)
+#region Pricing Cache
+# Load pricing from database at module import time
+# This avoids repeated DB connections during runtime
+_PRICING_CACHE: Dict[str, Dict[str, float]] = {}
 
-# Opus 4.1 pricing
-OPUS_4_INPUT_PRICE = 15.0  # $15 per million tokens
-OPUS_4_OUTPUT_PRICE = 75.0  # $75 per million tokens
-OPUS_4_CACHE_WRITE_PRICE = 18.75  # $18.75 per million tokens
-OPUS_4_CACHE_READ_PRICE = 1.50  # $1.50 per million tokens
+def _load_pricing_from_db() -> Dict[str, Dict[str, float]]:
+    """Load all model pricing from database into memory cache."""
+    from src.storage.snapshot_db import DEFAULT_DB_PATH
 
-# Sonnet 4.5 pricing (simplified - using base rate)
-# Note: Real pricing has context length tiers (≤200K vs >200K)
-SONNET_4_5_INPUT_PRICE = 3.0  # $3 per million tokens (base rate)
-SONNET_4_5_OUTPUT_PRICE = 15.0  # $15 per million tokens (base rate)
-SONNET_4_5_CACHE_WRITE_PRICE = 3.75  # $3.75 per million tokens (base rate)
-SONNET_4_5_CACHE_READ_PRICE = 0.30  # $0.30 per million tokens (base rate)
+    pricing_dict = {}
 
-# Sonnet 4 pricing
-SONNET_4_INPUT_PRICE = 3.0  # $3 per million tokens
-SONNET_4_OUTPUT_PRICE = 15.0  # $15 per million tokens
-SONNET_4_CACHE_WRITE_PRICE = 3.75  # $3.75 per million tokens
-SONNET_4_CACHE_READ_PRICE = 0.30  # $0.30 per million tokens
+    try:
+        conn = sqlite3.connect(DEFAULT_DB_PATH, timeout=30.0)
+        cursor = conn.cursor()
 
-# Haiku 3.5 pricing
-HAIKU_3_5_INPUT_PRICE = 1.0  # $1 per million tokens
-HAIKU_3_5_OUTPUT_PRICE = 5.0  # $5 per million tokens
-HAIKU_3_5_CACHE_WRITE_PRICE = 1.0  # $1 per million tokens
-HAIKU_3_5_CACHE_READ_PRICE = 0.08  # $0.08 per million tokens
+        cursor.execute("""
+            SELECT model_name, input_price_per_mtok, output_price_per_mtok,
+                   cache_write_price_per_mtok, cache_read_price_per_mtok
+            FROM model_pricing
+        """)
 
-# Legacy models (fallback)
-LEGACY_INPUT_PRICE = 3.0  # Default: $3 per million tokens
-LEGACY_OUTPUT_PRICE = 15.0  # Default: $15 per million tokens
-LEGACY_CACHE_WRITE_PRICE = 3.75  # Default: $3.75 per million tokens
-LEGACY_CACHE_READ_PRICE = 0.30  # Default: $0.30 per million tokens
+        for row in cursor.fetchall():
+            model_name = row[0]
+            pricing_dict[model_name] = {
+                'input_price': row[1],
+                'output_price': row[2],
+                'cache_write_price': row[3],
+                'cache_read_price': row[4],
+            }
+
+        conn.close()
+    except Exception:
+        # If DB read fails, use hardcoded fallback
+        from src.config.defaults import DEFAULT_MODEL_PRICING
+        for model_name, pricing_info in DEFAULT_MODEL_PRICING.items():
+            pricing_dict[model_name] = {
+                'input_price': pricing_info['input_price'],
+                'output_price': pricing_info['output_price'],
+                'cache_write_price': pricing_info['cache_write_price'],
+                'cache_read_price': pricing_info['cache_read_price'],
+            }
+
+    return pricing_dict
+
+# Load pricing cache at module import
+_PRICING_CACHE = _load_pricing_from_db()
+
+# Legacy constants (fallback only)
+LEGACY_INPUT_PRICE = 3.0
+LEGACY_OUTPUT_PRICE = 15.0
+LEGACY_CACHE_WRITE_PRICE = 3.75
+LEGACY_CACHE_READ_PRICE = 0.30
 #endregion
 
 
@@ -80,57 +100,84 @@ def get_model_pricing(model_id: str) -> ModelPricing:
     Returns:
         ModelPricing object with pricing details
     """
+    # First try exact match in cache
+    if model_id in _PRICING_CACHE:
+        pricing = _PRICING_CACHE[model_id]
+        return ModelPricing(
+            input_price=pricing['input_price'],
+            output_price=pricing['output_price'],
+            cache_write_price=pricing['cache_write_price'],
+            cache_read_price=pricing['cache_read_price'],
+            model_name=_get_display_name(model_id),
+        )
+
+    # If no exact match, try pattern matching for unknown model IDs
     model_lower = model_id.lower()
 
-    # Opus 4.x
+    # Try to find a matching model in cache by pattern
+    for cached_model_id, pricing in _PRICING_CACHE.items():
+        cached_lower = cached_model_id.lower()
+
+        # Match by model family
+        if "opus-4" in model_lower and "opus-4" in cached_lower:
+            return ModelPricing(
+                input_price=pricing['input_price'],
+                output_price=pricing['output_price'],
+                cache_write_price=pricing['cache_write_price'],
+                cache_read_price=pricing['cache_read_price'],
+                model_name="Opus 4",
+            )
+        elif "sonnet-4-5" in model_lower or "sonnet-4.5" in model_lower:
+            if "sonnet-4-5" in cached_lower or "sonnet-4.5" in cached_lower:
+                return ModelPricing(
+                    input_price=pricing['input_price'],
+                    output_price=pricing['output_price'],
+                    cache_write_price=pricing['cache_write_price'],
+                    cache_read_price=pricing['cache_read_price'],
+                    model_name="Sonnet 4.5",
+                )
+        elif "sonnet-4" in model_lower and "sonnet-4" in cached_lower:
+            return ModelPricing(
+                input_price=pricing['input_price'],
+                output_price=pricing['output_price'],
+                cache_write_price=pricing['cache_write_price'],
+                cache_read_price=pricing['cache_read_price'],
+                model_name="Sonnet 4",
+            )
+        elif ("haiku-3-5" in model_lower or "haiku-3.5" in model_lower):
+            if "haiku-3-5" in cached_lower or "haiku-3.5" in cached_lower:
+                return ModelPricing(
+                    input_price=pricing['input_price'],
+                    output_price=pricing['output_price'],
+                    cache_write_price=pricing['cache_write_price'],
+                    cache_read_price=pricing['cache_read_price'],
+                    model_name="Haiku 3.5",
+                )
+
+    # Default/unknown model - use legacy fallback
+    return ModelPricing(
+        input_price=LEGACY_INPUT_PRICE,
+        output_price=LEGACY_OUTPUT_PRICE,
+        cache_write_price=LEGACY_CACHE_WRITE_PRICE,
+        cache_read_price=LEGACY_CACHE_READ_PRICE,
+        model_name="Unknown",
+    )
+
+
+def _get_display_name(model_id: str) -> str:
+    """Get display name for a model ID."""
+    model_lower = model_id.lower()
+
     if "opus-4" in model_lower:
-        return ModelPricing(
-            input_price=OPUS_4_INPUT_PRICE,
-            output_price=OPUS_4_OUTPUT_PRICE,
-            cache_write_price=OPUS_4_CACHE_WRITE_PRICE,
-            cache_read_price=OPUS_4_CACHE_READ_PRICE,
-            model_name="Opus 4",
-        )
-
-    # Sonnet 4.5
+        return "Opus 4"
     elif "sonnet-4-5" in model_lower or "sonnet-4.5" in model_lower:
-        return ModelPricing(
-            input_price=SONNET_4_5_INPUT_PRICE,
-            output_price=SONNET_4_5_OUTPUT_PRICE,
-            cache_write_price=SONNET_4_5_CACHE_WRITE_PRICE,
-            cache_read_price=SONNET_4_5_CACHE_READ_PRICE,
-            model_name="Sonnet 4.5",
-        )
-
-    # Sonnet 4 (not 4.5)
+        return "Sonnet 4.5"
     elif "sonnet-4" in model_lower:
-        return ModelPricing(
-            input_price=SONNET_4_INPUT_PRICE,
-            output_price=SONNET_4_OUTPUT_PRICE,
-            cache_write_price=SONNET_4_CACHE_WRITE_PRICE,
-            cache_read_price=SONNET_4_CACHE_READ_PRICE,
-            model_name="Sonnet 4",
-        )
-
-    # Haiku 3.5
+        return "Sonnet 4"
     elif "haiku-3-5" in model_lower or "haiku-3.5" in model_lower:
-        return ModelPricing(
-            input_price=HAIKU_3_5_INPUT_PRICE,
-            output_price=HAIKU_3_5_OUTPUT_PRICE,
-            cache_write_price=HAIKU_3_5_CACHE_WRITE_PRICE,
-            cache_read_price=HAIKU_3_5_CACHE_READ_PRICE,
-            model_name="Haiku 3.5",
-        )
-
-    # Default/unknown model
+        return "Haiku 3.5"
     else:
-        return ModelPricing(
-            input_price=LEGACY_INPUT_PRICE,
-            output_price=LEGACY_OUTPUT_PRICE,
-            cache_write_price=LEGACY_CACHE_WRITE_PRICE,
-            cache_read_price=LEGACY_CACHE_READ_PRICE,
-            model_name="Unknown",
-        )
+        return "Unknown"
 
 
 def calculate_cost(

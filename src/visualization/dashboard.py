@@ -91,18 +91,20 @@ def _get_bar_color(percentage: int, color_mode: str, colors: dict) -> str:
     Returns:
         Color string (hex or Rich color name) for Rich library
     """
+    from src.config.defaults import DEFAULT_COLORS
+
     if color_mode == "solid":
-        return colors.get("solid", "#00A7E1")  # Default to bright_blue
+        return colors.get("color_solid", DEFAULT_COLORS['color_solid'])
     elif color_mode == "gradient":
         # Gradation mode: percentage-based colors
         if percentage < 60:
-            return colors.get("gradient_low", "#00C853")  # Default to green
+            return colors.get("color_gradient_low", DEFAULT_COLORS['color_gradient_low'])
         elif percentage < 85:
-            return colors.get("gradient_mid", "#FFD600")  # Default to yellow
+            return colors.get("color_gradient_mid", DEFAULT_COLORS['color_gradient_mid'])
         else:
-            return colors.get("gradient_high", "#FF1744")  # Default to red
+            return colors.get("color_gradient_high", DEFAULT_COLORS['color_gradient_high'])
     else:
-        return colors.get("solid", "#00A7E1")  # Fallback to solid color
+        return colors.get("color_solid", DEFAULT_COLORS['color_solid'])
 
 
 def _create_usage_bar_with_percent(percentage: int, width: int = 50, color_mode: str = "gradient", colors: dict = None) -> Text:
@@ -119,18 +121,14 @@ def _create_usage_bar_with_percent(percentage: int, width: int = 50, color_mode:
     Returns:
         Rich Text object with bar and percentage
     """
+    from src.config.defaults import DEFAULT_COLORS
+
     if colors is None:
-        colors = {
-            "solid": "#00A7E1",
-            "gradient_low": "#00C853",
-            "gradient_mid": "#FFD600",
-            "gradient_high": "#FF1744",
-            "unfilled": "#424242",
-        }
+        colors = DEFAULT_COLORS
 
     filled = int((percentage / 100) * width)
     bar_color = _get_bar_color(percentage, color_mode, colors)
-    unfilled_color = colors.get("unfilled", "#424242")
+    unfilled_color = colors.get("color_unfilled", DEFAULT_COLORS['color_unfilled'])
 
     bar_text = Text()
     bar_text.append("█" * filled, style=bar_color)
@@ -936,11 +934,11 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
     sorted_models = sorted(model_data.items(), key=lambda x: x[1]["total_tokens"], reverse=True)
 
     # Create table
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("Model", style="white", justify="left", width=25)
-    table.add_column("Bar", justify="left")
-    table.add_column("Tokens", style=ORANGE, justify="right")
-    table.add_column("Percentage", style=CYAN, justify="right")
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("Model", style="white", justify="left", width=30, overflow="crop")
+    table.add_column("", justify="left", width=20)  # Bar column (no header)
+    table.add_column("Tokens", style=ORANGE, justify="right", width=12)
+    table.add_column("%", style=CYAN, justify="right", width=8)
     table.add_column("Cost", style="green", justify="right", width=10)
 
     for model, data in sorted_models:
@@ -1033,11 +1031,11 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     max_tokens = max(data["total_tokens"] for _, data in sorted_folders)
 
     # Create table
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("Project", style="white", justify="left", overflow="crop")
-    table.add_column("Bar", justify="left", overflow="crop")
-    table.add_column("Tokens", style=ORANGE, justify="right")
-    table.add_column("Percentage", style=CYAN, justify="right")
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("Project", style="white", justify="left", width=30, overflow="crop")
+    table.add_column("", justify="left", width=20)  # Bar column (no header)
+    table.add_column("Tokens", style=ORANGE, justify="right", width=12)
+    table.add_column("%", style=CYAN, justify="right", width=8)
     table.add_column("Cost", style="green", justify="right", width=10)
 
     for folder, data in sorted_folders:
@@ -1238,11 +1236,11 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
     sorted_dates = sorted(daily_data.items(), reverse=True)
 
     # Create table with bars
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("Date", style="white", justify="left", width=21)
-    table.add_column("Bar", justify="left")
-    table.add_column("Tokens", style=ORANGE, justify="right")
-    table.add_column("Percentage", style=CYAN, justify="right")
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("Date", style="white", justify="left", width=30)
+    table.add_column("", justify="left", width=20)  # Bar column (no header)
+    table.add_column("Tokens", style=ORANGE, justify="right", width=12)
+    table.add_column("%", style=CYAN, justify="right", width=8)
     table.add_column("Cost", style="green", justify="right", width=10)
 
     for idx, (date, data) in enumerate(sorted_dates, start=1):
