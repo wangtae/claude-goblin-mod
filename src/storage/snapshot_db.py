@@ -1227,6 +1227,57 @@ def save_all_preferences(prefs: dict, db_path: Path = DEFAULT_DB_PATH) -> None:
         conn.close()
 
 
+def delete_user_preference(key: str, db_path: Path = DEFAULT_DB_PATH) -> None:
+    """
+    Delete a single user preference from database.
+
+    After deletion, defaults.py value will be used as fallback.
+
+    Args:
+        key: Preference key to delete (e.g., 'color_solid')
+        db_path: Path to the SQLite database file
+
+    Raises:
+        sqlite3.Error: If database operation fails
+    """
+    init_database(db_path)
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM user_preferences WHERE key = ?", (key,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_user_preferences(db_path: Path = DEFAULT_DB_PATH) -> None:
+    """
+    Delete all user preferences from database.
+
+    After deletion, defaults.py values will be used as fallback for all settings.
+    This is the proper way to "reset to defaults" - by removing custom values
+    rather than copying default values into the database.
+
+    Args:
+        db_path: Path to the SQLite database file
+
+    Raises:
+        sqlite3.Error: If database operation fails
+    """
+    init_database(db_path)
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM user_preferences")
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def load_messages_by_hour(
     target_date: str,
     target_hour: int,

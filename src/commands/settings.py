@@ -23,52 +23,63 @@ def run(console: Console) -> None:
     from src.storage.snapshot_db import load_user_preferences, save_user_preference, DEFAULT_DB_PATH
     import socket
 
-    while True:
-        # Load current settings
-        prefs = load_user_preferences()
+    try:
+        while True:
+            # Load current settings
+            prefs = load_user_preferences()
 
-        # Get machine name
-        machine_name = prefs.get('machine_name', '') or socket.gethostname()
+            # Get machine name
+            machine_name = prefs.get('machine_name', '') or socket.gethostname()
 
-        # Get database path
-        db_path = str(DEFAULT_DB_PATH)
+            # Get database path
+            db_path = str(DEFAULT_DB_PATH)
 
-        # Display settings menu
-        _display_settings_menu(console, prefs, machine_name, db_path)
+            # Display settings menu
+            _display_settings_menu(console, prefs, machine_name, db_path)
 
-        # Wait for user input
-        console.print("\n[dim]Enter setting key to edit ([#ff8800]1-5, 8-9, a-d[/#ff8800]), [#ff8800]\\[x][/#ff8800] reset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
+            # Wait for user input
+            console.print("\n[dim]Enter setting key to edit ([#ff8800]1-5, 8-9, a-f[/#ff8800]), [#ff8800]\\[x][/#ff8800] reset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
 
-        key = _read_key()
+            key = _read_key()
 
-        # Korean keyboard mapping
-        hangul_to_english = {
-            'ㅌ': 'x',  # x key (reset to defaults)
-        }
-        if key in hangul_to_english:
-            key = hangul_to_english[key]
+            # Korean keyboard mapping
+            hangul_to_english = {
+                'ㅌ': 'x',  # x key (reset to defaults)
+            }
+            if key in hangul_to_english:
+                key = hangul_to_english[key]
 
-        if key == '\x1b':  # ESC
-            break
-        elif key in ['1', '2', '3', '4', '5', '8', '9']:
-            setting_num = int(key)
-            _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key in ['6', '7']:  # Model pricing (read-only)
-            _show_pricing_readonly_message(console)
-        elif key.lower() == 'a':  # Auto Backup
-            setting_num = 10
-            _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key.lower() == 'b':  # Keep Monthly Backups
-            setting_num = 11
-            _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key.lower() == 'c':  # Backup Retention
-            setting_num = 12
-            _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key.lower() == 'd':  # Display Timezone
-            setting_num = 13
-            _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key.lower() == 'x':  # Reset to defaults
-            _reset_to_defaults(console, save_user_preference)
+            if key == '\x1b':  # ESC
+                break
+            elif key in ['1', '2', '3', '4', '5', '8', '9']:
+                setting_num = int(key)
+                _edit_setting(console, setting_num, prefs, save_user_preference)
+            elif key in ['6', '7']:  # Model pricing (read-only)
+                _show_pricing_readonly_message(console)
+            elif key.lower() == 'a':  # Auto Backup
+                setting_num = 10
+                _edit_setting(console, setting_num, prefs, save_user_preference)
+            elif key.lower() == 'b':  # Keep Monthly Backups
+                setting_num = 11
+                _edit_setting(console, setting_num, prefs, save_user_preference)
+            elif key.lower() == 'c':  # Backup Retention
+                setting_num = 12
+                _edit_setting(console, setting_num, prefs, save_user_preference)
+            elif key.lower() == 'd':  # Display Timezone
+                setting_num = 13
+                _edit_setting(console, setting_num, prefs, save_user_preference)
+            elif key.lower() == 'e':  # Color Range Low
+                setting_num = 14
+                _edit_setting(console, setting_num, prefs, save_user_preference)
+            elif key.lower() == 'f':  # Color Range High
+                setting_num = 15
+                _edit_setting(console, setting_num, prefs, save_user_preference)
+            elif key.lower() == 'x':  # Reset to defaults
+                _reset_to_defaults(console, save_user_preference)
+    except KeyboardInterrupt:
+        # Handle Ctrl+C gracefully - just exit settings
+        console.print("\n")
+        return
 
 
 def _read_key() -> str:
@@ -193,10 +204,17 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     color_unfilled = prefs.get('color_unfilled', DEFAULT_COLORS['color_unfilled'])
 
     settings_table.add_row("[#ff8800][1][/#ff8800]", "Solid Color", f"[{color_solid}]{color_solid}[/{color_solid}]")
-    settings_table.add_row("[#ff8800][2][/#ff8800]", "Gradient Low (0-60%)", f"[{color_gradient_low}]{color_gradient_low}[/{color_gradient_low}]")
-    settings_table.add_row("[#ff8800][3][/#ff8800]", "Gradient Mid (60-85%)", f"[{color_gradient_mid}]{color_gradient_mid}[/{color_gradient_mid}]")
-    settings_table.add_row("[#ff8800][4][/#ff8800]", "Gradient High (85-100%)", f"[{color_gradient_high}]{color_gradient_high}[/{color_gradient_high}]")
+
+    # Color range settings
+    color_range_low = prefs.get('color_range_low', DEFAULT_COLORS.get('color_range_low', '60'))
+    color_range_high = prefs.get('color_range_high', DEFAULT_COLORS.get('color_range_high', '85'))
+
+    settings_table.add_row("[#ff8800][2][/#ff8800]", f"Gradient Low (0-{color_range_low}%)", f"[{color_gradient_low}]{color_gradient_low}[/{color_gradient_low}]")
+    settings_table.add_row("[#ff8800][3][/#ff8800]", f"Gradient Mid ({color_range_low}-{color_range_high}%)", f"[{color_gradient_mid}]{color_gradient_mid}[/{color_gradient_mid}]")
+    settings_table.add_row("[#ff8800][4][/#ff8800]", f"Gradient High ({color_range_high}-100%)", f"[{color_gradient_high}]{color_gradient_high}[/{color_gradient_high}]")
     settings_table.add_row("[#ff8800][5][/#ff8800]", "Unfilled Color", f"[{color_unfilled}]{color_unfilled}[/{color_unfilled}]")
+    settings_table.add_row("[#ff8800][e][/#ff8800]", "Color Range Low (%)", color_range_low)
+    settings_table.add_row("[#ff8800][f][/#ff8800]", "Color Range High (%)", color_range_high)
 
     # Model pricing settings (read-only - edit src/config/defaults.py to change)
     from src.storage.snapshot_db import get_model_pricing_for_settings
@@ -264,17 +282,21 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
 
     Args:
         console: Rich console for rendering
-        setting_num: Number of the setting to edit (1-13)
+        setting_num: Number of the setting to edit (1-15)
         prefs: Current preferences dictionary
         save_func: Function to save preference
     """
     from src.config.defaults import DEFAULT_COLORS, DEFAULT_INTERVALS
 
+    # Get current color ranges for dynamic labels
+    color_range_low = prefs.get('color_range_low', DEFAULT_COLORS.get('color_range_low', '60'))
+    color_range_high = prefs.get('color_range_high', DEFAULT_COLORS.get('color_range_high', '85'))
+
     setting_map = {
         1: ('color_solid', 'Solid Color', DEFAULT_COLORS['color_solid']),
-        2: ('color_gradient_low', 'Gradient Low (0-60%)', DEFAULT_COLORS['color_gradient_low']),
-        3: ('color_gradient_mid', 'Gradient Mid (60-85%)', DEFAULT_COLORS['color_gradient_mid']),
-        4: ('color_gradient_high', 'Gradient High (85-100%)', DEFAULT_COLORS['color_gradient_high']),
+        2: ('color_gradient_low', f'Gradient Low (0-{color_range_low}%)', DEFAULT_COLORS['color_gradient_low']),
+        3: ('color_gradient_mid', f'Gradient Mid ({color_range_low}-{color_range_high}%)', DEFAULT_COLORS['color_gradient_mid']),
+        4: ('color_gradient_high', f'Gradient High ({color_range_high}-100%)', DEFAULT_COLORS['color_gradient_high']),
         5: ('color_unfilled', 'Unfilled Color', DEFAULT_COLORS['color_unfilled']),
         8: ('refresh_interval', 'Auto Refresh Interval (seconds)', DEFAULT_INTERVALS['refresh_interval']),
         9: ('watch_interval', 'File Watch Interval (seconds)', DEFAULT_INTERVALS['watch_interval']),
@@ -290,6 +312,11 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
     # Handle timezone setting separately (13)
     if setting_num == 13:
         _edit_timezone_setting(console, prefs, save_func)
+        return
+
+    # Handle color range settings separately (14, 15)
+    if setting_num in [14, 15]:
+        _edit_color_range_setting(console, setting_num, prefs, save_func)
         return
 
     if setting_num not in setting_map:
@@ -315,8 +342,10 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
             if new_value:
                 # Check for default reset
                 if new_value.lower() in ['d', 'default']:
-                    save_func(key, default)
+                    from src.storage.snapshot_db import delete_user_preference
+                    delete_user_preference(key)
                     console.print(f"[green]✓ {name} reset to default: {default}[/green]")
+                    console.print(f"[dim]  (Using value from src/config/defaults.py)[/dim]")
                 # Validate hex color format
                 elif new_value.startswith('#') and len(new_value) == 7:
                     try:
@@ -340,8 +369,10 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
             if new_value:
                 # Check for default reset
                 if new_value.lower() in ['d', 'default']:
-                    save_func(key, str(default))
+                    from src.storage.snapshot_db import delete_user_preference
+                    delete_user_preference(key)
                     console.print(f"[green]✓ {name} reset to default: {default} seconds[/green]")
+                    console.print(f"[dim]  (Using value from src/config/defaults.py)[/dim]")
                 else:
                     try:
                         interval = int(new_value)
@@ -536,9 +567,11 @@ def _edit_timezone_setting(console: Console, prefs: dict, save_func) -> None:
             return
 
         if choice.lower() in ['d', 'default']:
-            # Reset to default (Auto)
-            save_func('timezone', 'auto')
+            # Reset to default (Auto) by deleting from database
+            from src.storage.snapshot_db import delete_user_preference
+            delete_user_preference('timezone')
             console.print("[green]✓ Timezone reset to default: Auto (system detection)[/green]")
+            console.print("[dim]  (Using value from src/config/defaults.py)[/dim]")
 
         elif choice == '1':
             # Auto mode
@@ -593,13 +626,112 @@ def _edit_timezone_setting(console: Console, prefs: dict, save_func) -> None:
     _read_key()
 
 
-def _reset_to_defaults(console: Console, save_func) -> None:
+def _edit_color_range_setting(console: Console, setting_num: int, prefs: dict, save_func) -> None:
     """
-    Reset all settings to default values.
+    Edit color range threshold settings (14, 15).
 
     Args:
         console: Rich console for rendering
-        save_func: Function to save preferences
+        setting_num: Setting number (14 or 15)
+        prefs: Current preferences dictionary
+        save_func: Function to save preference
+    """
+    from src.config.defaults import DEFAULT_COLORS
+
+    console.print()
+
+    if setting_num == 14:
+        # Color Range Low
+        current = prefs.get('color_range_low', DEFAULT_COLORS.get('color_range_low', '60'))
+        default = DEFAULT_COLORS.get('color_range_low', '60')
+        console.print("[bold]Edit Color Range Low (%)[/bold]")
+        console.print(f"[dim]Current value: {current}%[/dim]")
+        console.print(f"[dim]Default value: {default}%[/dim]")
+        console.print("[dim]This sets the upper bound for 'Low' gradient (0-X%).[/dim]")
+        console.print("[dim]Enter percentage (1-99), 'd' for default, or press Enter to keep current:[/dim]")
+
+        try:
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            new_value = input().strip()
+
+            if new_value:
+                if new_value.lower() in ['d', 'default']:
+                    from src.storage.snapshot_db import delete_user_preference
+                    delete_user_preference('color_range_low')
+                    console.print(f"[green]✓ Color Range Low reset to default: {default}%[/green]")
+                    console.print(f"[dim]  (Using value from src/config/defaults.py)[/dim]")
+                else:
+                    try:
+                        percent = int(new_value)
+                        color_range_high = int(prefs.get('color_range_high', DEFAULT_COLORS.get('color_range_high', '85')))
+                        if 1 <= percent <= 99 and percent < color_range_high:
+                            save_func('color_range_low', str(percent))
+                            console.print(f"[green]✓ Color Range Low set to {percent}%[/green]")
+                            console.print(f"[dim]  Gradient Low: 0-{percent}%[/dim]")
+                            console.print(f"[dim]  Gradient Mid: {percent}-{color_range_high}%[/dim]")
+                        elif percent >= color_range_high:
+                            console.print(f"[red]✗ Must be less than Color Range High ({color_range_high}%)[/red]")
+                        else:
+                            console.print("[red]✗ Percentage must be between 1 and 99[/red]")
+                    except ValueError:
+                        console.print("[red]✗ Invalid number. Enter a number or 'd' for default[/red]")
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[yellow]Input cancelled[/yellow]")
+
+    elif setting_num == 15:
+        # Color Range High
+        current = prefs.get('color_range_high', DEFAULT_COLORS.get('color_range_high', '85'))
+        default = DEFAULT_COLORS.get('color_range_high', '85')
+        console.print("[bold]Edit Color Range High (%)[/bold]")
+        console.print(f"[dim]Current value: {current}%[/dim]")
+        console.print(f"[dim]Default value: {default}%[/dim]")
+        console.print("[dim]This sets the upper bound for 'Mid' gradient (X-Y%).[/dim]")
+        console.print("[dim]Enter percentage (1-99), 'd' for default, or press Enter to keep current:[/dim]")
+
+        try:
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            new_value = input().strip()
+
+            if new_value:
+                if new_value.lower() in ['d', 'default']:
+                    from src.storage.snapshot_db import delete_user_preference
+                    delete_user_preference('color_range_high')
+                    console.print(f"[green]✓ Color Range High reset to default: {default}%[/green]")
+                    console.print(f"[dim]  (Using value from src/config/defaults.py)[/dim]")
+                else:
+                    try:
+                        percent = int(new_value)
+                        color_range_low = int(prefs.get('color_range_low', DEFAULT_COLORS.get('color_range_low', '60')))
+                        if 1 <= percent <= 99 and percent > color_range_low:
+                            save_func('color_range_high', str(percent))
+                            console.print(f"[green]✓ Color Range High set to {percent}%[/green]")
+                            console.print(f"[dim]  Gradient Mid: {color_range_low}-{percent}%[/dim]")
+                            console.print(f"[dim]  Gradient High: {percent}-100%[/dim]")
+                        elif percent <= color_range_low:
+                            console.print(f"[red]✗ Must be greater than Color Range Low ({color_range_low}%)[/red]")
+                        else:
+                            console.print("[red]✗ Percentage must be between 1 and 99[/red]")
+                    except ValueError:
+                        console.print("[red]✗ Invalid number. Enter a number or 'd' for default[/red]")
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[yellow]Input cancelled[/yellow]")
+
+    console.print("\n[dim]Press any key to continue...[/dim]")
+    _read_key()
+
+
+def _reset_to_defaults(console: Console, save_func) -> None:
+    """
+    Reset all settings to default values by deleting from database.
+
+    This ensures defaults.py is the source of truth - by removing user
+    customizations, defaults.py values automatically apply.
+
+    Args:
+        console: Rich console for rendering
+        save_func: Function to save preferences (unused, kept for signature compatibility)
     """
     console.print()
     console.print("[bold yellow]Reset All Settings to Defaults[/bold yellow]")
@@ -614,7 +746,9 @@ def _reset_to_defaults(console: Console, save_func) -> None:
     console.print("[dim]  • Backup Retention (30 days)[/dim]")
     console.print("[dim]  • Display Timezone (Auto)[/dim]")
     console.print()
-    console.print("[yellow]Are you sure? This action cannot be undone.[/yellow]")
+    console.print("[dim]After reset, default values from src/config/defaults.py will be used.[/dim]")
+    console.print()
+    console.print("[yellow]Are you sure? This will delete all your custom settings.[/yellow]")
     console.print("[dim]Type 'yes' to confirm or press Enter to cancel:[/dim]")
 
     try:
@@ -623,17 +757,13 @@ def _reset_to_defaults(console: Console, save_func) -> None:
         confirmation = input().strip().lower()
 
         if confirmation == 'yes':
-            # Load defaults from config
-            from src.config.defaults import get_all_defaults
+            # Delete all user preferences from database
+            # This makes defaults.py values apply automatically
+            from src.storage.snapshot_db import delete_user_preferences
 
-            # Get all defaults
-            defaults = get_all_defaults()
+            delete_user_preferences()
 
-            # Save all defaults
-            for key, value in defaults.items():
-                save_func(key, value)
-
-            # Reset backup settings
+            # Reset backup settings (stored in separate config file)
             from src.config.user_config import (
                 set_backup_enabled,
                 set_backup_keep_monthly,
@@ -643,12 +773,13 @@ def _reset_to_defaults(console: Console, save_func) -> None:
             set_backup_keep_monthly(True)
             set_backup_retention_days(30)
 
-            # Reset model pricing
+            # Reset model pricing to defaults
             from src.storage.snapshot_db import reset_pricing_to_defaults
             reset_pricing_to_defaults()
 
             console.print()
             console.print("[green]✓ All settings have been reset to defaults[/green]")
+            console.print("[green]  Defaults from src/config/defaults.py will now be used[/green]")
         else:
             console.print()
             console.print("[yellow]Reset cancelled[/yellow]")

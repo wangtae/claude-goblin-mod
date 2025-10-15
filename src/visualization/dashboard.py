@@ -83,10 +83,12 @@ def _get_bar_color(percentage: int, color_mode: str, colors: dict) -> str:
         color_mode: Color mode ("solid" or "gradient")
         colors: Dictionary with color values:
             - solid: Color for solid mode (hex or Rich color name)
-            - gradient_low: Color for 0-60% (hex or Rich color name)
-            - gradient_mid: Color for 60-85% (hex or Rich color name)
-            - gradient_high: Color for 85-100% (hex or Rich color name)
+            - gradient_low: Color for 0-X% (hex or Rich color name)
+            - gradient_mid: Color for X-Y% (hex or Rich color name)
+            - gradient_high: Color for Y-100% (hex or Rich color name)
             - unfilled: Color for unfilled portion (hex or Rich color name)
+            - color_range_low: Low range threshold (default: 60)
+            - color_range_high: High range threshold (default: 85)
 
     Returns:
         Color string (hex or Rich color name) for Rich library
@@ -96,10 +98,14 @@ def _get_bar_color(percentage: int, color_mode: str, colors: dict) -> str:
     if color_mode == "solid":
         return colors.get("color_solid", DEFAULT_COLORS['color_solid'])
     elif color_mode == "gradient":
-        # Gradation mode: percentage-based colors
-        if percentage < 60:
+        # Get user-defined color range thresholds
+        color_range_low = int(colors.get("color_range_low", DEFAULT_COLORS.get('color_range_low', '60')))
+        color_range_high = int(colors.get("color_range_high", DEFAULT_COLORS.get('color_range_high', '85')))
+
+        # Gradation mode: percentage-based colors with user-defined thresholds
+        if percentage < color_range_low:
             return colors.get("color_gradient_low", DEFAULT_COLORS['color_gradient_low'])
-        elif percentage < 85:
+        elif percentage < color_range_high:
             return colors.get("color_gradient_mid", DEFAULT_COLORS['color_gradient_mid'])
         else:
             return colors.get("color_gradient_high", DEFAULT_COLORS['color_gradient_high'])

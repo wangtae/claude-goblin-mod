@@ -100,10 +100,12 @@ SETTINGS_MODEL_GROUPS = [
 
 DEFAULT_COLORS = {
     "color_solid": "#B1B9f9",          # Bright blue for solid mode
-    "color_gradient_low": "#00C853",   # Green for 0-60%
+    "color_gradient_low": "#B1B9f9",   # Blue for 0-60%
     "color_gradient_mid": "#FFC10C",   # Yellow for 60-85%
     "color_gradient_high": "#FF1744",  # Red for 85-100%
     "color_unfilled": "#505370",       # Grey for unfilled portion
+    "color_range_low": "60",           # Low range threshold (0-60%)
+    "color_range_high": "85",          # High range threshold (60-85%, 85-100%)
 }
 
 #endregion
