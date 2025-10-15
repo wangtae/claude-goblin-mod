@@ -33,6 +33,7 @@ Most features are accessed through keyboard shortcuts in the interactive dashboa
 - 🔄 **Real-time Updates** - Automatic file watching when Claude Code creates new logs
 - 📅 **Long-term Tracking** - Preserves usage data beyond Claude Code's 30-day limit
 - 🌐 **Multi-PC Sync** - Automatic cloud storage detection for seamless multi-computer tracking (OneDrive for WSL2/Windows, iCloud Drive for macOS)
+  - ⚠️ **Note**: Multi-PC sync has been tested on **WSL2 + OneDrive only**. macOS iCloud Drive support is implemented but not fully tested.
 - 🖥️ **Per-Machine Stats** - Track usage breakdown across different computers
 
 ### View Modes (All In-Dashboard)
@@ -478,10 +479,15 @@ When no custom path is set, the tool searches in this order:
 
 | Platform | Cloud Storage | Detection Path | Status |
 |----------|---------------|----------------|--------|
-| **WSL2** | OneDrive | `/mnt/c/d/e/f/OneDrive/.claude-goblin/` | ✅ Auto-detected |
-| **Windows** | OneDrive | (via WSL2 mount) | ✅ Auto-detected |
-| **macOS** | iCloud Drive | `~/Library/Mobile Documents/com~apple~CloudDocs/.claude-goblin/` | ✅ Auto-detected |
+| **WSL2** | OneDrive | `/mnt/c/d/e/f/OneDrive/.claude-goblin/` | ✅ Tested & Working |
+| **Windows** | OneDrive | (via WSL2 mount) | ✅ Tested & Working |
+| **macOS** | iCloud Drive | `~/Library/Mobile Documents/com~apple~CloudDocs/.claude-goblin/` | ⚠️ Implemented but not tested |
 | **All** | Custom Path | Any location | ⚙️ Via `ccu config set-db-path` |
+
+**Testing Status:**
+- ✅ **WSL2 + OneDrive**: Fully tested and working across multiple PCs
+- ⚠️ **macOS + iCloud Drive**: Code is implemented but needs testing from macOS users
+- **Feedback Welcome**: If you test on macOS or other platforms, please report your experience!
 
 **Note**: iCloud Drive only works on macOS. OneDrive is for WSL2/Windows users.
 
@@ -659,6 +665,10 @@ A: The parser (`src/data/jsonl_parser.py`) may need updates. This is a known ris
 **Q: Does this work on Windows (non-WSL)?**
 
 A: Not tested. The tool is designed for Unix-like systems (Linux, macOS, WSL2). Native Windows support may require path adjustments and testing.
+
+**Q: What platforms have been tested?**
+
+A: The tool has been developed and tested on **WSL2 (Ubuntu) + OneDrive**. macOS iCloud Drive support is implemented but not fully tested. Linux native and Windows native (non-WSL) are untested but may work with local storage mode.
 
 ### Comparison to Original
 
