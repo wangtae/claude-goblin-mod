@@ -38,7 +38,7 @@ def run(console: Console) -> None:
             _display_settings_menu(console, prefs, machine_name, db_path)
 
             # Wait for user input
-            console.print("\n[dim]Enter setting key to edit ([#ff8800]1-5, 8-9, a-f[/#ff8800]), [#ff8800]\\[x][/#ff8800] reset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
+            console.print("\n[dim]Enter setting key to edit ([#ff8800]1-5, 8-9, a-h[/#ff8800]), [#ff8800]\\[x][/#ff8800] reset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
 
             key = _read_key()
 
@@ -74,6 +74,10 @@ def run(console: Console) -> None:
             elif key.lower() == 'f':  # Color Range High
                 setting_num = 15
                 _edit_setting(console, setting_num, prefs, save_user_preference)
+            elif key.lower() == 'g':  # Machine Name
+                _edit_machine_name(console)
+            elif key.lower() == 'h':  # Database Path
+                _edit_database_path(console)
             elif key.lower() == 'x':  # Reset to defaults
                 _reset_to_defaults(console, save_user_preference)
     except KeyboardInterrupt:
@@ -156,8 +160,30 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
         tz_display = f"{tz_info['abbr']} ({tz_info['offset']})"
     status_table.add_row("Display Timezone", tz_display)
 
-    status_table.add_row("Machine Name", machine_name)
-    status_table.add_row("Database Path", db_path)
+    # Machine name (editable with [g])
+    import socket
+    from src.config.user_config import get_machine_name as get_custom_machine_name
+    custom_name = get_custom_machine_name()
+    if custom_name == socket.gethostname():
+        machine_display = f"{machine_name} [dim](auto)[/dim]   [#ff8800]\\[g][/#ff8800]"
+    else:
+        machine_display = f"{machine_name}   [#ff8800]\\[g][/#ff8800]"
+    status_table.add_row("Machine Name", machine_display)
+
+    # Database path (editable with [h])
+    from src.config.user_config import get_db_path as get_custom_db_path
+    custom_db = get_custom_db_path()
+    if custom_db:
+        if "OneDrive" in db_path or "CloudDocs" in db_path:
+            db_display = f"{db_path}\n[green]✓ Cloud sync[/green]   [#ff8800]\\[h][/#ff8800]"
+        else:
+            db_display = f"{db_path}\n[yellow]⚠ Local only[/yellow]   [#ff8800]\\[h][/#ff8800]"
+    else:
+        if "OneDrive" in db_path or "CloudDocs" in db_path:
+            db_display = f"{db_path}\n[green]✓ Cloud sync (auto)[/green]   [#ff8800]\\[h][/#ff8800]"
+        else:
+            db_display = f"{db_path}\n[dim](auto-detect)[/dim]   [#ff8800]\\[h][/#ff8800]"
+    status_table.add_row("Database Path", db_display)
 
     # Backup information
     from src.config.user_config import get_last_backup_date
@@ -786,6 +812,174 @@ def _reset_to_defaults(console: Console, save_func) -> None:
 
     except (EOFError, KeyboardInterrupt):
         console.print("\n[yellow]Reset cancelled[/yellow]")
+
+    console.print("\n[dim]Press any key to continue...[/dim]")
+    _read_key()
+
+
+def _edit_machine_name(console: Console) -> None:
+    """
+    Edit machine name setting.
+
+    Args:
+        console: Rich console for rendering
+    """
+    import socket
+    from src.config.user_config import get_machine_name, set_machine_name, clear_machine_name
+
+    console.print()
+    console.print("[bold]Edit Machine Name[/bold]")
+    console.print()
+
+    current = get_machine_name()
+    hostname = socket.gethostname()
+
+    if current == hostname:
+        console.print(f"[dim]Current: {current} (auto-detected)[/dim]")
+    else:
+        console.print(f"[dim]Current: {current} (custom)[/dim]")
+
+    console.print(f"[dim]System hostname: {hostname}[/dim]")
+    console.print()
+    console.print("[dim]Enter a custom name, 'auto' to use hostname, or press Enter to keep current:[/dim]")
+    console.print("[dim]Examples: Home-Desktop, Work-Laptop, Gaming-PC[/dim]")
+
+    try:
+        sys.stdout.write("> ")
+        sys.stdout.flush()
+        new_value = input().strip()
+
+        if new_value:
+            if new_value.lower() in ['auto', 'a', 'default', 'd']:
+                clear_machine_name()
+                console.print(f"[green]✓ Machine name set to auto: {hostname}[/green]")
+            else:
+                set_machine_name(new_value)
+                console.print(f"[green]✓ Machine name set to: {new_value}[/green]")
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[yellow]Input cancelled[/yellow]")
+
+    console.print("\n[dim]Press any key to continue...[/dim]")
+    _read_key()
+
+
+def _edit_database_path(console: Console) -> None:
+    """
+    Edit database path setting.
+
+    Args:
+        console: Rich console for rendering
+    """
+    from pathlib import Path
+    from src.config.user_config import get_db_path, set_db_path, clear_db_path
+    from src.storage.snapshot_db import DEFAULT_DB_PATH
+    import platform
+    import os
+
+    console.print()
+    console.print("[bold]Edit Database Path[/bold]")
+    console.print()
+
+    current = get_db_path()
+    if current:
+        console.print(f"[dim]Current: {current} (custom)[/dim]")
+    else:
+        console.print(f"[dim]Current: {DEFAULT_DB_PATH} (auto-detected)[/dim]")
+
+    console.print()
+    console.print("[dim]Choose database storage location:[/dim]")
+    console.print()
+
+    # Detect OneDrive/iCloud
+    onedrive_path = None
+    if platform.system() == "Linux" and "microsoft" in platform.release().lower():
+        # WSL2 - check for OneDrive
+        username = os.getenv("USER")
+        for drive in ["c", "d", "e"]:
+            candidate = Path(f"/mnt/{drive}/OneDrive")
+            if candidate.exists():
+                onedrive_path = candidate / ".claude-goblin" / "usage_history.db"
+                break
+        if not onedrive_path and username:
+            candidate = Path(f"/mnt/c/Users/{username}/OneDrive")
+            if candidate.exists():
+                onedrive_path = candidate / ".claude-goblin" / "usage_history.db"
+    elif platform.system() == "Darwin":
+        # macOS - check for iCloud
+        icloud_base = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
+        if icloud_base.exists():
+            onedrive_path = icloud_base / ".claude-goblin" / "usage_history.db"
+
+    # Display options
+    option_num = 1
+    if onedrive_path:
+        console.print(f"  [green][{option_num}][/green] OneDrive/iCloud Sync (multi-device)")
+        console.print(f"      [dim]{onedrive_path}[/dim]")
+        console.print()
+        option_num += 1
+
+    local_path = Path.home() / ".claude" / "usage" / "usage_history.db"
+    console.print(f"  [yellow][{option_num}][/yellow] Local Storage (single device)")
+    console.print(f"      [dim]{local_path}[/dim]")
+    console.print()
+    option_num += 1
+
+    console.print(f"  [cyan][{option_num}][/cyan] Custom Path")
+    console.print()
+
+    console.print(f"  [dim][auto/a][/dim] Auto-detect (default)")
+    console.print(f"  [dim][Enter][/dim] Keep current")
+    console.print()
+
+    try:
+        sys.stdout.write("> ")
+        sys.stdout.flush()
+        choice = input().strip().lower()
+
+        if not choice:
+            # Keep current
+            return
+
+        if choice in ['auto', 'a', 'default', 'd']:
+            # Auto-detect
+            clear_db_path()
+            console.print(f"[green]✓ Database path set to auto-detect[/green]")
+            console.print(f"[dim]  Will use: {DEFAULT_DB_PATH}[/dim]")
+        elif choice == '1' and onedrive_path:
+            # OneDrive/iCloud
+            set_db_path(str(onedrive_path))
+            console.print(f"[green]✓ Database path set to OneDrive/iCloud[/green]")
+            console.print(f"[green]  Multi-device sync enabled[/green]")
+            console.print(f"[dim]  Path: {onedrive_path}[/dim]")
+        elif choice == '2' if onedrive_path else choice == '1':
+            # Local storage
+            set_db_path(str(local_path))
+            console.print(f"[green]✓ Database path set to local storage[/green]")
+            console.print(f"[yellow]  Single device only (no cloud sync)[/yellow]")
+            console.print(f"[dim]  Path: {local_path}[/dim]")
+        elif choice == str(option_num - 1):
+            # Custom path
+            console.print()
+            console.print("[dim]Enter full path to database file:[/dim]")
+            console.print("[dim]Example: /mnt/d/MyFolder/.claude-goblin/usage_history.db[/dim]")
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            custom_path = input().strip()
+
+            if custom_path:
+                try:
+                    set_db_path(custom_path)
+                    console.print(f"[green]✓ Database path set to custom location[/green]")
+                    console.print(f"[dim]  Path: {custom_path}[/dim]")
+                    console.print()
+                    console.print("[yellow]⚠ Important: You must restart the program to use the new database path.[/yellow]")
+                except ValueError as e:
+                    console.print(f"[red]✗ Error: {e}[/red]")
+        else:
+            console.print("[red]Invalid option[/red]")
+
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[yellow]Input cancelled[/yellow]")
 
     console.print("\n[dim]Press any key to continue...[/dim]")
     _read_key()

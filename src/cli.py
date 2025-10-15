@@ -100,12 +100,12 @@ def init_db_command(
     reset_db.run(console)
 
 
-@app.command(name="config", hidden=True)
+@app.command(name="config")
 def config_command(
     action: str = typer.Argument(..., help="Action: show, set-db-path, clear-db-path, set-machine-name, clear-machine-name"),
     value: Optional[str] = typer.Argument(None, help="Value for set actions"),
 ):
-    """Manage Claude Goblin configuration (hidden)."""
+    """Manage configuration (database path, machine name, etc)."""
     config_cmd.run(console, action, value)
 
 
@@ -133,6 +133,24 @@ def main() -> None:
     Exit:
         Press Ctrl+C, [q], or [Esc] to exit
     """
+    # Check if first-time setup is needed
+    try:
+        from src.commands.setup_wizard import should_run_setup_wizard, run_setup_wizard, mark_setup_completed
+
+        if should_run_setup_wizard():
+            setup_console = Console()
+            if run_setup_wizard(setup_console):
+                mark_setup_completed()
+            else:
+                # User cancelled setup, use defaults
+                setup_console.print("\n[yellow]Setup cancelled. Using default settings.[/yellow]")
+                setup_console.print("[dim]You can run 'ccu config show' to view settings anytime.[/dim]\n")
+                mark_setup_completed()
+    except Exception as e:
+        # If setup wizard fails, continue with defaults
+        console = Console()
+        console.print(f"[yellow]Setup wizard error (using defaults): {e}[/yellow]")
+
     # Auto-backup on program start (silent, won't block execution)
     try:
         from src.utils.backup import auto_backup

@@ -222,6 +222,12 @@ ccu
 ```
 
 > [!NOTE]
+> **First-Time Setup Wizard**: On first run, an interactive setup wizard will help you choose:
+> - **Database location**: OneDrive/iCloud sync (multi-device) or local storage (single device)
+> - **Machine name**: Optional friendly name for this device (e.g., "Home-Desktop", "Work-Laptop")
+>
+> You can change these settings anytime via Settings menu (`s` in dashboard) or `ccu config` command.
+>
 > These quick install steps have not been fully tested across all environments. If you encounter issues, please refer to the detailed installation methods below or customize the setup using Claude Code.
 
 ### Recommended: Global Install with pipx
@@ -356,16 +362,18 @@ Only a few commands exist outside the dashboard:
 ccu heatmap              # Current year
 ccu heatmap --year 2024  # Specific year
 
-# Configuration (rarely needed, OneDrive auto-detected)
-ccu config show                              # View config
-ccu config set-db-path <path>                # Set custom DB path
-ccu config set-machine-name "Home-Desktop"   # Set friendly name
+# Configuration
+ccu config show                                   # View current configuration
+ccu config set-db-path <path>                     # Set custom database path
+ccu config clear-db-path                          # Use auto-detection
+ccu config set-machine-name "Home-Desktop"        # Set friendly device name
+ccu config clear-machine-name                     # Use system hostname
 
 # Database management (rarely needed)
 ccu reset-db --force     # Reset database
 ```
 
-Most users will only ever run `ccu` to open the dashboard.
+**Note**: Most users will only ever run `ccu` to open the dashboard. All settings (including database path and machine name) can be configured from the Settings menu (`s` key) inside the dashboard.
 
 ---
 
@@ -414,31 +422,57 @@ graph TD
 
 ## Multi-PC Synchronization
 
-This fork automatically detects cloud storage for seamless multi-PC tracking:
-- **OneDrive** (WSL2/Windows) - Automatically detected on `/mnt/c|d|e|f/OneDrive`
-- **iCloud Drive** (macOS) - Automatically detected in `~/Library/Mobile Documents/com~apple~CloudDocs`
+### First-Time Setup Wizard
 
-### Zero-Configuration Setup
+On first run, an interactive wizard helps you choose the best database location:
 
+```
+┌─ Welcome to Claude Goblin! ─────────────────────────┐
+│                                                      │
+│  Choose database storage location:                  │
+│                                                      │
+│  [1] OneDrive/iCloud Sync (multi-device)           │
+│      /mnt/d/OneDrive/.claude-goblin/usage_history.db│
+│                                                      │
+│  [2] Local Storage (single device)                  │
+│      ~/.claude/usage/usage_history.db               │
+│                                                      │
+│  [3] Custom Path                                     │
+│                                                      │
+└──────────────────────────────────────────────────────┘
+```
+
+**Cloud Storage Auto-Detection:**
+- **OneDrive** (WSL2/Windows) - Searches `/mnt/c|d|e|f/OneDrive`
+- **iCloud Drive** (macOS) - Searches `~/Library/Mobile Documents/com~apple~CloudDocs`
+
+### Changing Database Location
+
+You can change the database path anytime:
+
+**Via Settings Menu (Recommended):**
 ```bash
-# On PC-A (Desktop)
-ccu
-# → Auto-detects: /mnt/d/OneDrive/.claude-goblin/usage_history.db
-# → OneDrive syncs to cloud automatically
+ccu              # Open dashboard
+# Press 's' to open Settings
+# Press 'h' to edit Database Path
+```
 
-# On PC-B (Laptop)
-ccu
-# → Auto-detects same OneDrive database
-# ✅ Combined usage from both PCs!
+**Via Command Line:**
+```bash
+ccu config show                           # View current path
+ccu config set-db-path <path>             # Set custom path
+ccu config clear-db-path                  # Use auto-detection
 ```
 
 ### Database Location Priority
 
-1. Config file setting (if manually set via `ccu config set-db-path`)
-2. Environment variable `CLAUDE_GOBLIN_DB_PATH`
-3. OneDrive auto-detection (WSL2: `/mnt/*/OneDrive/.claude-goblin/`)
-4. iCloud Drive auto-detection (macOS: `~/Library/Mobile Documents/com~apple~CloudDocs/.claude-goblin/`)
-5. Local fallback (`~/.claude/usage/`)
+When no custom path is set, the tool searches in this order:
+
+1. **Config file** - User-selected path from wizard or `ccu config set-db-path`
+2. **Environment variable** - `CLAUDE_GOBLIN_DB_PATH`
+3. **OneDrive** (WSL2) - `/mnt/*/OneDrive/.claude-goblin/`
+4. **iCloud Drive** (macOS) - `~/Library/Mobile Documents/com~apple~CloudDocs/.claude-goblin/`
+5. **Local fallback** - `~/.claude/usage/`
 
 ### Supported Cloud Storage by Platform
 
@@ -534,7 +568,20 @@ ccu                   # Rebuild from current data
 ### Multi-PC sync not working
 ```bash
 ccu config show  # Check detected database path
+
+# Option 1: Via Settings menu (press 's' then 'h')
+ccu
+
+# Option 2: Via command line
 ccu config set-db-path /path/to/OneDrive/.claude-goblin/usage_history.db
+```
+
+### Want to switch from local to cloud storage?
+```bash
+# In dashboard, press 's' (Settings) then 'h' (Database Path)
+# Or use command line:
+ccu config set-db-path /mnt/d/OneDrive/.claude-goblin/usage_history.db
+# Restart the program to use the new path
 ```
 
 ---
