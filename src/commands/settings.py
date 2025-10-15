@@ -116,6 +116,57 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     actual_tz = get_user_timezone()
     tz_info = get_timezone_info(actual_tz)
 
+    # Status section (read-only)
+    status_table = Table(show_header=True, box=None, padding=(0, 2))
+    status_table.add_column("Status Item", style="white", justify="left", width=25)
+    status_table.add_column("Value", style="cyan", justify="left")
+
+    display_mode_names = ["M1 (simple, bar+%)", "M2 (simple, bar %)", "M3 (panel, bar+%)", "M4 (panel, bar %)"]
+    display_mode = int(prefs.get('usage_display_mode', '0'))
+    status_table.add_row("Display Mode", display_mode_names[display_mode] if 0 <= display_mode < 4 else "M1")
+
+    color_mode = prefs.get('color_mode', 'gradient')
+    status_table.add_row("Color Mode", "Solid" if color_mode == "solid" else "Gradient")
+
+    # Timezone display
+    if tz_setting == 'auto':
+        tz_display = f"Auto ({tz_info['abbr']}, {tz_info['offset']})"
+    else:
+        tz_display = f"{tz_info['abbr']} ({tz_info['offset']})"
+    status_table.add_row("Display Timezone", tz_display)
+
+    status_table.add_row("Machine Name", machine_name)
+    status_table.add_row("Database Path", db_path)
+
+    # Backup information
+    from src.config.user_config import get_last_backup_date
+    from src.utils.backup import list_backups, get_backup_directory
+    from pathlib import Path
+
+    last_backup = get_last_backup_date()
+    if last_backup:
+        status_table.add_row("Last Backup", last_backup)
+    else:
+        status_table.add_row("Last Backup", "[dim]Never[/dim]")
+
+    # Count backup files
+    try:
+        backups = list_backups(Path(db_path))
+        backup_count = len(backups)
+        monthly_count = sum(1 for b in backups if b["is_monthly"])
+        status_table.add_row("Backups", f"{backup_count} total ({monthly_count} monthly)")
+    except:
+        status_table.add_row("Backups", "[dim]0[/dim]")
+
+    status_panel = Panel(
+        status_table,
+        title="[bold]Status (Read-Only)",
+        border_style="white",
+        expand=True,
+    )
+    console.print(status_panel)
+    console.print()
+
     # Settings section (editable)
     from src.config.defaults import DEFAULT_COLORS, DEFAULT_INTERVALS
 
@@ -181,6 +232,9 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
         tz_value = f"{tz_setting} ({tz_info['abbr']})"
     settings_table.add_row("[#ff8800]\\[d][/#ff8800]", "Display Timezone", tz_value)
 
+    # Reset to defaults option
+    settings_table.add_row("[#ff8800]\\[x][/#ff8800]", "Reset to Defaults", "[dim]Type 'yes' to confirm[/dim]")
+
     settings_panel = Panel(
         settings_table,
         title="[bold]Settings (Editable)",
@@ -189,57 +243,6 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
         expand=True,
     )
     console.print(settings_panel)
-    console.print()
-
-    # Status section (read-only)
-    status_table = Table(show_header=True, box=None, padding=(0, 2))
-    status_table.add_column("Status Item", style="white", justify="left", width=25)
-    status_table.add_column("Value", style="cyan", justify="left")
-
-    display_mode_names = ["M1 (simple, bar+%)", "M2 (simple, bar %)", "M3 (panel, bar+%)", "M4 (panel, bar %)"]
-    display_mode = int(prefs.get('usage_display_mode', '0'))
-    status_table.add_row("Display Mode", display_mode_names[display_mode] if 0 <= display_mode < 4 else "M1")
-
-    color_mode = prefs.get('color_mode', 'gradient')
-    status_table.add_row("Color Mode", "Solid" if color_mode == "solid" else "Gradient")
-
-    # Timezone display
-    if tz_setting == 'auto':
-        tz_display = f"Auto ({tz_info['abbr']}, {tz_info['offset']})"
-    else:
-        tz_display = f"{tz_info['abbr']} ({tz_info['offset']})"
-    status_table.add_row("Display Timezone", tz_display)
-
-    status_table.add_row("Machine Name", machine_name)
-    status_table.add_row("Database Path", db_path)
-
-    # Backup information
-    from src.config.user_config import get_last_backup_date
-    from src.utils.backup import list_backups, get_backup_directory
-    from pathlib import Path
-
-    last_backup = get_last_backup_date()
-    if last_backup:
-        status_table.add_row("Last Backup", last_backup)
-    else:
-        status_table.add_row("Last Backup", "[dim]Never[/dim]")
-
-    # Count backup files
-    try:
-        backups = list_backups(Path(db_path))
-        backup_count = len(backups)
-        monthly_count = sum(1 for b in backups if b["is_monthly"])
-        status_table.add_row("Backups", f"{backup_count} total ({monthly_count} monthly)")
-    except:
-        status_table.add_row("Backups", "[dim]0[/dim]")
-
-    status_panel = Panel(
-        status_table,
-        title="[bold]Status (Read-Only)",
-        border_style="white",
-        expand=True,
-    )
-    console.print(status_panel)
 
 
 def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) -> None:
