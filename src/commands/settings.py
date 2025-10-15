@@ -77,6 +77,9 @@ def _read_key() -> str:
 
     Returns:
         The key pressed as a string
+
+    Raises:
+        KeyboardInterrupt: If Ctrl+C is pressed
     """
     try:
         fd = sys.stdin.fileno()
@@ -84,6 +87,13 @@ def _read_key() -> str:
         try:
             tty.setraw(sys.stdin.fileno())
             key = sys.stdin.read(1)
+
+            # Handle Ctrl+C and Ctrl+D in raw mode
+            if key == '\x03':  # Ctrl+C
+                raise KeyboardInterrupt
+            elif key == '\x04':  # Ctrl+D (EOF)
+                raise EOFError
+
             return key
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
@@ -231,6 +241,9 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     else:
         tz_value = f"{tz_setting} ({tz_info['abbr']})"
     settings_table.add_row("[#ff8800]\\[d][/#ff8800]", "Display Timezone", tz_value)
+
+    # Empty row for spacing
+    settings_table.add_row("", "", "")
 
     # Reset to defaults option
     settings_table.add_row("[#ff8800]\\[x][/#ff8800]", "Reset to Defaults", "[dim]Type 'yes' to confirm[/dim]")
