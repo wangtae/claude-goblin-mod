@@ -683,7 +683,18 @@ A: Key differences:
 
 **Q: Can I switch back to the original?**
 
-A: Yes, but you'll lose multi-PC features and configuration. Uninstall this fork (`pipx uninstall claude-goblin-mod`) and install the original (`pip install claude-goblin`). Database format is compatible.
+A: **No, this is not possible.** This fork has fundamentally different architecture and features compared to the original:
+- Different database structure (per-machine DBs vs single DB)
+- Different command-line interface (`ccu` vs `claude-goblin`)
+- Removed features (hooks, status bar, export)
+- Added features (multi-PC sync, setup wizard, devices view)
+
+While the original codebase was used as a starting point, they are now **completely different programs**. You would need to:
+1. Uninstall this fork: `pipx uninstall claude-goblin-mod`
+2. Install the original: `pip install claude-goblin`
+3. Start fresh with new database
+
+**Important**: Your historical data from this fork **cannot be migrated** to the original version due to incompatible database schemas.
 
 ---
 
