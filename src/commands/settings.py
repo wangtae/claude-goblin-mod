@@ -41,6 +41,13 @@ def run(console: Console) -> None:
 
         key = _read_key()
 
+        # Korean keyboard mapping
+        hangul_to_english = {
+            'ㄱ': 'r',  # r key (reset)
+        }
+        if key in hangul_to_english:
+            key = hangul_to_english[key]
+
         if key == '\x1b':  # ESC
             break
         elif key in ['1', '2', '3', '4', '5', '8', '9']:
