@@ -14,7 +14,6 @@ from src.config.user_config import (
     get_machine_name,
     set_machine_name,
     clear_machine_name,
-    get_storage_mode,
     get_tracking_mode,
     get_plan_type,
 )
@@ -132,7 +131,6 @@ def _show_config(console: Console) -> None:
     table.add_column("Setting", style="cyan")
     table.add_column("Value")
 
-    table.add_row("Storage Mode", get_storage_mode())
     table.add_row("Tracking Mode", get_tracking_mode())
     table.add_row("Plan Type", get_plan_type())
 

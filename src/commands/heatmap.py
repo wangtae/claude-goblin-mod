@@ -9,7 +9,6 @@ from rich.text import Text
 
 from src.aggregation.daily_stats import aggregate_all
 from src.config.settings import get_claude_jsonl_files
-from src.config.user_config import get_storage_mode
 from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import load_historical_records, save_snapshot
 #endregion
@@ -53,7 +52,7 @@ def run(console: Console, year: Optional[int] = None, fast: bool = False) -> Non
             with console.status("[bold #ffffff]Updating usage data...", spinner="dots", spinner_style="#ffffff"):
                 current_records = parse_all_jsonl_files(jsonl_files)
                 if current_records:
-                    save_snapshot(current_records, storage_mode=get_storage_mode())
+                    save_snapshot(current_records)
 
         # Load from database
         with console.status("[bold #ffffff]Preparing heatmap...", spinner="dots", spinner_style="#ffffff"):

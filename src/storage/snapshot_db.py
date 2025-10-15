@@ -240,7 +240,6 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
             ('color_gradient_mid', '#FFD600'),     # yellow
             ('color_gradient_high', '#FF1744'),    # red
             ('color_unfilled', '#424242'),         # grey
-            ('storage_mode', 'aggregate'),         # aggregate | detail
             ('tracking_mode', 'both'),             # both | usage | limits
             ('machine_name', ''),                  # custom name or empty
             ('db_path', ''),                       # custom path or empty
@@ -252,6 +251,45 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
                 INSERT OR IGNORE INTO user_preferences (key, value)
                 VALUES (?, ?)
             """, (key, value))
+
+        # Table for per-device aggregates when storage mode is aggregate
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS device_usage_aggregates (
+                machine_name TEXT NOT NULL,
+                date TEXT NOT NULL,
+                total_prompts INTEGER NOT NULL,
+                total_responses INTEGER NOT NULL,
+                total_sessions INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                last_updated TEXT NOT NULL,
+                PRIMARY KEY (machine_name, date)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS device_model_aggregates (
+                machine_name TEXT NOT NULL,
+                date TEXT NOT NULL,
+                model TEXT NOT NULL,
+                total_responses INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                last_updated TEXT NOT NULL,
+                PRIMARY KEY (machine_name, date, model)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_device_model_machine
+            ON device_model_aggregates(machine_name)
+        """)
 
         # Populate pricing data for known models
         pricing_data = [
@@ -284,17 +322,19 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
         conn.close()
 
 
-def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH, storage_mode: str = "aggregate") -> int:
+def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -> int:
     """
     Save usage records to the database as a snapshot.
 
     Only saves records that don't already exist (based on session_id + message_uuid).
     Also updates daily_snapshots table with aggregated data.
 
+    Storage mode is fixed to "full" for data safety and integrity.
+    Full mode prevents duplicate aggregation issues across multiple devices.
+
     Args:
         records: List of usage records to save
         db_path: Path to the SQLite database file
-        storage_mode: "aggregate" (daily totals only) or "full" (individual records)
 
     Returns:
         Number of new records saved
@@ -312,185 +352,97 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH, s
 
     try:
         cursor = conn.cursor()
+        from src.config.user_config import get_machine_name
+        machine_name = get_machine_name() or "Unknown"
 
-        # Save individual records only if in "full" mode
-        if storage_mode == "full":
-            # Get machine name once for all records
-            from src.config.user_config import get_machine_name
-            machine_name = get_machine_name()
+        # Save individual records (full mode only)
+        for record in records:
+            # Get token values (0 for user messages without token_usage)
+            input_tokens = record.token_usage.input_tokens if record.token_usage else 0
+            output_tokens = record.token_usage.output_tokens if record.token_usage else 0
+            cache_creation_tokens = record.token_usage.cache_creation_tokens if record.token_usage else 0
+            cache_read_tokens = record.token_usage.cache_read_tokens if record.token_usage else 0
+            total_tokens = record.token_usage.total_tokens if record.token_usage else 0
 
-            for record in records:
-                # Get token values (0 for user messages without token_usage)
-                input_tokens = record.token_usage.input_tokens if record.token_usage else 0
-                output_tokens = record.token_usage.output_tokens if record.token_usage else 0
-                cache_creation_tokens = record.token_usage.cache_creation_tokens if record.token_usage else 0
-                cache_read_tokens = record.token_usage.cache_read_tokens if record.token_usage else 0
-                total_tokens = record.token_usage.total_tokens if record.token_usage else 0
-
-                try:
-                    cursor.execute("""
-                        INSERT INTO usage_records (
-                            date, timestamp, session_id, message_uuid, message_type,
-                            model, folder, git_branch, version,
-                            input_tokens, output_tokens,
-                            cache_creation_tokens, cache_read_tokens, total_tokens,
-                            machine_name
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        record.date_key,
-                        record.timestamp.isoformat(),
-                        record.session_id,
-                        record.message_uuid,
-                        record.message_type,
-                        record.model,
-                        record.folder,
-                        record.git_branch,
-                        record.version,
-                        input_tokens,
-                        output_tokens,
-                        cache_creation_tokens,
-                        cache_read_tokens,
-                        total_tokens,
-                        machine_name,
-                    ))
-                    saved_count += 1
-                except sqlite3.IntegrityError:
-                    # Record already exists, skip it
-                    pass
+            try:
+                cursor.execute("""
+                    INSERT INTO usage_records (
+                        date, timestamp, session_id, message_uuid, message_type,
+                        model, folder, git_branch, version,
+                        input_tokens, output_tokens,
+                        cache_creation_tokens, cache_read_tokens, total_tokens,
+                        machine_name
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    record.date_key,
+                    record.timestamp.isoformat(),
+                    record.session_id,
+                    record.message_uuid,
+                    record.message_type,
+                    record.model,
+                    record.folder,
+                    record.git_branch,
+                    record.version,
+                    input_tokens,
+                    output_tokens,
+                    cache_creation_tokens,
+                    cache_read_tokens,
+                    total_tokens,
+                    machine_name,
+                ))
+                saved_count += 1
+            except sqlite3.IntegrityError:
+                # Record already exists, skip it
+                pass
 
         # Update daily snapshots (aggregate by date)
-        if storage_mode == "full":
-            # In full mode, only update dates that have records in usage_records
-            # IMPORTANT: Never use REPLACE - it would delete old data when JSONL files age out
-            # Instead, recalculate only for dates that currently have records
-            timestamp = datetime.now().isoformat()
+        # In full mode, only update dates that have records in usage_records
+        # IMPORTANT: Never use REPLACE - it would delete old data when JSONL files age out
+        # Instead, recalculate only for dates that currently have records
+        timestamp = datetime.now().isoformat()
 
-            # Get all dates that currently have usage_records
-            cursor.execute("SELECT DISTINCT date FROM usage_records")
-            dates_with_records = [row[0] for row in cursor.fetchall()]
+        # Get all dates that currently have usage_records
+        cursor.execute("SELECT DISTINCT date FROM usage_records")
+        dates_with_records = [row[0] for row in cursor.fetchall()]
 
-            for date in dates_with_records:
-                # Calculate totals for this date from usage_records
-                cursor.execute("""
-                    SELECT
-                        SUM(CASE WHEN message_type = 'user' THEN 1 ELSE 0 END) as total_prompts,
-                        SUM(CASE WHEN message_type = 'assistant' THEN 1 ELSE 0 END) as total_responses,
-                        COUNT(DISTINCT session_id) as total_sessions,
-                        SUM(total_tokens) as total_tokens,
-                        SUM(input_tokens) as input_tokens,
-                        SUM(output_tokens) as output_tokens,
-                        SUM(cache_creation_tokens) as cache_creation_tokens,
-                        SUM(cache_read_tokens) as cache_read_tokens
-                    FROM usage_records
-                    WHERE date = ?
-                """, (date,))
+        for date in dates_with_records:
+            # Calculate totals for this date from usage_records
+            cursor.execute("""
+                SELECT
+                    SUM(CASE WHEN message_type = 'user' THEN 1 ELSE 0 END) as total_prompts,
+                    SUM(CASE WHEN message_type = 'assistant' THEN 1 ELSE 0 END) as total_responses,
+                    COUNT(DISTINCT session_id) as total_sessions,
+                    SUM(total_tokens) as total_tokens,
+                    SUM(input_tokens) as input_tokens,
+                    SUM(output_tokens) as output_tokens,
+                    SUM(cache_creation_tokens) as cache_creation_tokens,
+                    SUM(cache_read_tokens) as cache_read_tokens
+                FROM usage_records
+                WHERE date = ?
+            """, (date,))
 
-                row = cursor.fetchone()
+            row = cursor.fetchone()
 
-                # Use INSERT OR REPLACE only for dates that currently have data
-                # This preserves historical daily_snapshots for dates no longer in usage_records
-                cursor.execute("""
-                    INSERT OR REPLACE INTO daily_snapshots (
-                        date, total_prompts, total_responses, total_sessions, total_tokens,
-                        input_tokens, output_tokens, cache_creation_tokens,
-                        cache_read_tokens, snapshot_timestamp
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    date,
-                    row[0] or 0,
-                    row[1] or 0,
-                    row[2] or 0,
-                    row[3] or 0,
-                    row[4] or 0,
-                    row[5] or 0,
-                    row[6] or 0,
-                    row[7] or 0,
-                    timestamp,
-                ))
-        else:
-            # In aggregate mode, compute from incoming records
-            from collections import defaultdict
-            daily_aggregates = defaultdict(lambda: {
-                "prompts": 0,
-                "responses": 0,
-                "sessions": set(),
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "cache_creation_tokens": 0,
-                "cache_read_tokens": 0,
-                "total_tokens": 0,
-            })
-
-            for record in records:
-                date_key = record.date_key
-                daily_aggregates[date_key]["sessions"].add(record.session_id)
-
-                # Count message types
-                if record.is_user_prompt:
-                    daily_aggregates[date_key]["prompts"] += 1
-                elif record.is_assistant_response:
-                    daily_aggregates[date_key]["responses"] += 1
-
-                # Token usage only on assistant messages
-                if record.token_usage:
-                    daily_aggregates[date_key]["input_tokens"] += record.token_usage.input_tokens
-                    daily_aggregates[date_key]["output_tokens"] += record.token_usage.output_tokens
-                    daily_aggregates[date_key]["cache_creation_tokens"] += record.token_usage.cache_creation_tokens
-                    daily_aggregates[date_key]["cache_read_tokens"] += record.token_usage.cache_read_tokens
-                    daily_aggregates[date_key]["total_tokens"] += record.token_usage.total_tokens
-
-            # Insert or update daily snapshots
-            timestamp = datetime.now().isoformat()
-            for date_key, agg in daily_aggregates.items():
-                # Get existing data for this date to merge with new data
-                cursor.execute("""
-                    SELECT total_prompts, total_responses, total_sessions, total_tokens,
-                           input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens
-                    FROM daily_snapshots WHERE date = ?
-                """, (date_key,))
-                existing = cursor.fetchone()
-
-                if existing:
-                    # Merge with existing (add to existing totals)
-                    cursor.execute("""
-                        INSERT OR REPLACE INTO daily_snapshots (
-                            date, total_prompts, total_responses, total_sessions, total_tokens,
-                            input_tokens, output_tokens, cache_creation_tokens,
-                            cache_read_tokens, snapshot_timestamp
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        date_key,
-                        existing[0] + agg["prompts"],
-                        existing[1] + agg["responses"],
-                        existing[2] + len(agg["sessions"]),
-                        existing[3] + agg["total_tokens"],
-                        existing[4] + agg["input_tokens"],
-                        existing[5] + agg["output_tokens"],
-                        existing[6] + agg["cache_creation_tokens"],
-                        existing[7] + agg["cache_read_tokens"],
-                        timestamp,
-                    ))
-                else:
-                    # New date, insert fresh
-                    cursor.execute("""
-                        INSERT INTO daily_snapshots (
-                            date, total_prompts, total_responses, total_sessions, total_tokens,
-                            input_tokens, output_tokens, cache_creation_tokens,
-                            cache_read_tokens, snapshot_timestamp
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        date_key,
-                        agg["prompts"],
-                        agg["responses"],
-                        len(agg["sessions"]),
-                        agg["total_tokens"],
-                        agg["input_tokens"],
-                        agg["output_tokens"],
-                        agg["cache_creation_tokens"],
-                        agg["cache_read_tokens"],
-                        timestamp,
-                    ))
-                saved_count += 1
+            # Use INSERT OR REPLACE only for dates that currently have data
+            # This preserves historical daily_snapshots for dates no longer in usage_records
+            cursor.execute("""
+                INSERT OR REPLACE INTO daily_snapshots (
+                    date, total_prompts, total_responses, total_sessions, total_tokens,
+                    input_tokens, output_tokens, cache_creation_tokens,
+                    cache_read_tokens, snapshot_timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                date,
+                row[0] or 0,
+                row[1] or 0,
+                row[2] or 0,
+                row[3] or 0,
+                row[4] or 0,
+                row[5] or 0,
+                row[6] or 0,
+                row[7] or 0,
+                timestamp,
+            ))
 
         conn.commit()
     finally:
@@ -700,6 +652,7 @@ def load_historical_records(
         conn.close()
 
 
+
 def get_text_analysis_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
     """
     Analyze message content from JSONL files for text statistics.
@@ -783,8 +736,6 @@ def get_text_analysis_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
             "avg_user_prompt_chars": 0,
             "total_user_chars": 0,
         }
-
-
 def get_limits_data(db_path: Path = DEFAULT_DB_PATH) -> dict[str, dict[str, int]]:
     """
     Get daily maximum limits percentages from the database.
@@ -916,7 +867,24 @@ def get_device_statistics(db_path: Path = DEFAULT_DB_PATH) -> list[dict]:
     try:
         cursor = conn.cursor()
 
-        # Get statistics by machine
+        device_stats: dict[str, dict] = {}
+
+        # Helper functions for date comparisons (YYYY-MM-DD strings)
+        def _min_date(current: str | None, candidate: str | None) -> str | None:
+            if not current:
+                return candidate
+            if not candidate:
+                return current
+            return candidate if candidate < current else current
+
+        def _max_date(current: str | None, candidate: str | None) -> str | None:
+            if not current:
+                return candidate
+            if not candidate:
+                return current
+            return candidate if candidate > current else current
+
+        # Detailed (full mode) usage records
         cursor.execute("""
             SELECT
                 COALESCE(machine_name, 'Unknown') as machine,
@@ -932,24 +900,29 @@ def get_device_statistics(db_path: Path = DEFAULT_DB_PATH) -> list[dict]:
                 MAX(date) as newest_date
             FROM usage_records
             GROUP BY machine
-            ORDER BY total_tokens DESC
         """)
 
-        results = []
-        for row in cursor.fetchall():
-            machine_name = row[0]
-            total_records = row[1]
-            total_sessions = row[2]
-            total_messages = row[3]
-            total_tokens = row[4] or 0
-            input_tokens = row[5] or 0
-            output_tokens = row[6] or 0
-            cache_creation_tokens = row[7] or 0
-            cache_read_tokens = row[8] or 0
-            oldest_date = row[9]
-            newest_date = row[10]
+        detailed_rows = cursor.fetchall()
 
-            # Calculate cost for this device
+        for row in detailed_rows:
+            machine_name = row[0] or "Unknown"
+            device_stats[machine_name] = {
+                "machine_name": machine_name,
+                "total_records": row[1] or 0,
+                "total_sessions": row[2] or 0,
+                "total_messages": row[3] or 0,
+                "total_tokens": row[4] or 0,
+                "input_tokens": row[5] or 0,
+                "output_tokens": row[6] or 0,
+                "cache_creation_tokens": row[7] or 0,
+                "cache_read_tokens": row[8] or 0,
+                "total_cost": 0.0,
+                "oldest_date": row[9],
+                "newest_date": row[10],
+            }
+
+        # Cost for detailed records
+        for machine_name in [row[0] or "Unknown" for row in detailed_rows]:
             cursor.execute("""
                 SELECT
                     ur.model,
@@ -967,7 +940,6 @@ def get_device_statistics(db_path: Path = DEFAULT_DB_PATH) -> list[dict]:
                 GROUP BY ur.model
             """, (machine_name,))
 
-            device_cost = 0.0
             for cost_row in cursor.fetchall():
                 input_tok = cost_row[1] or 0
                 output_tok = cost_row[2] or 0
@@ -979,28 +951,148 @@ def get_device_statistics(db_path: Path = DEFAULT_DB_PATH) -> list[dict]:
                 cache_write_price = cost_row[7] or 0.0
                 cache_read_price = cost_row[8] or 0.0
 
-                device_cost += (
+                device_stats[machine_name]["total_cost"] += (
                     (input_tok / 1_000_000) * input_price +
                     (output_tok / 1_000_000) * output_price +
                     (cache_write_tok / 1_000_000) * cache_write_price +
                     (cache_read_tok / 1_000_000) * cache_read_price
                 )
 
-            results.append({
-                "machine_name": machine_name,
-                "total_records": total_records,
-                "total_sessions": total_sessions,
-                "total_messages": total_messages,
-                "total_tokens": total_tokens,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "cache_creation_tokens": cache_creation_tokens,
-                "cache_read_tokens": cache_read_tokens,
-                "total_cost": round(device_cost, 2),
-                "oldest_date": oldest_date,
-                "newest_date": newest_date,
-            })
+        # Aggregate-mode data (per-device daily aggregates)
+        cursor.execute("""
+            SELECT
+                machine_name,
+                SUM(total_prompts) as total_prompts,
+                SUM(total_responses) as total_responses,
+                SUM(total_sessions) as total_sessions,
+                SUM(total_tokens) as total_tokens,
+                SUM(input_tokens) as input_tokens,
+                SUM(output_tokens) as output_tokens,
+                SUM(cache_creation_tokens) as cache_creation_tokens,
+                SUM(cache_read_tokens) as cache_read_tokens,
+                MIN(date) as oldest_date,
+                MAX(date) as newest_date
+            FROM device_usage_aggregates
+            GROUP BY machine_name
+        """)
 
+        aggregate_rows = cursor.fetchall()
+
+        for row in aggregate_rows:
+            machine_name = (row[0] or "Unknown")
+            prompts = row[1] or 0
+            responses = row[2] or 0
+            sessions = row[3] or 0
+            total_tokens = row[4] or 0
+            input_tokens = row[5] or 0
+            output_tokens = row[6] or 0
+            cache_creation_tokens = row[7] or 0
+            cache_read_tokens = row[8] or 0
+            oldest_date = row[9]
+            newest_date = row[10]
+
+            stats = device_stats.get(machine_name)
+            if stats:
+                stats["total_records"] += prompts + responses
+                stats["total_sessions"] += sessions
+                stats["total_messages"] += responses
+                stats["total_tokens"] += total_tokens
+                stats["input_tokens"] += input_tokens
+                stats["output_tokens"] += output_tokens
+                stats["cache_creation_tokens"] += cache_creation_tokens
+                stats["cache_read_tokens"] += cache_read_tokens
+                stats["oldest_date"] = _min_date(stats["oldest_date"], oldest_date)
+                stats["newest_date"] = _max_date(stats["newest_date"], newest_date)
+            else:
+                device_stats[machine_name] = {
+                    "machine_name": machine_name,
+                    "total_records": prompts + responses,
+                    "total_sessions": sessions,
+                    "total_messages": responses,
+                    "total_tokens": total_tokens,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cache_creation_tokens": cache_creation_tokens,
+                    "cache_read_tokens": cache_read_tokens,
+                    "total_cost": 0.0,
+                    "oldest_date": oldest_date,
+                    "newest_date": newest_date,
+                }
+
+        # Model pricing lookup for aggregate-mode cost calculation
+        cursor.execute("""
+            SELECT model_name, input_price_per_mtok, output_price_per_mtok,
+                   cache_write_price_per_mtok, cache_read_price_per_mtok
+            FROM model_pricing
+        """)
+        pricing_map = {
+            row[0]: (row[1] or 0.0, row[2] or 0.0, row[3] or 0.0, row[4] or 0.0)
+            for row in cursor.fetchall()
+        }
+
+        cursor.execute("""
+            SELECT
+                machine_name,
+                model,
+                SUM(total_responses) as total_responses,
+                SUM(input_tokens) as input_tokens,
+                SUM(output_tokens) as output_tokens,
+                SUM(cache_creation_tokens) as cache_creation_tokens,
+                SUM(cache_read_tokens) as cache_read_tokens,
+                SUM(total_tokens) as total_tokens
+            FROM device_model_aggregates
+            GROUP BY machine_name, model
+        """)
+
+        for row in cursor.fetchall():
+            machine_name = (row[0] or "Unknown")
+            model_name = row[1]
+            input_tokens = row[3] or 0
+            output_tokens = row[4] or 0
+            cache_creation_tokens = row[5] or 0
+            cache_read_tokens = row[6] or 0
+            total_tokens = row[7] or (
+                input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
+            )
+
+            stats = device_stats.get(machine_name)
+            if not stats:
+                device_stats[machine_name] = {
+                    "machine_name": machine_name,
+                    "total_records": row[2] or 0,
+                    "total_sessions": 0,
+                    "total_messages": row[2] or 0,
+                    "total_tokens": total_tokens,
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
+                    "cache_creation_tokens": cache_creation_tokens,
+                    "cache_read_tokens": cache_read_tokens,
+                    "total_cost": 0.0,
+                    "oldest_date": None,
+                    "newest_date": None,
+                }
+                stats = device_stats[machine_name]
+
+            pricing = pricing_map.get(model_name)
+            if pricing:
+                input_price, output_price, cache_write_price, cache_read_price = pricing
+                stats["total_cost"] += (
+                    (input_tokens / 1_000_000) * input_price +
+                    (output_tokens / 1_000_000) * output_price +
+                    (cache_creation_tokens / 1_000_000) * cache_write_price +
+                    (cache_read_tokens / 1_000_000) * cache_read_price
+                )
+
+        if not device_stats:
+            return []
+
+        # Finalize list with rounded cost and sort by tokens
+        results = []
+        for stats in device_stats.values():
+            stats["total_cost"] = round(stats["total_cost"], 2)
+            results.append(stats)
+
+        results.sort(key=lambda x: x["total_tokens"], reverse=True)
         return results
     finally:
         conn.close()
@@ -1056,7 +1148,6 @@ def load_user_preferences(db_path: Path = DEFAULT_DB_PATH) -> dict:
         'color_gradient_mid': '#FFD600',     # yellow
         'color_gradient_high': '#FF1744',    # red
         'color_unfilled': '#424242',         # grey
-        'storage_mode': 'aggregate',         # aggregate | detail
         'tracking_mode': 'both',             # both | usage | limits
         'machine_name': '',                  # custom name or empty
         'db_path': '',                       # custom path or empty

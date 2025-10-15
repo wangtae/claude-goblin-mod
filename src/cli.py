@@ -244,6 +244,13 @@ def main() -> None:
     Exit:
         Press Ctrl+C or [q] to exit
     """
+    # Auto-backup on program start (silent, won't block execution)
+    try:
+        from src.utils.backup import auto_backup
+        auto_backup()
+    except Exception:
+        pass  # Silently ignore backup errors
+
     app()
 
 

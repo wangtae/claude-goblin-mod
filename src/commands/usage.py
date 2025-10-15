@@ -14,7 +14,7 @@ from src.config.settings import (
     DEFAULT_REFRESH_INTERVAL,
     get_claude_jsonl_files,
 )
-from src.config.user_config import get_storage_mode, get_tracking_mode
+from src.config.user_config import get_tracking_mode
 from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import (
     get_database_stats,
@@ -232,7 +232,12 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                             continue  # Skip the rest of the key processing
 
                     # If we got here, it's a plain ESC press (not arrow key)
-                    # Treat ESC as quit command
+                    # If in daily detail mode, exit to normal weekly view
+                    if view_mode_ref.get('daily_detail_date'):
+                        view_mode_ref['daily_detail_date'] = None
+                        view_mode_ref['changed'] = True
+                        continue
+                    # Otherwise, treat ESC as quit command
                     stop_event.set()
                     continue
 
@@ -360,6 +365,23 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                     # Manual refresh - update data
                     view_mode_ref['manual_refresh'] = True
                     view_mode_ref['changed'] = True
+                elif key in ['1', '2', '3', '4', '5', '6', '7']:
+                    # Number keys for daily detail view in weekly mode
+                    if view_mode_ref['mode'] == VIEW_MODE_WEEKLY:
+                        # Check if we have weekly dates available
+                        weekly_dates = view_mode_ref.get('weekly_dates', [])
+                        day_index = int(key) - 1  # Convert to 0-indexed
+
+                        if day_index < len(weekly_dates):
+                            # Set the daily detail date
+                            view_mode_ref['daily_detail_date'] = weekly_dates[day_index]
+                            view_mode_ref['changed'] = True
+                elif key == '\x1b':  # ESC key pressed again (not arrow key)
+                    # If in daily detail mode, exit to normal weekly view
+                    if view_mode_ref.get('daily_detail_date'):
+                        view_mode_ref['daily_detail_date'] = None
+                        view_mode_ref['changed'] = True
+                    # Note: ESC to quit is already handled above in the escape sequence section
 
     finally:
         # Restore terminal settings
@@ -550,6 +572,8 @@ def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, refresh_in
         # Ensure threads finish
         stop_event.set()
         keyboard_thread.join(timeout=1.0)
+        # Add newlines for clean separation from shell prompt
+        console.print("\n")
 
 
 def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False, watch_interval: int = 60, limits_interval: int = 60) -> None:
@@ -705,12 +729,12 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
 
                 # Save to database (with automatic deduplication via UNIQUE constraint)
                 if current_records:
-                    save_snapshot(current_records, storage_mode=get_storage_mode())
+                    save_snapshot(current_records)
         else:
             # Fast mode: no status messages
             current_records = parse_all_jsonl_files(jsonl_files)
             if current_records:
-                save_snapshot(current_records, storage_mode=get_storage_mode())
+                save_snapshot(current_records)
 
         # Step 2: Update limits data (if enabled and not skipped)
         if not skip_limits_update:
@@ -799,6 +823,22 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
                 # Fall back to monthly if no data in weekly range
                 display_records = all_records
                 view_mode = VIEW_MODE_MONTHLY
+            else:
+                # Store weekly dates for keyboard navigation
+                # Extract unique dates and sort them (most recent first, matching daily breakdown display)
+                from collections import defaultdict
+                daily_data = defaultdict(int)
+                for record in display_records:
+                    if record.token_usage:
+                        date = record.timestamp.strftime("%Y-%m-%d") if hasattr(record, 'timestamp') else record.date_key
+                        daily_data[date] += record.token_usage.total_tokens
+
+                # Sort by date in descending order (most recent first)
+                sorted_dates = sorted(daily_data.keys(), reverse=True)
+
+                # Store in view_mode_ref for keyboard listener
+                if view_mode_ref:
+                    view_mode_ref['weekly_dates'] = sorted_dates
     elif view_mode == VIEW_MODE_MONTHLY:
         # Filter by month with offset
         now = datetime.now()

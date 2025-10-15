@@ -37,14 +37,17 @@ def run(console: Console) -> None:
         _display_settings_menu(console, prefs, machine_name, db_path)
 
         # Wait for user input
-        console.print("\n[dim]Enter setting number to edit (1-7), or press ESC to return...[/dim]", end="")
+        console.print("\n[dim]Enter setting number to edit (1-10), or press ESC to return...[/dim]", end="")
 
         key = _read_key()
 
         if key == '\x1b':  # ESC
             break
-        elif key in ['1', '2', '3', '4', '5', '6', '7']:
+        elif key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
             setting_num = int(key)
+            _edit_setting(console, setting_num, prefs, save_user_preference)
+        elif key == '0':  # Handle '10' as '0'
+            setting_num = 10
             _edit_setting(console, setting_num, prefs, save_user_preference)
         elif key.lower() == 'i':
             handle_db_operation(console, "init")
@@ -105,6 +108,26 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     status_table.add_row("Machine Name", machine_name)
     status_table.add_row("Database Path", db_path)
 
+    # Backup information
+    from src.config.user_config import get_last_backup_date
+    from src.utils.backup import list_backups, get_backup_directory
+    from pathlib import Path
+
+    last_backup = get_last_backup_date()
+    if last_backup:
+        status_table.add_row("Last Backup", last_backup)
+    else:
+        status_table.add_row("Last Backup", "[dim]Never[/dim]")
+
+    # Count backup files
+    try:
+        backups = list_backups(Path(db_path))
+        backup_count = len(backups)
+        monthly_count = sum(1 for b in backups if b["is_monthly"])
+        status_table.add_row("Backups", f"{backup_count} total ({monthly_count} monthly)")
+    except:
+        status_table.add_row("Backups", "[dim]0[/dim]")
+
     status_panel = Panel(
         status_table,
         title="[bold]Status (Read-Only)",
@@ -133,6 +156,22 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     watch_interval = prefs.get('watch_interval', '60')
     settings_table.add_row("7", "File Watch Interval (sec)", watch_interval)
 
+    # Backup settings
+    from src.config.user_config import (
+        get_backup_enabled,
+        get_backup_keep_monthly,
+        get_backup_retention_days,
+    )
+
+    backup_enabled = get_backup_enabled()
+    settings_table.add_row("8", "Auto Backup", "Enabled" if backup_enabled else "Disabled")
+
+    keep_monthly = get_backup_keep_monthly()
+    settings_table.add_row("9", "Keep Monthly Backups", "Yes" if keep_monthly else "No")
+
+    retention_days = get_backup_retention_days()
+    settings_table.add_row("10", "Backup Retention (days)", str(retention_days))
+
     settings_panel = Panel(
         settings_table,
         title="[bold]Settings (Editable)",
@@ -153,7 +192,7 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
 
     Args:
         console: Rich console for rendering
-        setting_num: Number of the setting to edit (1-7)
+        setting_num: Number of the setting to edit (1-10)
         prefs: Current preferences dictionary
         save_func: Function to save preference
     """
@@ -166,6 +205,11 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
         6: ('refresh_interval', 'Auto Refresh Interval (seconds)', '30'),
         7: ('watch_interval', 'File Watch Interval (seconds)', '60'),
     }
+
+    # Handle backup settings separately (8, 9, 10)
+    if setting_num in [8, 9, 10]:
+        _edit_backup_setting(console, setting_num)
+        return
 
     if setting_num not in setting_map:
         return
@@ -213,6 +257,94 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
                         console.print(f"[green]✓ {name} updated to {interval} seconds[/green]")
                     else:
                         console.print("[red]✗ Interval must be at least 10 seconds[/red]")
+                except ValueError:
+                    console.print("[red]✗ Invalid number[/red]")
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[yellow]Input cancelled[/yellow]")
+
+    console.print("\n[dim]Press any key to continue...[/dim]")
+    _read_key()
+
+
+def _edit_backup_setting(console: Console, setting_num: int) -> None:
+    """
+    Edit backup-related settings (8, 9, 10).
+
+    Args:
+        console: Rich console for rendering
+        setting_num: Setting number (8, 9, or 10)
+    """
+    from src.config.user_config import (
+        get_backup_enabled,
+        set_backup_enabled,
+        get_backup_keep_monthly,
+        set_backup_keep_monthly,
+        get_backup_retention_days,
+        set_backup_retention_days,
+    )
+
+    console.print()
+
+    if setting_num == 8:
+        # Auto Backup (True/False)
+        current = get_backup_enabled()
+        console.print("[bold]Edit Auto Backup[/bold]")
+        console.print(f"[dim]Current value: {'Enabled' if current else 'Disabled'}[/dim]")
+        console.print("[dim]Enter 'yes' to enable or 'no' to disable, or press Enter to keep current:[/dim]")
+        console.print("> ", end="")
+
+        try:
+            new_value = console.input("").strip().lower()
+
+            if new_value in ['yes', 'y', 'true', '1']:
+                set_backup_enabled(True)
+                console.print("[green]✓ Auto Backup enabled[/green]")
+            elif new_value in ['no', 'n', 'false', '0']:
+                set_backup_enabled(False)
+                console.print("[green]✓ Auto Backup disabled[/green]")
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[yellow]Input cancelled[/yellow]")
+
+    elif setting_num == 9:
+        # Keep Monthly Backups (True/False)
+        current = get_backup_keep_monthly()
+        console.print("[bold]Edit Keep Monthly Backups[/bold]")
+        console.print(f"[dim]Current value: {'Yes' if current else 'No'}[/dim]")
+        console.print("[dim]Keep backups from the 1st of each month permanently?[/dim]")
+        console.print("[dim]Enter 'yes' or 'no', or press Enter to keep current:[/dim]")
+        console.print("> ", end="")
+
+        try:
+            new_value = console.input("").strip().lower()
+
+            if new_value in ['yes', 'y', 'true', '1']:
+                set_backup_keep_monthly(True)
+                console.print("[green]✓ Monthly backups will be kept permanently[/green]")
+            elif new_value in ['no', 'n', 'false', '0']:
+                set_backup_keep_monthly(False)
+                console.print("[green]✓ Monthly backups will be deleted after retention period[/green]")
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[yellow]Input cancelled[/yellow]")
+
+    elif setting_num == 10:
+        # Backup Retention Days (int)
+        current = get_backup_retention_days()
+        console.print("[bold]Edit Backup Retention (days)[/bold]")
+        console.print(f"[dim]Current value: {current} days[/dim]")
+        console.print("[dim]Enter number of days to keep backups (minimum 1) or press Enter to keep current:[/dim]")
+        console.print("> ", end="")
+
+        try:
+            new_value = console.input("").strip()
+
+            if new_value:
+                try:
+                    days = int(new_value)
+                    if days >= 1:
+                        set_backup_retention_days(days)
+                        console.print(f"[green]✓ Backup retention set to {days} days[/green]")
+                    else:
+                        console.print("[red]✗ Days must be at least 1[/red]")
                 except ValueError:
                     console.print("[red]✗ Invalid number[/red]")
         except (EOFError, KeyboardInterrupt):

@@ -401,31 +401,42 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
         return
 
-    # Create KPI cards with limits (shows spinner if loading limits)
-    kpi_section = _create_kpi_section(stats.overall_totals, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db, view_mode_ref=view_mode_ref)
+    # Check if we're in daily detail mode for weekly view
+    daily_detail_date = None
+    if view_mode == "weekly" and view_mode_ref:
+        daily_detail_date = view_mode_ref.get("daily_detail_date")
 
     # Create footer with export info, date range, and view mode
     footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
 
-    # Always render Summary (and Usage Limits in weekly mode)
-    console.print(kpi_section, end="")
-    console.print()  # Blank line between sections
-
     # Create breakdowns for each view mode
     sections_to_render = []
 
-    # Model breakdown is always important
-    model_breakdown = _create_model_breakdown(records)
-    sections_to_render.append(("model", model_breakdown))
+    if daily_detail_date:
+        # Daily detail mode - show only the detail view without KPI section
+        daily_detail = _create_daily_detail_view(records, daily_detail_date)
+        sections_to_render.append(("daily_detail", daily_detail))
+    else:
+        # Normal mode - show KPI section and breakdowns
+        kpi_section = _create_kpi_section(stats.overall_totals, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db, view_mode_ref=view_mode_ref)
 
-    # Add mode-specific breakdown
-    if view_mode == "weekly":
-        project_breakdown = _create_project_breakdown(records)
-        sections_to_render.append(("project", project_breakdown))
-        daily_breakdown_weekly = _create_daily_breakdown_weekly(records)
-        sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
-        hourly_breakdown = _create_hourly_breakdown(records)
-        sections_to_render.append(("hourly", hourly_breakdown))
+        # Render Summary (and Usage Limits in weekly mode)
+        console.print(kpi_section, end="")
+        console.print()  # Blank line between sections
+
+        # Model breakdown is always important
+        model_breakdown = _create_model_breakdown(records)
+        sections_to_render.append(("model", model_breakdown))
+
+        # Add mode-specific breakdown
+        if view_mode == "weekly":
+            # Show normal weekly breakdown
+            project_breakdown = _create_project_breakdown(records)
+            sections_to_render.append(("project", project_breakdown))
+            daily_breakdown_weekly = _create_daily_breakdown_weekly(records)
+            sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
+            hourly_breakdown = _create_hourly_breakdown(records)
+            sections_to_render.append(("hourly", hourly_breakdown))
     elif view_mode == "monthly":
         project_breakdown = _create_project_breakdown(records)
         sections_to_render.append(("project", project_breakdown))
@@ -1192,13 +1203,14 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
 
     # Create table with bars
     table = Table(show_header=False, box=None, padding=(0, 2))
+    table.add_column("#", style="yellow", justify="right", width=3)
     table.add_column("Date", style="white", justify="left", width=17)
     table.add_column("Bar", justify="left")
     table.add_column("Tokens", style=ORANGE, justify="right")
     table.add_column("Percentage", style=CYAN, justify="right")
     table.add_column("Cost", style="green", justify="right", width=10)
 
-    for date, data in sorted_dates:
+    for idx, (date, data) in enumerate(sorted_dates, start=1):
         tokens = data["total_tokens"]
         percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
 
@@ -1212,6 +1224,7 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
         bar = _create_bar(tokens, max_tokens, width=20)
 
         table.add_row(
+            f"[yellow][{idx}][/yellow]",
             date_with_day,
             bar,
             _format_number(tokens),
@@ -1391,6 +1404,232 @@ def _create_monthly_breakdown(records: list[UsageRecord]) -> Panel:
     )
 
 
+def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> Group:
+    """
+    Create detailed view for a specific day showing hourly usage, models, and projects.
+
+    Args:
+        records: List of usage records
+        target_date: Target date in YYYY-MM-DD format (e.g., "2025-10-15")
+
+    Returns:
+        Group containing hourly, model, and project breakdowns for the target date
+    """
+    from src.models.pricing import calculate_cost, format_cost
+
+    # Parse target date to get day of week
+    date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+    day_name = date_obj.strftime("%A")  # Full day name (Monday, Tuesday, etc.)
+    title_date = f"{target_date} ({day_name})"
+
+    # Filter records to only those from target_date
+    filtered_records = [
+        record for record in records
+        if record.timestamp.strftime("%Y-%m-%d") == target_date
+    ]
+
+    if not filtered_records:
+        return Group(
+            Panel(
+                Text(f"No data available for {target_date}", style=DIM),
+                title=f"[bold]Daily Detail - {title_date}",
+                border_style="white",
+            )
+        )
+
+    # Create hourly breakdown
+    hourly_data: dict[str, dict] = defaultdict(lambda: {
+        "cost": 0.0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation": 0,
+        "cache_read": 0,
+        "messages": 0
+    })
+
+    for record in filtered_records:
+        if record.token_usage:
+            hour = record.timestamp.strftime("%H:00")
+            hourly_data[hour]["input_tokens"] += record.token_usage.input_tokens
+            hourly_data[hour]["output_tokens"] += record.token_usage.output_tokens
+            hourly_data[hour]["cache_creation"] += record.token_usage.cache_creation_tokens
+            hourly_data[hour]["cache_read"] += record.token_usage.cache_read_tokens
+            hourly_data[hour]["messages"] += 1
+
+            if record.model and record.model != "<synthetic>":
+                cost = calculate_cost(
+                    record.token_usage.input_tokens,
+                    record.token_usage.output_tokens,
+                    record.model,
+                    record.token_usage.cache_creation_tokens,
+                    record.token_usage.cache_read_tokens,
+                )
+                hourly_data[hour]["cost"] += cost
+
+    # Create hourly table
+    hourly_table = Table(show_header=True, box=None, padding=(0, 2))
+    hourly_table.add_column("Time", style="purple", justify="left", width=8)
+    hourly_table.add_column("Cost", style="green", justify="right", width=10)
+    hourly_table.add_column("Input", style=BLUE, justify="right", width=12)
+    hourly_table.add_column("Output", style=BLUE, justify="right", width=12)
+    hourly_table.add_column("Cache Write", style="magenta", justify="right", width=14)
+    hourly_table.add_column("Cache Read", style="magenta", justify="right", width=14)
+    hourly_table.add_column("Messages", style="white", justify="right", width=10)
+
+    # Sort by hour (ascending order for daily detail - chronological)
+    sorted_hours = sorted(hourly_data.items())
+
+    for hour, data in sorted_hours:
+        hourly_table.add_row(
+            hour,
+            format_cost(data["cost"]),
+            _format_number(data["input_tokens"]),
+            _format_number(data["output_tokens"]),
+            _format_number(data["cache_creation"]),
+            _format_number(data["cache_read"]),
+            str(data["messages"]),
+        )
+
+    hourly_panel = Panel(
+        hourly_table,
+        title=f"[bold]Hourly Usage - {title_date}",
+        border_style="white",
+        expand=True,
+    )
+
+    # Create model breakdown
+    model_data: dict[str, dict] = defaultdict(lambda: {
+        "total_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cost": 0.0
+    })
+
+    for record in filtered_records:
+        if record.model and record.token_usage and record.model != "<synthetic>":
+            model_data[record.model]["total_tokens"] += record.token_usage.total_tokens
+            model_data[record.model]["input_tokens"] += record.token_usage.input_tokens
+            model_data[record.model]["output_tokens"] += record.token_usage.output_tokens
+
+            cost = calculate_cost(
+                record.token_usage.input_tokens,
+                record.token_usage.output_tokens,
+                record.model,
+                record.token_usage.cache_creation_tokens,
+                record.token_usage.cache_read_tokens,
+            )
+            model_data[record.model]["cost"] += cost
+
+    total_tokens = sum(data["total_tokens"] for data in model_data.values())
+    total_cost = sum(data["cost"] for data in model_data.values())
+    max_tokens = max(data["total_tokens"] for data in model_data.values()) if model_data else 0
+    sorted_models = sorted(model_data.items(), key=lambda x: x[1]["total_tokens"], reverse=True)
+
+    model_table = Table(show_header=False, box=None, padding=(0, 2))
+    model_table.add_column("Model", style="white", justify="left", width=25)
+    model_table.add_column("Bar", justify="left")
+    model_table.add_column("Tokens", style=ORANGE, justify="right")
+    model_table.add_column("Percentage", style=CYAN, justify="right")
+    model_table.add_column("Cost", style="green", justify="right", width=10)
+
+    for model, data in sorted_models:
+        display_name = model.split("/")[-1] if "/" in model else model
+        if "claude" in display_name.lower():
+            display_name = display_name.replace("claude-", "")
+
+        tokens = data["total_tokens"]
+        percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
+        bar = _create_bar(tokens, max_tokens, width=20)
+
+        model_table.add_row(
+            display_name,
+            bar,
+            _format_number(tokens),
+            f"[cyan]{percentage:.1f}%[/cyan]",
+            format_cost(data["cost"]),
+        )
+
+    # Add total row
+    model_table.add_row("", "", "", "", "")
+    model_table.add_row(
+        "[bold]Total",
+        Text(""),
+        f"[bold]{_format_number(total_tokens)}",
+        "[bold cyan]100.0%",
+        f"[bold green]{format_cost(total_cost)}",
+    )
+
+    model_panel = Panel(
+        model_table,
+        title=f"[bold]Tokens by Model - {title_date}",
+        border_style="white",
+        expand=True,
+    )
+
+    # Create project breakdown
+    folder_data: dict[str, dict] = defaultdict(lambda: {
+        "total_tokens": 0,
+        "cost": 0.0
+    })
+
+    for record in filtered_records:
+        if record.token_usage:
+            folder_data[record.folder]["total_tokens"] += record.token_usage.total_tokens
+
+            if record.model and record.model != "<synthetic>":
+                cost = calculate_cost(
+                    record.token_usage.input_tokens,
+                    record.token_usage.output_tokens,
+                    record.model,
+                    record.token_usage.cache_creation_tokens,
+                    record.token_usage.cache_read_tokens,
+                )
+                folder_data[record.folder]["cost"] += cost
+
+    total_tokens_proj = sum(data["total_tokens"] for data in folder_data.values())
+    sorted_folders = sorted(folder_data.items(), key=lambda x: x[1]["total_tokens"], reverse=True)
+    sorted_folders = sorted_folders[:10]  # Limit to top 10
+    max_tokens_proj = max(data["total_tokens"] for _, data in sorted_folders) if sorted_folders else 0
+
+    project_table = Table(show_header=False, box=None, padding=(0, 2))
+    project_table.add_column("Project", style="white", justify="left", overflow="crop")
+    project_table.add_column("Bar", justify="left", overflow="crop")
+    project_table.add_column("Tokens", style=ORANGE, justify="right")
+    project_table.add_column("Percentage", style=CYAN, justify="right")
+    project_table.add_column("Cost", style="green", justify="right", width=10)
+
+    for folder, data in sorted_folders:
+        parts = folder.split("/")
+        if len(parts) > 2:
+            display_name = "/".join(parts[-2:])
+        else:
+            display_name = folder
+
+        if len(display_name) > 35:
+            display_name = display_name[:35]
+
+        tokens = data["total_tokens"]
+        percentage = (tokens / total_tokens_proj * 100) if total_tokens_proj > 0 else 0
+        bar = _create_bar(tokens, max_tokens_proj, width=20)
+
+        project_table.add_row(
+            display_name,
+            bar,
+            _format_number(tokens),
+            f"[cyan]{percentage:.1f}%[/cyan]",
+            format_cost(data["cost"]),
+        )
+
+    project_panel = Panel(
+        project_table,
+        title=f"[bold]Tokens by Project - {title_date}",
+        border_style="white",
+        expand=True,
+    )
+
+    return Group(hourly_panel, model_panel, project_panel)
+
+
 def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: str = "monthly", in_live_mode: bool = False, is_updating: bool = False, view_mode_ref: dict | None = None) -> Text:
     """
     Create footer with export command info, date range, and view mode.
@@ -1444,6 +1683,9 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
     # Add current view mode if in live mode
     if in_live_mode:
+        # Check if in daily detail mode
+        in_daily_detail = view_mode == "weekly" and view_mode_ref and view_mode_ref.get("daily_detail_date")
+
         # Show "Shortcut:" for usage mode, "View:" for others
         if view_mode == "usage":
             footer.append("Shortcut: ", style=DIM)
@@ -1457,6 +1699,16 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             footer.append("[w] ", style=DIM)
             footer.append("[m] ", style=DIM)
             footer.append("[y] ", style=DIM)
+        elif in_daily_detail:
+            # Daily detail mode - show date
+            daily_date = view_mode_ref.get("daily_detail_date")
+            # Parse date to get day of week
+            try:
+                date_obj = datetime.strptime(daily_date, "%Y-%m-%d")
+                day_name = date_obj.strftime("%a")
+                footer.append(f"Daily Detail - {daily_date} ({day_name})", style=f"bold {YELLOW}")
+            except:
+                footer.append(f"Daily Detail - {daily_date}", style=f"bold {YELLOW}")
         else:
             # Full names for other modes
             # Usage
@@ -1498,8 +1750,8 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             # Settings
             footer.append("[s]ettings", style=DIM)
 
-        # Add date range if provided (on same line), but not for usage mode
-        if date_range and view_mode != "usage":
+        # Add date range if provided (on same line), but not for usage mode or daily detail mode
+        if date_range and view_mode != "usage" and not in_daily_detail:
             footer.append("  ", style=DIM)
             footer.append(f"{date_range}", style="bold cyan")
 
@@ -1528,21 +1780,31 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
         # Add navigation hint for non-usage modes (second line)
         if view_mode in ["weekly", "monthly", "yearly"]:
-            # Navigation for weekly/monthly/yearly modes
-            footer.append("Use ", style=DIM)
-            footer.append("<", style=f"bold {YELLOW}")
-            footer.append(" ", style=DIM)
-            footer.append(">", style=f"bold {YELLOW}")
-            if view_mode == "weekly":
-                period_label = "week"
-            elif view_mode == "monthly":
-                period_label = "month"
+            # Check if in daily detail mode
+            in_daily_detail = view_mode == "weekly" and view_mode_ref and view_mode_ref.get("daily_detail_date")
+
+            if in_daily_detail:
+                # Daily detail mode - show return instruction
+                footer.append("Press ", style=DIM)
+                footer.append("esc", style=f"bold {YELLOW}")
+                footer.append(" to return to weekly view.", style=DIM)
+                footer.append("\n")
             else:
-                period_label = "year"
-            footer.append(f" to navigate {period_label}s, ", style=DIM)
-            footer.append("esc", style=f"bold {YELLOW}")
-            footer.append(" key to quit.", style=DIM)
-            footer.append("\n")
+                # Navigation for weekly/monthly/yearly modes
+                footer.append("Use ", style=DIM)
+                footer.append("<", style=f"bold {YELLOW}")
+                footer.append(" ", style=DIM)
+                footer.append(">", style=f"bold {YELLOW}")
+                if view_mode == "weekly":
+                    period_label = "week"
+                elif view_mode == "monthly":
+                    period_label = "month"
+                else:
+                    period_label = "year"
+                footer.append(f" to navigate {period_label}s, ", style=DIM)
+                footer.append("esc", style=f"bold {YELLOW}")
+                footer.append(" key to quit.", style=DIM)
+                footer.append("\n")
         elif view_mode in ["heatmap", "devices"]:
             # Quit instruction for heatmap and devices modes
             footer.append("Use ", style=DIM)

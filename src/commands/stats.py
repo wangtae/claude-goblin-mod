@@ -6,7 +6,7 @@ from rich.console import Console
 
 from src.commands.limits import capture_limits
 from src.config.settings import get_claude_jsonl_files
-from src.config.user_config import get_storage_mode, get_tracking_mode
+from src.config.user_config import get_tracking_mode
 from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import (
     DEFAULT_DB_PATH,
@@ -78,7 +78,7 @@ def run(console: Console, fast: bool = False, anon: bool = False) -> None:
             if jsonl_files:
                 current_records = parse_all_jsonl_files(jsonl_files)
                 if current_records:
-                    save_snapshot(current_records, storage_mode=get_storage_mode())
+                    save_snapshot(current_records)
 
         # Step 2: Update limits data (if enabled)
         tracking_mode = get_tracking_mode()

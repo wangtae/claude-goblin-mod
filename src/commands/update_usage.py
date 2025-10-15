@@ -6,7 +6,7 @@ from rich.console import Console
 
 from src.commands.limits import capture_limits
 from src.config.settings import get_claude_jsonl_files
-from src.config.user_config import get_storage_mode, get_tracking_mode
+from src.config.user_config import get_tracking_mode
 from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import (
     DEFAULT_DB_PATH,
@@ -42,7 +42,7 @@ def run(console: Console) -> None:
             if jsonl_files:
                 records = parse_all_jsonl_files(jsonl_files)
                 if records:
-                    saved_count = save_snapshot(records, storage_mode=get_storage_mode())
+                    saved_count = save_snapshot(records)
                     console.print(f"[green]Saved {saved_count} new token records[/green]")
 
         # Capture and save limits

@@ -54,11 +54,14 @@ def get_default_config() -> dict:
         Default configuration dictionary
     """
     return {
-        "storage_mode": "aggregate",  # "aggregate" or "full"
         "plan_type": "max_20x",  # "pro", "max_5x", or "max_20x"
         "tracking_mode": "both",  # "both", "tokens", or "limits"
         "db_path": None,  # Custom database path (None = auto-detect)
         "machine_name": None,  # Custom machine name (None = use hostname)
+        "backup_enabled": True,  # Enable automatic backups
+        "backup_keep_monthly": True,  # Keep monthly backups (1st of each month)
+        "backup_retention_days": 30,  # Number of days to keep backups
+        "last_backup_date": None,  # Last backup date (YYYY-MM-DD)
         "version": "1.0"
     }
 
@@ -67,29 +70,13 @@ def get_storage_mode() -> str:
     """
     Get the current storage mode setting.
 
+    Storage mode is now fixed to "full" for data safety and integrity.
+    Full mode prevents duplicate aggregation issues across multiple devices.
+
     Returns:
-        Either "aggregate" or "full"
+        Always returns "full"
     """
-    config = load_config()
-    return config.get("storage_mode", "aggregate")
-
-
-def set_storage_mode(mode: str) -> None:
-    """
-    Set the storage mode.
-
-    Args:
-        mode: Either "aggregate" or "full"
-
-    Raises:
-        ValueError: If mode is not valid
-    """
-    if mode not in ["aggregate", "full"]:
-        raise ValueError(f"Invalid storage mode: {mode}. Must be 'aggregate' or 'full'")
-
-    config = load_config()
-    config["storage_mode"] = mode
-    save_config(config)
+    return "full"
 
 
 def get_plan_type() -> str:
@@ -238,6 +225,104 @@ def clear_machine_name() -> None:
     """
     config = load_config()
     config["machine_name"] = None
+    save_config(config)
+
+
+def get_backup_enabled() -> bool:
+    """
+    Get whether automatic backups are enabled.
+
+    Returns:
+        True if backups are enabled, False otherwise
+    """
+    config = load_config()
+    return config.get("backup_enabled", True)
+
+
+def set_backup_enabled(enabled: bool) -> None:
+    """
+    Enable or disable automatic backups.
+
+    Args:
+        enabled: True to enable backups, False to disable
+    """
+    config = load_config()
+    config["backup_enabled"] = enabled
+    save_config(config)
+
+
+def get_backup_keep_monthly() -> bool:
+    """
+    Get whether monthly backups (1st of each month) should be kept permanently.
+
+    Returns:
+        True if monthly backups should be kept, False otherwise
+    """
+    config = load_config()
+    return config.get("backup_keep_monthly", True)
+
+
+def set_backup_keep_monthly(keep: bool) -> None:
+    """
+    Set whether to keep monthly backups permanently.
+
+    Args:
+        keep: True to keep monthly backups, False to delete them normally
+    """
+    config = load_config()
+    config["backup_keep_monthly"] = keep
+    save_config(config)
+
+
+def get_backup_retention_days() -> int:
+    """
+    Get the number of days to keep backup files.
+
+    Returns:
+        Number of days to keep backups (default: 30)
+    """
+    config = load_config()
+    return config.get("backup_retention_days", 30)
+
+
+def set_backup_retention_days(days: int) -> None:
+    """
+    Set the number of days to keep backup files.
+
+    Args:
+        days: Number of days (minimum 1)
+
+    Raises:
+        ValueError: If days is less than 1
+    """
+    if days < 1:
+        raise ValueError("Backup retention days must be at least 1")
+
+    config = load_config()
+    config["backup_retention_days"] = days
+    save_config(config)
+
+
+def get_last_backup_date() -> Optional[str]:
+    """
+    Get the date of the last successful backup.
+
+    Returns:
+        Last backup date in YYYY-MM-DD format, or None if never backed up
+    """
+    config = load_config()
+    return config.get("last_backup_date")
+
+
+def set_last_backup_date(date_str: str) -> None:
+    """
+    Set the date of the last successful backup.
+
+    Args:
+        date_str: Date in YYYY-MM-DD format
+    """
+    config = load_config()
+    config["last_backup_date"] = date_str
     save_config(config)
 
 
