@@ -321,11 +321,11 @@ python3 -m src.cli
 
 ```bash
 ccu                          # Standard mode with file watching
-ccu --refresh=30             # Refresh every 30 seconds instead
 ccu --anon                   # Anonymize project names (for screenshots)
-ccu --watch-interval=30      # File watch check interval
-ccu --limits-interval=120    # Usage limits update interval
+ccu --help                   # Show help message
 ```
+
+**Note**: Refresh intervals and other display settings are configured inside the program via the Settings menu (press `s` in dashboard).
 
 ### Keyboard Shortcuts (In Dashboard)
 

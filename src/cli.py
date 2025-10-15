@@ -31,15 +31,21 @@ console = Console()
 @app.callback(invoke_without_command=True)
 def default_callback(
     ctx: typer.Context,
-    refresh: Optional[int] = typer.Option(None, "--refresh", help="Refresh interval in seconds (e.g., --refresh=30). Watches file changes if not specified."),
     anon: bool = typer.Option(False, "--anon", help="Anonymize project names to project-001, project-002, etc"),
-    watch_interval: int = typer.Option(60, "--watch-interval", help="File watch check interval in seconds (default: 60)"),
-    limits_interval: int = typer.Option(60, "--limits-interval", help="Usage limits update interval in seconds (default: 60)"),
+    refresh: Optional[int] = typer.Option(None, "--refresh", help="Refresh interval in seconds (e.g., --refresh=30). Watches file changes if not specified.", hidden=True),
+    watch_interval: int = typer.Option(60, "--watch-interval", help="File watch check interval in seconds (default: 60)", hidden=True),
+    limits_interval: int = typer.Option(60, "--limits-interval", help="Usage limits update interval in seconds (default: 60)", hidden=True),
 ):
     """
     Python CLI for Claude Code utilities and usage tracking/analytics.
 
     Run without command to show interactive usage dashboard.
+
+    Options:
+      --anon     Anonymize project names (for screenshots)
+      --help     Show this help message
+
+    Note: Refresh intervals and display settings are configured via Settings menu (press 's' in dashboard).
     """
     if ctx.invoked_subcommand is None:
         # No command provided, run usage command with options
@@ -118,12 +124,11 @@ def main() -> None:
 
     Usage:
         ccu                     Show interactive usage dashboard
-        ccu --refresh=30        Update every 30 seconds
-        ccu --anon              Anonymize project names
-        ccu heatmap             Show GitHub-style activity heatmap
-        ccu settings            Configure settings (timezone, etc.)
-        ccu config show         View configuration
-        ccu reset-db --force    Reset database
+        ccu --anon              Anonymize project names (for screenshots)
+        ccu --help              Show help message
+
+    Note: All settings (refresh intervals, colors, etc.) are configured
+          inside the program via Settings menu (press 's' in dashboard).
 
     Exit:
         Press Ctrl+C, [q], or [Esc] to exit
