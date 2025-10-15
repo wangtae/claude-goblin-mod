@@ -45,8 +45,7 @@ def parse_jsonl_file(file_path: Path) -> Iterator[UsageRecord]:
                 if record:
                     yield record
             except json.JSONDecodeError as e:
-                # Skip malformed lines but continue processing
-                print(f"Warning: Skipping malformed JSON at {file_path}:{line_num}: {e}")
+                # Skip malformed lines silently - common in incomplete/interrupted sessions
                 continue
 
 

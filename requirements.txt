@@ -1,0 +1,6 @@
+# Claude Goblin Mod - Runtime Dependencies
+# For development dependencies, see pyproject.toml [dependency-groups]
+
+rich>=13.7.0
+typer>=0.9.0
+watchdog>=3.0.0

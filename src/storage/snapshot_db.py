@@ -2,7 +2,7 @@
 import os
 import platform
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -183,6 +183,12 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
         if "machine_name" not in columns:
             cursor.execute("ALTER TABLE usage_records ADD COLUMN machine_name TEXT")
 
+        # Migration: Add content column if it doesn't exist
+        cursor.execute("PRAGMA table_info(usage_records)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "content" not in columns:
+            cursor.execute("ALTER TABLE usage_records ADD COLUMN content TEXT")
+
         # Index for faster date-based queries
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_usage_records_date
@@ -308,7 +314,7 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
             ('<synthetic>', 0.00, 0.00, 0.00, 0.00, 'Test/synthetic model - no cost'),
         ]
 
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
         for model_name, input_price, output_price, cache_write, cache_read, notes in pricing_data:
             cursor.execute("""
                 INSERT OR REPLACE INTO model_pricing (
@@ -372,8 +378,8 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
                         model, folder, git_branch, version,
                         input_tokens, output_tokens,
                         cache_creation_tokens, cache_read_tokens, total_tokens,
-                        machine_name
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        machine_name, content
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     record.date_key,
                     record.timestamp.isoformat(),
@@ -390,6 +396,7 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
                     cache_read_tokens,
                     total_tokens,
                     machine_name,
+                    record.content,  # Save content field
                 ))
                 saved_count += 1
             except sqlite3.IntegrityError:
@@ -400,7 +407,7 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
         # In full mode, only update dates that have records in usage_records
         # IMPORTANT: Never use REPLACE - it would delete old data when JSONL files age out
         # Instead, recalculate only for dates that currently have records
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         # Get all dates that currently have usage_records
         cursor.execute("SELECT DISTINCT date FROM usage_records")
@@ -482,8 +489,8 @@ def save_limits_snapshot(
 
     try:
         cursor = conn.cursor()
-        timestamp = datetime.now().isoformat()
-        date = datetime.now().strftime("%Y-%m-%d")
+        timestamp = datetime.now(timezone.utc).isoformat()
+        date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
         cursor.execute("""
             INSERT OR REPLACE INTO limits_snapshots (
@@ -562,7 +569,8 @@ def load_historical_records(
                 # Parse the row into a UsageRecord
                 # Row columns: id, date, timestamp, session_id, message_uuid, message_type,
                 #              model, folder, git_branch, version,
-                #              input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, total_tokens
+                #              input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, total_tokens,
+                #              machine_name, content
 
                 # Only create TokenUsage if tokens exist (assistant messages)
                 token_usage = None
@@ -584,6 +592,7 @@ def load_historical_records(
                     git_branch=row[8],
                     version=row[9],
                     token_usage=token_usage,
+                    content=row[16] if len(row) > 16 else None,  # Load content field
                 )
                 records.append(record)
 
@@ -1117,7 +1126,7 @@ def save_user_preference(key: str, value: str, db_path: Path = DEFAULT_DB_PATH) 
 
     try:
         cursor = conn.cursor()
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         cursor.execute("""
             INSERT OR REPLACE INTO user_preferences (key, value, updated_at)
@@ -1204,7 +1213,7 @@ def save_all_preferences(prefs: dict, db_path: Path = DEFAULT_DB_PATH) -> None:
 
     try:
         cursor = conn.cursor()
-        timestamp = datetime.now().isoformat()
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         for key, value in prefs.items():
             cursor.execute("""
@@ -1213,6 +1222,127 @@ def save_all_preferences(prefs: dict, db_path: Path = DEFAULT_DB_PATH) -> None:
             """, (key, value, timestamp))
 
         conn.commit()
+    finally:
+        conn.close()
+
+
+def load_messages_by_hour(
+    target_date: str,
+    target_hour: int,
+    db_path: Path = DEFAULT_DB_PATH
+) -> list[UsageRecord]:
+    """
+    Load messages for a specific date and hour.
+
+    Args:
+        target_date: Date in YYYY-MM-DD format (e.g., "2025-10-15")
+        target_hour: Hour in 24-hour format (0-23)
+        db_path: Path to the SQLite database file
+
+    Returns:
+        List of UsageRecord objects for the specified hour, sorted by timestamp
+
+    Raises:
+        sqlite3.Error: If database query fails
+    """
+    if not db_path.exists():
+        return []
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+
+        # Query messages from the target hour
+        # Note: timestamps are stored in UTC, need to filter correctly
+        from src.utils.timezone import get_user_timezone
+        from datetime import datetime as dt
+        from zoneinfo import ZoneInfo
+
+        user_tz = get_user_timezone()
+
+        # Create hour range in user's timezone, then convert to UTC for query
+        # Target: 2025-10-15 23:00 to 23:59:59 in user's local time
+        if user_tz == "UTC":
+            tz_obj = ZoneInfo("UTC")
+        elif user_tz == "auto":
+            # Get system timezone
+            import time
+            tz_obj = dt.now().astimezone().tzinfo
+        else:
+            tz_obj = ZoneInfo(user_tz)
+
+        # Create start and end times in user's timezone
+        start_local = dt(
+            int(target_date[:4]),
+            int(target_date[5:7]),
+            int(target_date[8:10]),
+            target_hour,
+            0,
+            0,
+            tzinfo=tz_obj
+        )
+        end_local = dt(
+            int(target_date[:4]),
+            int(target_date[5:7]),
+            int(target_date[8:10]),
+            target_hour,
+            59,
+            59,
+            tzinfo=tz_obj
+        )
+
+        # Convert to UTC for database query
+        start_utc = start_local.astimezone(ZoneInfo("UTC"))
+        end_utc = end_local.astimezone(ZoneInfo("UTC"))
+
+        # Query with UTC timestamps
+        cursor.execute("""
+            SELECT * FROM usage_records
+            WHERE timestamp >= ? AND timestamp <= ?
+            ORDER BY timestamp ASC
+        """, (start_utc.isoformat(), end_utc.isoformat()))
+
+        rows = cursor.fetchall()
+
+        if not rows:
+            return []
+
+        # Convert rows to UsageRecord objects
+        records = []
+        from src.models.usage_record import TokenUsage
+
+        for row in rows:
+            # Row columns: id, date, timestamp, session_id, message_uuid, message_type,
+            #              model, folder, git_branch, version,
+            #              input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, total_tokens,
+            #              machine_name, content
+
+            # Only create TokenUsage if tokens exist (assistant messages)
+            token_usage = None
+            if row[10] > 0 or row[11] > 0:  # if input_tokens or output_tokens exist
+                token_usage = TokenUsage(
+                    input_tokens=row[10],
+                    output_tokens=row[11],
+                    cache_creation_tokens=row[12],
+                    cache_read_tokens=row[13],
+                )
+
+            record = UsageRecord(
+                timestamp=dt.fromisoformat(row[2]),
+                session_id=row[3],
+                message_uuid=row[4],
+                message_type=row[5],
+                model=row[6],
+                folder=row[7],
+                git_branch=row[8],
+                version=row[9],
+                token_usage=token_usage,
+                content=row[16] if len(row) > 16 else None,  # Load content field
+            )
+            records.append(record)
+
+        return records
     finally:
         conn.close()
 

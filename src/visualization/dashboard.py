@@ -158,7 +158,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     """
     # Optionally clear screen and reset cursor to top
     if clear_screen:
-        # Clear screen but preserve scroll history
+        # Use console.clear() for better compatibility with VSCode terminal
         console.clear()
 
     # For heatmap mode, show heatmap instead of dashboard
@@ -400,10 +400,12 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
         return
 
-    # Check if we're in daily detail mode for weekly view
+    # Check if we're in daily detail mode or message detail mode for weekly view
     daily_detail_date = None
+    hourly_detail_hour = None
     if view_mode == "weekly" and view_mode_ref:
         daily_detail_date = view_mode_ref.get("daily_detail_date")
+        hourly_detail_hour = view_mode_ref.get("hourly_detail_hour")
 
     # Create footer with export info, date range, and view mode
     footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
@@ -411,10 +413,52 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     # Create breakdowns for each view mode
     sections_to_render = []
 
-    if daily_detail_date:
+    if daily_detail_date and hourly_detail_hour is not None:
+        # Message detail mode - show messages for specific hour
+        from src.storage.snapshot_db import load_messages_by_hour
+        hourly_messages = load_messages_by_hour(daily_detail_date, hourly_detail_hour)
+        message_detail = _create_message_detail_view(hourly_messages, daily_detail_date, hourly_detail_hour)
+        sections_to_render.append(("message_detail", message_detail))
+    elif daily_detail_date:
         # Daily detail mode - show only the detail view without KPI section
         daily_detail = _create_daily_detail_view(records, daily_detail_date)
         sections_to_render.append(("daily_detail", daily_detail))
+
+        # Calculate hourly hours for keyboard navigation
+        # Filter records to only those from target_date
+        from collections import defaultdict
+        from src.utils.timezone import format_local_time, get_user_timezone
+
+        filtered_records = [
+            record for record in records
+            if record.timestamp.strftime("%Y-%m-%d") == daily_detail_date
+        ]
+
+        if filtered_records:
+            user_tz = get_user_timezone()
+            hourly_data = defaultdict(int)
+
+            for record in filtered_records:
+                if record.token_usage:
+                    # Convert UTC timestamp to local timezone hour
+                    hour = format_local_time(record.timestamp, "%H:00", user_tz)
+                    hourly_data[hour] += record.token_usage.total_tokens
+
+            # Sort by hour in descending order (same as display order)
+            sorted_hours = sorted(hourly_data.keys(), reverse=True)
+
+            # Extract hour numbers (00-23) as integers
+            hourly_hours_int = []
+            for hour_str in sorted_hours:
+                try:
+                    hour_int = int(hour_str.split(":")[0])
+                    hourly_hours_int.append(hour_int)
+                except:
+                    pass
+
+            # Store in view_mode_ref for keyboard listener
+            if view_mode_ref:
+                view_mode_ref['hourly_hours'] = hourly_hours_int
     else:
         # Normal mode - show KPI section and breakdowns
         kpi_section = _create_kpi_section(stats.overall_totals, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db, view_mode_ref=view_mode_ref)
@@ -690,37 +734,32 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
                 "unfilled": "#424242",
             }
 
-            # Create table structure with 3 rows per limit
+            # Calculate bar width based on terminal width (same as usage mode)
+            terminal_width = console.width if console else 120
+            bar_width = max(20, terminal_width - 14)
+
+            # Create table structure with 3 rows per limit (G3 style - bar+percentage combined)
             limits_table = Table(show_header=False, box=None, padding=(0, 2))
             limits_table.add_column("Content", justify="left")
 
             # Session limit (3 rows)
             limits_table.add_row("Current session")
-            session_bar = _create_bar(limits["session_pct"], 100, width=50, color=_get_bar_color(limits["session_pct"], color_mode, colors))
-            bar_text = Text()
-            bar_text.append(session_bar)
-            bar_text.append(f"  {limits['session_pct']}% used", style="bold white")
-            limits_table.add_row(bar_text)
+            session_bar = _create_usage_bar_with_percent(limits["session_pct"], width=bar_width, color_mode=color_mode, colors=colors)
+            limits_table.add_row(session_bar)
             limits_table.add_row(f"Resets {session_reset} ({format_cost(session_cost)})", style=DIM)
             limits_table.add_row("")  # Blank line
 
             # Week limit (3 rows)
             limits_table.add_row("Current week (all models)")
-            week_bar = _create_bar(limits["week_pct"], 100, width=50, color=_get_bar_color(limits["week_pct"], color_mode, colors))
-            bar_text = Text()
-            bar_text.append(week_bar)
-            bar_text.append(f"  {limits['week_pct']}% used", style="bold white")
-            limits_table.add_row(bar_text)
+            week_bar = _create_usage_bar_with_percent(limits["week_pct"], width=bar_width, color_mode=color_mode, colors=colors)
+            limits_table.add_row(week_bar)
             limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
             limits_table.add_row("")  # Blank line
 
             # Opus limit (3 rows)
             limits_table.add_row("Current week (Opus)")
-            opus_bar = _create_bar(limits["opus_pct"], 100, width=50, color=_get_bar_color(limits["opus_pct"], color_mode, colors))
-            bar_text = Text()
-            bar_text.append(opus_bar)
-            bar_text.append(f"  {limits['opus_pct']}% used", style="bold white")
-            limits_table.add_row(bar_text)
+            opus_bar = _create_usage_bar_with_percent(limits["opus_pct"], width=bar_width, color_mode=color_mode, colors=colors)
+            limits_table.add_row(opus_bar)
             limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
             # Wrap in outer "Usage Limits" panel (expand to fit terminal width)
@@ -1471,6 +1510,7 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
 
     # Create hourly table
     hourly_table = Table(show_header=True, box=None, padding=(0, 2))
+    hourly_table.add_column("", style="yellow", justify="left", width=5)  # Shortcut column
     hourly_table.add_column("Time", style="purple", justify="left", width=8)
     hourly_table.add_column("Cost", style="green", justify="right", width=10)
     hourly_table.add_column("Input", style=BLUE, justify="right", width=12)
@@ -1482,8 +1522,9 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     # Sort by hour in descending order (most recent first) to show current work at top
     sorted_hours = sorted(hourly_data.items(), reverse=True)
 
-    for hour, data in sorted_hours:
+    for idx, (hour, data) in enumerate(sorted_hours, start=1):
         hourly_table.add_row(
+            f"[{idx}]",  # Shortcut key
             hour,
             format_cost(data["cost"]),
             _format_number(data["input_tokens"]),
@@ -1496,6 +1537,7 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     hourly_panel = Panel(
         hourly_table,
         title=f"[bold]Hourly Usage - {title_date}",
+        subtitle="[dim]Press number keys [1]-[24] to view message details for that hour[/dim]",
         border_style="white",
         expand=True,
     )
@@ -1630,7 +1672,164 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
         expand=True,
     )
 
-    return Group(hourly_panel, model_panel, project_panel)
+    # Add spacing between panels
+    spacing = Text("")
+    return Group(hourly_panel, spacing, model_panel, spacing, project_panel)
+
+
+def _create_message_detail_view(records: list[UsageRecord], target_date: str, target_hour: int) -> Group:
+    """
+    Create detailed view for messages in a specific hour.
+
+    Args:
+        records: List of usage records for the target hour
+        target_date: Target date in YYYY-MM-DD format (e.g., "2025-10-15")
+        target_hour: Target hour in 24-hour format (0-23)
+
+    Returns:
+        Group containing message detail table and content previews
+    """
+    from src.models.pricing import calculate_cost, format_cost
+    from src.utils.timezone import format_local_time, get_user_timezone
+
+    # Parse target date to get day of week
+    date_obj = datetime.strptime(target_date, "%Y-%m-%d")
+    day_name = date_obj.strftime("%A")
+    hour_str = f"{target_hour:02d}:00"
+    title_text = f"{target_date} ({day_name}) - {hour_str}"
+
+    if not records:
+        return Group(
+            Panel(
+                Text(f"No messages found for {target_date} at {hour_str}", style=DIM),
+                title=f"[bold]Message Detail - {title_text}",
+                border_style="white",
+            )
+        )
+
+    # Get timezone once for performance
+    user_tz = get_user_timezone()
+
+    # Group messages by session for visual separation
+    from collections import defaultdict
+    sessions: dict[str, list[UsageRecord]] = defaultdict(list)
+    for record in records:
+        sessions[record.session_id].append(record)
+
+    # Build list of message items (each is a small table with optional content)
+    message_items = []
+
+    # Process each session
+    for session_idx, (session_id, session_records) in enumerate(sessions.items()):
+        # Add session separator (except before first session)
+        if session_idx > 0:
+            message_items.append(Text(""))
+
+        # Add each message in the session
+        for record in session_records:
+            # Format time (HH:MM:SS in local timezone)
+            time_str = format_local_time(record.timestamp, "%H:%M:%S", user_tz)
+
+            # Message type
+            msg_type = "User" if record.is_user_prompt else "Asst"
+
+            # Model name (shortened)
+            if record.model:
+                model_name = record.model.split("/")[-1] if "/" in record.model else record.model
+                if "claude" in model_name.lower():
+                    model_name = model_name.replace("claude-", "")
+            else:
+                model_name = "-"
+
+            # Token values (only for assistant messages)
+            if record.token_usage:
+                input_tok = _format_number(record.token_usage.input_tokens)
+                output_tok = _format_number(record.token_usage.output_tokens)
+                cache_write = _format_number(record.token_usage.cache_creation_tokens)
+                cache_read = _format_number(record.token_usage.cache_read_tokens)
+
+                # Calculate cost
+                if record.model and record.model != "<synthetic>":
+                    cost = calculate_cost(
+                        record.token_usage.input_tokens,
+                        record.token_usage.output_tokens,
+                        record.model,
+                        record.token_usage.cache_creation_tokens,
+                        record.token_usage.cache_read_tokens,
+                    )
+                    cost_str = format_cost(cost)
+                else:
+                    cost_str = "-"
+            else:
+                input_tok = "-"
+                output_tok = "-"
+                cache_write = "-"
+                cache_read = "-"
+                cost_str = "-"
+
+            # Create a small table for this message
+            msg_table = Table(show_header=False, box=None, padding=(0, 2), show_edge=False)
+            msg_table.add_column("Time", style="purple", justify="left", width=10)
+            msg_table.add_column("Type", style="white", justify="left", width=6)
+            msg_table.add_column("Model", style="white", justify="left", width=18)
+            msg_table.add_column("Input", style=BLUE, justify="right", width=10)
+            msg_table.add_column("Output", style=BLUE, justify="right", width=10)
+            msg_table.add_column("Cache W", style="magenta", justify="right", width=10)
+            msg_table.add_column("Cache R", style="magenta", justify="right", width=10)
+            msg_table.add_column("Cost", style="green", justify="right", width=10)
+
+            msg_table.add_row(
+                time_str,
+                msg_type,
+                model_name,
+                input_tok,
+                output_tok,
+                cache_write,
+                cache_read,
+                cost_str,
+            )
+
+            message_items.append(msg_table)
+
+            # Add content preview immediately below all messages (both User and Asst)
+            if record.content:
+                preview = record.content.strip().replace("\n", " ")
+                # Truncate to 70% of original length (60 * 0.7 = 42 chars)
+                if len(preview) > 42:
+                    preview = preview[:42] + "..."
+
+                # Create content text with indent to align with "Asst" column + 2 spaces
+                # Time column (10) + padding (4) + 2 extra spaces = 16
+                content_text = Text()
+                content_text.append("                ", style=DIM)  # Indent to Asst position + 2
+                content_text.append("ㄴ ", style=DIM)
+                content_text.append(preview, style=DIM)
+                message_items.append(content_text)
+
+    # Create header table
+    header_table = Table(show_header=True, box=None, padding=(0, 2))
+    header_table.add_column("Time", style="purple", justify="left", width=10)
+    header_table.add_column("Type", style="white", justify="left", width=6)
+    header_table.add_column("Model", style="white", justify="left", width=18)
+    header_table.add_column("Input", style=BLUE, justify="right", width=10)
+    header_table.add_column("Output", style=BLUE, justify="right", width=10)
+    header_table.add_column("Cache W", style="magenta", justify="right", width=10)
+    header_table.add_column("Cache R", style="magenta", justify="right", width=10)
+    header_table.add_column("Cost", style="green", justify="right", width=10)
+
+    # Combine header and messages
+    all_items = [header_table] + message_items
+
+    # Create panel
+    panel = Panel(
+        Group(*all_items),
+        title=f"[bold]Message Detail - {title_text}",
+        subtitle="[dim]Press esc to return to daily view[/dim]",
+        border_style="white",
+        expand=True,
+    )
+
+    return Group(panel)
 
 
 def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: str = "monthly", in_live_mode: bool = False, is_updating: bool = False, view_mode_ref: dict | None = None) -> Text:
@@ -1689,8 +1888,9 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
     # Add current view mode if in live mode
     if in_live_mode:
-        # Check if in daily detail mode
+        # Check if in daily detail mode or message detail mode
         in_daily_detail = view_mode == "weekly" and view_mode_ref and view_mode_ref.get("daily_detail_date")
+        in_message_detail = view_mode == "weekly" and view_mode_ref and view_mode_ref.get("hourly_detail_hour") is not None
 
         # Show "Shortcut:" for usage mode, "View:" for others
         if view_mode == "usage":
@@ -1700,11 +1900,21 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
         # Show simplified format for usage mode, full names for others
         if view_mode == "usage":
-            # Simplified format for usage mode (only show main view modes, no settings/quit)
+            # Simplified format for usage mode (only show usage and weekly)
             footer.append("[u]sage ", style=f"bold {YELLOW}")
-            footer.append("[w] ", style=DIM)
-            footer.append("[m] ", style=DIM)
-            footer.append("[y] ", style=DIM)
+            footer.append("[w]eekly", style=DIM)
+        elif in_message_detail:
+            # Message detail mode - show date and hour
+            daily_date = view_mode_ref.get("daily_detail_date")
+            hourly_hour = view_mode_ref.get("hourly_detail_hour")
+            # Parse date to get day of week
+            try:
+                date_obj = datetime.strptime(daily_date, "%Y-%m-%d")
+                day_name = date_obj.strftime("%a")
+                hour_str = f"{hourly_hour:02d}:00"
+                footer.append(f"Message Detail - {daily_date} ({day_name}) {hour_str}", style=f"bold {YELLOW}")
+            except:
+                footer.append(f"Message Detail - {daily_date} {hourly_hour:02d}:00", style=f"bold {YELLOW}")
         elif in_daily_detail:
             # Daily detail mode - show date
             daily_date = view_mode_ref.get("daily_detail_date")
@@ -1756,8 +1966,8 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             # Settings
             footer.append("[s]ettings", style=DIM)
 
-        # Add date range if provided (on same line), but not for usage mode or daily detail mode
-        if date_range and view_mode != "usage" and not in_daily_detail:
+        # Add date range if provided (on same line), but not for usage mode, daily detail, or message detail mode
+        if date_range and view_mode != "usage" and not in_daily_detail and not in_message_detail:
             footer.append("  ", style=DIM)
             footer.append(f"{date_range}", style="bold cyan")
 
@@ -1779,17 +1989,24 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
             footer.append("Use ", style=DIM)
             footer.append("tab", style=f"bold {YELLOW}")
-            footer.append(" to change mode. (", style=DIM)
+            footer.append(" to change mode(", style=DIM)
             footer.append(current_mode_name, style="white")
-            footer.append(")", style=DIM)
+            footer.append("). ", style=DIM)
             footer.append("\n")
 
         # Add navigation hint for non-usage modes (second line)
         if view_mode in ["weekly", "monthly", "yearly"]:
-            # Check if in daily detail mode
+            # Check if in message detail mode or daily detail mode
+            in_message_detail = view_mode == "weekly" and view_mode_ref and view_mode_ref.get("hourly_detail_hour") is not None
             in_daily_detail = view_mode == "weekly" and view_mode_ref and view_mode_ref.get("daily_detail_date")
 
-            if in_daily_detail:
+            if in_message_detail:
+                # Message detail mode - show return instruction
+                footer.append("Press ", style=DIM)
+                footer.append("esc", style=f"bold {YELLOW}")
+                footer.append(" to return to daily view.", style=DIM)
+                footer.append("\n")
+            elif in_daily_detail:
                 # Daily detail mode - show return instruction
                 footer.append("Press ", style=DIM)
                 footer.append("esc", style=f"bold {YELLOW}")

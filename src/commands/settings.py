@@ -37,7 +37,7 @@ def run(console: Console) -> None:
         _display_settings_menu(console, prefs, machine_name, db_path)
 
         # Wait for user input
-        console.print("\n[dim]Enter setting number to edit (1-11), or press ESC to return...[/dim]", end="")
+        console.print("\n[dim]Enter setting key to edit ([#ff8800]1-9, a-b[/#ff8800]), [#ff8800][r][/#ff8800]eset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
 
         key = _read_key()
 
@@ -46,20 +46,14 @@ def run(console: Console) -> None:
         elif key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
             setting_num = int(key)
             _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key == '0':  # Handle '10' as '0'
+        elif key.lower() == 'a':  # 10th setting (Backup Retention)
             setting_num = 10
             _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key == '!':  # Handle '11' as '!'  (Shift+1)
+        elif key.lower() == 'b':  # 11th setting (Display Timezone)
             setting_num = 11
             _edit_setting(console, setting_num, prefs, save_user_preference)
-        elif key.lower() == 'i':
-            handle_db_operation(console, "init")
-        elif key.lower() == 'd':
-            handle_db_operation(console, "delete")
-        elif key.lower() == 'r':
-            handle_db_operation(console, "restore")
-        elif key.lower() == 'b':
-            handle_db_operation(console, "backup")
+        elif key.lower() == 'r':  # Reset to defaults
+            _reset_to_defaults(console, save_user_preference)
 
 
 def _read_key() -> str:
@@ -93,7 +87,12 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
         machine_name: Current machine name
         db_path: Current database path
     """
-    console.clear()
+    # Clear screen without affecting scroll buffer
+    import sys
+    sys.stdout.write("\033[3J")  # Clear scrollback buffer
+    sys.stdout.write("\033[2J")  # Clear visible screen
+    sys.stdout.write("\033[H")   # Move cursor to home
+    sys.stdout.flush()
     console.print()
 
     # Status section (read-only)
@@ -153,22 +152,22 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
 
     # Settings section (editable)
     settings_table = Table(show_header=True, box=None, padding=(0, 2))
-    settings_table.add_column("#", style="dim", justify="right", width=3)
+    settings_table.add_column("#", style="dim", justify="right", width=5)
     settings_table.add_column("Setting", style="white", justify="left", width=30)
     settings_table.add_column("Value", style="cyan", justify="left")
 
-    settings_table.add_row("1", "Solid Color", prefs.get('color_solid', '#00A7E1'))
-    settings_table.add_row("2", "Gradient Low (0-60%)", prefs.get('color_gradient_low', '#00C853'))
-    settings_table.add_row("3", "Gradient Mid (60-85%)", prefs.get('color_gradient_mid', '#FFD600'))
-    settings_table.add_row("4", "Gradient High (85-100%)", prefs.get('color_gradient_high', '#FF1744'))
-    settings_table.add_row("5", "Unfilled Color", prefs.get('color_unfilled', '#424242'))
+    settings_table.add_row("[#ff8800][1][/#ff8800]", "Solid Color", prefs.get('color_solid', '#00A7E1'))
+    settings_table.add_row("[#ff8800][2][/#ff8800]", "Gradient Low (0-60%)", prefs.get('color_gradient_low', '#00C853'))
+    settings_table.add_row("[#ff8800][3][/#ff8800]", "Gradient Mid (60-85%)", prefs.get('color_gradient_mid', '#FFD600'))
+    settings_table.add_row("[#ff8800][4][/#ff8800]", "Gradient High (85-100%)", prefs.get('color_gradient_high', '#FF1744'))
+    settings_table.add_row("[#ff8800][5][/#ff8800]", "Unfilled Color", prefs.get('color_unfilled', '#424242'))
 
     # Auto refresh settings
     refresh_interval = prefs.get('refresh_interval', '30')
-    settings_table.add_row("6", "Auto Refresh Interval (sec)", refresh_interval)
+    settings_table.add_row("[#ff8800][6][/#ff8800]", "Auto Refresh Interval (sec)", refresh_interval)
 
     watch_interval = prefs.get('watch_interval', '60')
-    settings_table.add_row("7", "File Watch Interval (sec)", watch_interval)
+    settings_table.add_row("[#ff8800][7][/#ff8800]", "File Watch Interval (sec)", watch_interval)
 
     # Backup settings
     from src.config.user_config import (
@@ -178,13 +177,13 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     )
 
     backup_enabled = get_backup_enabled()
-    settings_table.add_row("8", "Auto Backup", "Enabled" if backup_enabled else "Disabled")
+    settings_table.add_row("[#ff8800][8][/#ff8800]", "Auto Backup", "Enabled" if backup_enabled else "Disabled")
 
     keep_monthly = get_backup_keep_monthly()
-    settings_table.add_row("9", "Keep Monthly Backups", "Yes" if keep_monthly else "No")
+    settings_table.add_row("[#ff8800][9][/#ff8800]", "Keep Monthly Backups", "Yes" if keep_monthly else "No")
 
     retention_days = get_backup_retention_days()
-    settings_table.add_row("10", "Backup Retention (days)", str(retention_days))
+    settings_table.add_row("[#ff8800]\\[a][/#ff8800]", "Backup Retention (days)", str(retention_days))
 
     # Timezone setting
     tz_setting = prefs.get('timezone', 'auto')
@@ -192,7 +191,7 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
         tz_value = f"Auto ({tz_info['abbr']})"
     else:
         tz_value = f"{tz_setting} ({tz_info['abbr']})"
-    settings_table.add_row("11", "Display Timezone", tz_value)
+    settings_table.add_row("[#ff8800]\\[b][/#ff8800]", "Display Timezone", tz_value)
 
     settings_panel = Panel(
         settings_table,
@@ -201,11 +200,6 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
         expand=True,
     )
     console.print(settings_panel)
-
-    # Instructions
-    console.print()
-    console.print("[dim]Database Operations:[/dim]")
-    console.print("  [yellow][I][/yellow] Initialize DB  [yellow][D][/yellow] Delete DB  [yellow][R][/yellow] Restore Backup  [yellow][B][/yellow] Create Backup")
 
 
 def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) -> None:
@@ -252,9 +246,10 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
     if setting_num in [1, 2, 3, 4, 5]:
         # Color input
         console.print("[dim]Enter hex color (e.g., #00A7E1) or press Enter to keep current:[/dim]")
-        console.print("> ", end="")
         try:
-            new_value = console.input("").strip()
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            new_value = input().strip()
 
             if new_value:
                 # Validate hex color format
@@ -272,9 +267,10 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
     else:
         # Interval input (6, 7)
         console.print("[dim]Enter interval in seconds (minimum 10) or press Enter to keep current:[/dim]")
-        console.print("> ", end="")
         try:
-            new_value = console.input("").strip()
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            new_value = input().strip()
 
             if new_value:
                 try:
@@ -318,10 +314,11 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
         console.print("[bold]Edit Auto Backup[/bold]")
         console.print(f"[dim]Current value: {'Enabled' if current else 'Disabled'}[/dim]")
         console.print("[dim]Enter 'yes' to enable or 'no' to disable, or press Enter to keep current:[/dim]")
-        console.print("> ", end="")
 
         try:
-            new_value = console.input("").strip().lower()
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            new_value = input().strip().lower()
 
             if new_value in ['yes', 'y', 'true', '1']:
                 set_backup_enabled(True)
@@ -339,10 +336,11 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
         console.print(f"[dim]Current value: {'Yes' if current else 'No'}[/dim]")
         console.print("[dim]Keep backups from the 1st of each month permanently?[/dim]")
         console.print("[dim]Enter 'yes' or 'no', or press Enter to keep current:[/dim]")
-        console.print("> ", end="")
 
         try:
-            new_value = console.input("").strip().lower()
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            new_value = input().strip().lower()
 
             if new_value in ['yes', 'y', 'true', '1']:
                 set_backup_keep_monthly(True)
@@ -359,10 +357,11 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
         console.print("[bold]Edit Backup Retention (days)[/bold]")
         console.print(f"[dim]Current value: {current} days[/dim]")
         console.print("[dim]Enter number of days to keep backups (minimum 1) or press Enter to keep current:[/dim]")
-        console.print("> ", end="")
 
         try:
-            new_value = console.input("").strip()
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            new_value = input().strip()
 
             if new_value:
                 try:
@@ -412,10 +411,11 @@ def _edit_timezone_setting(console: Console, prefs: dict, save_func) -> None:
     console.print("  [yellow][3][/yellow] Select from common timezones")
     console.print("  [yellow][Enter][/yellow] Keep current setting")
     console.print()
-    console.print("> ", end="")
 
     try:
-        choice = console.input("").strip()
+        sys.stdout.write("> ")
+        sys.stdout.flush()
+        choice = input().strip()
 
         if not choice:
             # Keep current
@@ -442,9 +442,10 @@ def _edit_timezone_setting(console: Console, prefs: dict, save_func) -> None:
 
             console.print()
             console.print("[dim]Enter number (1-{}) or custom IANA timezone name:[/dim]".format(len(common_tzs)))
-            console.print("> ", end="")
 
-            tz_choice = console.input("").strip()
+            sys.stdout.write("> ")
+            sys.stdout.flush()
+            tz_choice = input().strip()
 
             if tz_choice.isdigit():
                 # Numeric selection
@@ -468,6 +469,74 @@ def _edit_timezone_setting(console: Console, prefs: dict, save_func) -> None:
 
     except (EOFError, KeyboardInterrupt):
         console.print("\n[yellow]Input cancelled[/yellow]")
+
+    console.print("\n[dim]Press any key to continue...[/dim]")
+    _read_key()
+
+
+def _reset_to_defaults(console: Console, save_func) -> None:
+    """
+    Reset all settings to default values.
+
+    Args:
+        console: Rich console for rendering
+        save_func: Function to save preferences
+    """
+    console.print()
+    console.print("[bold yellow]Reset All Settings to Defaults[/bold yellow]")
+    console.print()
+    console.print("[dim]This will reset the following settings to their default values:[/dim]")
+    console.print("[dim]  • Color settings (Solid, Gradient Low/Mid/High, Unfilled)[/dim]")
+    console.print("[dim]  • Auto Refresh Interval (30 seconds)[/dim]")
+    console.print("[dim]  • File Watch Interval (60 seconds)[/dim]")
+    console.print("[dim]  • Auto Backup (Enabled)[/dim]")
+    console.print("[dim]  • Keep Monthly Backups (Yes)[/dim]")
+    console.print("[dim]  • Backup Retention (30 days)[/dim]")
+    console.print("[dim]  • Display Timezone (Auto)[/dim]")
+    console.print()
+    console.print("[yellow]Are you sure? This action cannot be undone.[/yellow]")
+    console.print("[dim]Type 'yes' to confirm or press Enter to cancel:[/dim]")
+
+    try:
+        sys.stdout.write("> ")
+        sys.stdout.flush()
+        confirmation = input().strip().lower()
+
+        if confirmation == 'yes':
+            # Default values
+            defaults = {
+                'color_solid': '#00A7E1',
+                'color_gradient_low': '#00C853',
+                'color_gradient_mid': '#FFD600',
+                'color_gradient_high': '#FF1744',
+                'color_unfilled': '#424242',
+                'refresh_interval': '30',
+                'watch_interval': '60',
+                'timezone': 'auto',
+            }
+
+            # Save all defaults
+            for key, value in defaults.items():
+                save_func(key, value)
+
+            # Reset backup settings
+            from src.config.user_config import (
+                set_backup_enabled,
+                set_backup_keep_monthly,
+                set_backup_retention_days,
+            )
+            set_backup_enabled(True)
+            set_backup_keep_monthly(True)
+            set_backup_retention_days(30)
+
+            console.print()
+            console.print("[green]✓ All settings have been reset to defaults[/green]")
+        else:
+            console.print()
+            console.print("[yellow]Reset cancelled[/yellow]")
+
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[yellow]Reset cancelled[/yellow]")
 
     console.print("\n[dim]Press any key to continue...[/dim]")
     _read_key()

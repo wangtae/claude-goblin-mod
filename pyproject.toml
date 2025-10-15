@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name"},  # TODO: Replace with your name
-    {name = "Kurt Buhler", email = "original-author@example.com"}  # Original author credit
+    {name = "wangtae"},
+    {name = "Kurt Buhler"}  # Original author credit
 ]
 keywords = ["claude", "claude-code", "usage", "analytics", "tui", "dashboard", "visualization"]
 classifiers = [
@@ -29,9 +29,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/YOUR-USERNAME/claude-goblin-mod"  # TODO: Replace with your GitHub username
-Repository = "https://github.com/YOUR-USERNAME/claude-goblin-mod"  # TODO: Replace with your GitHub username
-Issues = "https://github.com/YOUR-USERNAME/claude-goblin-mod/issues"  # TODO: Replace with your GitHub username
+Homepage = "https://github.com/wangtae/claude-goblin-mod"
+Repository = "https://github.com/wangtae/claude-goblin-mod"
+Issues = "https://github.com/wangtae/claude-goblin-mod/issues"
 "Original Project" = "https://github.com/data-goblin/claude-goblin"
 
 [project.scripts]

@@ -232,6 +232,11 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                             continue  # Skip the rest of the key processing
 
                     # If we got here, it's a plain ESC press (not arrow key)
+                    # If in message detail mode (hourly detail), exit to daily detail view
+                    if view_mode_ref.get('hourly_detail_hour') is not None:
+                        view_mode_ref['hourly_detail_hour'] = None
+                        view_mode_ref['changed'] = True
+                        continue
                     # If in daily detail mode, exit to normal weekly view
                     if view_mode_ref.get('daily_detail_date'):
                         view_mode_ref['daily_detail_date'] = None
@@ -254,6 +259,18 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                     'ㅂ': 'q',  # q key in Korean mode
                     'ㄱ': 'r',  # r key in Korean mode
                     'ㄴ': 's',  # s key in Korean mode
+                    'ㅏ': '<',  # < key in Korean mode (shift+,)
+                    'ㅐ': '>',  # > key in Korean mode (shift+.)
+                    # Numbers with shift (Korean keyboard)
+                    '!': '1',  # shift+1 in Korean mode
+                    '@': '2',  # shift+2 in Korean mode
+                    '#': '3',  # shift+3 in Korean mode
+                    '$': '4',  # shift+4 in Korean mode
+                    '%': '5',  # shift+5 in Korean mode
+                    '^': '6',  # shift+6 in Korean mode
+                    '&': '7',  # shift+7 in Korean mode
+                    '*': '8',  # shift+8 in Korean mode
+                    '(': '9',  # shift+9 in Korean mode
                 }
                 if key in hangul_to_english:
                     key = hangul_to_english[key]
@@ -321,34 +338,43 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                         save_user_preference('usage_display_mode', str(new_display))
                         save_user_preference('color_mode', new_color)
                 elif key == 's':  # Settings menu
-                    # Save current terminal state
+                    # Save current view mode to restore later
+                    previous_mode = view_mode_ref['mode']
+
+                    # Set mode to 'settings' to pause auto-refresh
+                    view_mode_ref['mode'] = 'settings'
+
+                    # Restore terminal to ORIGINAL normal mode (from program start)
                     import termios
-                    old_terminal_settings = termios.tcgetattr(sys.stdin)
-                    try:
-                        # Restore terminal to normal mode before opening settings
-                        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_terminal_settings)
-                        # Open settings menu
-                        from src.commands.settings import run as settings_run
-                        from rich.console import Console
-                        settings_console = Console()
-                        settings_run(settings_console)
-                        # Reload preferences after settings close
-                        from src.storage.snapshot_db import load_user_preferences
-                        prefs = load_user_preferences()
-                        view_mode_ref['usage_display_mode'] = int(prefs.get('usage_display_mode', '0'))
-                        view_mode_ref['color_mode'] = prefs.get('color_mode', 'gradient')
-                        view_mode_ref['colors'] = {
-                            'solid': prefs.get('color_solid', '#00A7E1'),
-                            'gradient_low': prefs.get('color_gradient_low', '#00C853'),
-                            'gradient_mid': prefs.get('color_gradient_mid', '#FFD600'),
-                            'gradient_high': prefs.get('color_gradient_high', '#FF1744'),
-                            'unfilled': prefs.get('color_unfilled', '#424242'),
-                        }
-                        view_mode_ref['changed'] = True
-                    finally:
-                        # Restore raw mode for keyboard listener
-                        import tty
-                        tty.setcbreak(sys.stdin.fileno())
+                    original_settings = view_mode_ref.get('original_terminal_settings')
+                    if original_settings:
+                        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, original_settings)
+
+                    # Open settings menu (blocks until ESC is pressed)
+                    from src.commands.settings import run as settings_run
+                    from rich.console import Console
+                    settings_console = Console()
+                    settings_run(settings_console)
+
+                    # Restore raw mode for keyboard listener AFTER settings exits
+                    import tty
+                    tty.setcbreak(sys.stdin.fileno())
+
+                    # Reload preferences after settings close
+                    from src.storage.snapshot_db import load_user_preferences
+                    prefs = load_user_preferences()
+                    view_mode_ref['usage_display_mode'] = int(prefs.get('usage_display_mode', '0'))
+                    view_mode_ref['color_mode'] = prefs.get('color_mode', 'gradient')
+                    view_mode_ref['colors'] = {
+                        'solid': prefs.get('color_solid', '#00A7E1'),
+                        'gradient_low': prefs.get('color_gradient_low', '#00C853'),
+                        'gradient_mid': prefs.get('color_gradient_mid', '#FFD600'),
+                        'gradient_high': prefs.get('color_gradient_high', '#FF1744'),
+                        'unfilled': prefs.get('color_unfilled', '#424242'),
+                    }
+                    # Restore previous mode and trigger refresh
+                    view_mode_ref['mode'] = previous_mode
+                    view_mode_ref['changed'] = True
                 elif key == '<':
                     # Only for weekly/monthly/yearly modes - go to previous period
                     if view_mode_ref['mode'] in [VIEW_MODE_WEEKLY, VIEW_MODE_MONTHLY, VIEW_MODE_YEARLY]:
@@ -365,12 +391,26 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                     # Manual refresh - update data
                     view_mode_ref['manual_refresh'] = True
                     view_mode_ref['changed'] = True
-                elif key in ['1', '2', '3', '4', '5', '6', '7']:
-                    # Number keys for daily detail view in weekly mode
-                    if view_mode_ref['mode'] == VIEW_MODE_WEEKLY:
+                elif key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
+                    # Number keys for navigation
+                    day_index = int(key) - 1  # Convert to 0-indexed
+
+                    # If in daily detail mode, navigate to hourly detail (message view)
+                    if view_mode_ref.get('daily_detail_date'):
+                        # Get hourly data from daily detail view
+                        # Number keys map to hours (1 = first hour shown, 2 = second hour, etc.)
+                        # We need to get the sorted hours from the daily detail view
+                        # For now, we'll store hourly_hours in view_mode_ref similar to weekly_dates
+                        hourly_hours = view_mode_ref.get('hourly_hours', [])
+
+                        if day_index < len(hourly_hours):
+                            # Set the hourly detail hour (store as integer 0-23)
+                            view_mode_ref['hourly_detail_hour'] = hourly_hours[day_index]
+                            view_mode_ref['changed'] = True
+                    # If in weekly mode (not in daily detail), navigate to daily detail
+                    elif view_mode_ref['mode'] == VIEW_MODE_WEEKLY:
                         # Check if we have weekly dates available
                         weekly_dates = view_mode_ref.get('weekly_dates', [])
-                        day_index = int(key) - 1  # Convert to 0-indexed
 
                         if day_index < len(weekly_dates):
                             # Set the daily detail date
@@ -423,6 +463,15 @@ def run(console: Console, refresh: int | None = None, anon: bool = False, watch_
     except:
         pass  # Not a TTY
 
+    # Clear screen to create clean starting point
+    # Use console.clear() for better VSCode compatibility (avoids triggering sticky scroll)
+    try:
+        from rich.console import Console
+        temp_console = Console()
+        temp_console.clear()
+    except:
+        pass
+
     # Check for --anon flag: CLI flag > DB setting
     # Load anonymize setting from DB
     from src.storage.snapshot_db import load_user_preferences
@@ -456,15 +505,15 @@ def run(console: Console, refresh: int | None = None, anon: bool = False, watch_
 
         # Choose between refresh mode (polling) or watch mode (file events)
         if refresh is not None:
-            _run_refresh_dashboard(jsonl_files, console, refresh_interval=refresh, anonymize=anonymize, limits_interval=limits_interval)
+            _run_refresh_dashboard(jsonl_files, console, original_terminal_settings, refresh_interval=refresh, anonymize=anonymize, limits_interval=limits_interval)
         else:
-            _run_watch_dashboard(jsonl_files, console, skip_limits=False, anonymize=anonymize, watch_interval=watch_interval, limits_interval=limits_interval)
+            _run_watch_dashboard(jsonl_files, console, original_terminal_settings, skip_limits=False, anonymize=anonymize, watch_interval=watch_interval, limits_interval=limits_interval)
 
     except FileNotFoundError as e:
         console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
     except KeyboardInterrupt:
-        console.print("\n[cyan]Exiting...[/cyan]")
+        # Ctrl+C pressed - exit immediately without message
         sys.exit(0)
     except Exception as e:
         console.print(f"[red]Unexpected error: {e}[/red]")
@@ -486,7 +535,7 @@ def run(console: Console, refresh: int | None = None, anon: bool = False, watch_
                 pass
 
 
-def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, refresh_interval: int = 30, anonymize: bool = False, limits_interval: int = 60) -> None:
+def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, original_terminal_settings, refresh_interval: int = 30, anonymize: bool = False, limits_interval: int = 60) -> None:
     """
     Run dashboard with periodic refresh - updates at fixed intervals.
 
@@ -536,6 +585,7 @@ def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, refresh_in
         'usage_display_mode': usage_display_mode,
         'color_mode': color_mode,
         'colors': colors,
+        'original_terminal_settings': original_terminal_settings,  # Store for settings page
     }
     stop_event = threading.Event()
 
@@ -554,6 +604,11 @@ def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, refresh_in
         # Keep refreshing at intervals
         last_refresh = time.time()
         while not stop_event.is_set():
+            # Skip refresh if in settings mode
+            if view_mode_ref.get('mode') == 'settings':
+                time.sleep(0.1)
+                continue
+
             # Check for view mode changes frequently
             if view_mode_ref.get('changed', False):
                 view_mode_ref['changed'] = False
@@ -584,11 +639,9 @@ def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, refresh_in
         # Ensure threads finish
         stop_event.set()
         keyboard_thread.join(timeout=1.0)
-        # Add newlines for clean separation from shell prompt
-        console.print("\n")
 
 
-def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, anonymize: bool = False, watch_interval: int = 60, limits_interval: int = 60) -> None:
+def _run_watch_dashboard(jsonl_files: list[Path], console: Console, original_terminal_settings, skip_limits: bool = False, anonymize: bool = False, watch_interval: int = 60, limits_interval: int = 60) -> None:
     """
     Run dashboard with file watching - updates only when JSONL files change.
 
@@ -640,6 +693,7 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
         'usage_display_mode': usage_display_mode,
         'color_mode': color_mode,
         'colors': colors,
+        'original_terminal_settings': original_terminal_settings,  # Store for settings page
     }
     stop_event = threading.Event()
 
@@ -665,6 +719,11 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, skip_limits:
         # Keep the main thread alive and check for view mode changes and file updates
         while watcher.is_alive() and not stop_event.is_set():
             current_time = time.time()
+
+            # Skip refresh if in settings mode
+            if view_mode_ref.get('mode') == 'settings':
+                time.sleep(0.1)
+                continue
 
             # Check for view mode changes (instant response)
             if view_mode_ref.get('changed', False):
