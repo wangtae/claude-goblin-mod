@@ -19,6 +19,7 @@ from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import (
     get_database_stats,
     load_historical_records,
+    load_all_devices_historical_records,
     save_limits_snapshot,
     save_snapshot,
 )
@@ -392,14 +393,18 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                     # Manual refresh - update data
                     view_mode_ref['manual_refresh'] = True
                     view_mode_ref['changed'] = True
-                elif key in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-                    # Number keys for navigation
-                    day_index = int(key) - 1  # Convert to 0-indexed
+                elif key in ['1', '2', '3', '4', '5', '6', '7', '8', '9'] or key in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'n', 'o']:
+                    # Number keys (1-9) and letter keys (a-o) for navigation
+                    # 1-9 map to indices 0-8, a-o map to indices 9-23 (supports up to 24 hours)
+                    if key.isdigit():
+                        day_index = int(key) - 1  # 1->0, 2->1, ..., 9->8
+                    else:
+                        day_index = ord(key) - ord('a') + 9  # a->9, b->10, ..., o->23
 
                     # If in daily detail mode, navigate to hourly detail (message view)
                     if view_mode_ref.get('daily_detail_date'):
                         # Get hourly data from daily detail view
-                        # Number keys map to hours (1 = first hour shown, 2 = second hour, etc.)
+                        # Number keys (1-9) and letters (a-o) map to hours (1 = first hour, 2 = second, ..., a = 10th, etc.)
                         # We need to get the sorted hours from the daily detail view
                         # For now, we'll store hourly_hours in view_mode_ref similar to weekly_dates
                         hourly_hours = view_mode_ref.get('hourly_hours', [])
@@ -857,13 +862,13 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     # Step 3: Prepare dashboard from database
     if show_status:
         with console.status("[bold #ff8800]Preparing dashboard...", spinner="dots", spinner_style="#ff8800"):
-            all_records = load_historical_records()
+            all_records = load_all_devices_historical_records()
 
             # Get latest limits from DB (if we saved them above or if they exist)
             limits_from_db = get_latest_limits()
     else:
         # Fast mode: no status messages
-        all_records = load_historical_records()
+        all_records = load_all_devices_historical_records()
         limits_from_db = get_latest_limits()
 
     if not all_records:

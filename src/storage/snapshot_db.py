@@ -650,6 +650,45 @@ def save_limits_snapshot(
         conn.close()
 
 
+def load_all_devices_historical_records(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> list[UsageRecord]:
+    """
+    Load historical usage records from ALL registered devices.
+
+    Combines data from all machine-specific databases.
+
+    Args:
+        start_date: Optional start date in YYYY-MM-DD format (inclusive)
+        end_date: Optional end date in YYYY-MM-DD format (inclusive)
+
+    Returns:
+        List of UsageRecord objects from all devices combined
+
+    Raises:
+        sqlite3.Error: If database query fails
+    """
+    all_records = []
+
+    # Get all machine DB paths
+    machine_db_paths = get_all_machine_db_paths()
+
+    if not machine_db_paths:
+        return []
+
+    # Load records from each machine DB
+    for machine_name, machine_db in machine_db_paths:
+        if machine_db.exists():
+            records = load_historical_records(start_date, end_date, machine_db)
+            all_records.extend(records)
+
+    # Sort by timestamp to maintain chronological order
+    all_records.sort(key=lambda r: r.timestamp)
+
+    return all_records
+
+
 def load_historical_records(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
@@ -1426,6 +1465,45 @@ def delete_user_preferences(db_path: Path = DEFAULT_DB_PATH) -> None:
         conn.commit()
     finally:
         conn.close()
+
+
+def load_all_devices_messages_by_hour(
+    target_date: str,
+    target_hour: int,
+) -> list[UsageRecord]:
+    """
+    Load messages for a specific date and hour from ALL registered devices.
+
+    Combines messages from all machine-specific databases.
+
+    Args:
+        target_date: Date in YYYY-MM-DD format (e.g., "2025-10-15")
+        target_hour: Hour in 24-hour format (0-23)
+
+    Returns:
+        List of UsageRecord objects from all devices combined, sorted by timestamp
+
+    Raises:
+        sqlite3.Error: If database query fails
+    """
+    all_messages = []
+
+    # Get all machine DB paths
+    machine_db_paths = get_all_machine_db_paths()
+
+    if not machine_db_paths:
+        return []
+
+    # Load messages from each machine DB
+    for machine_name, machine_db in machine_db_paths:
+        if machine_db.exists():
+            messages = load_messages_by_hour(target_date, target_hour, machine_db)
+            all_messages.extend(messages)
+
+    # Sort by timestamp to maintain chronological order
+    all_messages.sort(key=lambda r: r.timestamp)
+
+    return all_messages
 
 
 def load_messages_by_hour(

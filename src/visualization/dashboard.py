@@ -408,8 +408,8 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
     if daily_detail_date and hourly_detail_hour is not None:
         # Message detail mode - show messages for specific hour
-        from src.storage.snapshot_db import load_messages_by_hour
-        hourly_messages = load_messages_by_hour(daily_detail_date, hourly_detail_hour)
+        from src.storage.snapshot_db import load_all_devices_messages_by_hour
+        hourly_messages = load_all_devices_messages_by_hour(daily_detail_date, hourly_detail_hour)
         message_detail = _create_message_detail_view(hourly_messages, daily_detail_date, hourly_detail_hour)
         sections_to_render.append(("message_detail", message_detail))
     elif daily_detail_date:
@@ -1505,8 +1505,14 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     sorted_hours = sorted(hourly_data.items(), reverse=True)
 
     for idx, (hour, data) in enumerate(sorted_hours, start=1):
+        # Use numbers 1-9, then letters a-o for shortcuts (supports up to 24 hours)
+        if idx <= 9:
+            shortcut = str(idx)
+        else:
+            shortcut = chr(ord('a') + idx - 10)  # 10->a, 11->b, ..., 24->o
+
         hourly_table.add_row(
-            f"[{idx}]",  # Shortcut key
+            f"[{shortcut}]",  # Shortcut key
             hour,
             format_cost(data["cost"]),
             _format_number(data["input_tokens"]),
@@ -1519,7 +1525,7 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     hourly_panel = Panel(
         hourly_table,
         title=f"[bold]Hourly Usage - {title_date}",
-        subtitle="[dim]Press number keys [1]-[24] to view message details for that hour[/dim]",
+        subtitle="[dim]Press keys [1]-[9], [a]-[o] to view message details for that hour[/dim]",
         border_style="white",
         expand=True,
     )
