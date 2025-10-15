@@ -167,7 +167,7 @@ All screenshots show the interactive TUI dashboard with real-time data and keybo
 
 ### 8. Devices View - Multi-PC Statistics
 
-![Devices View](docs/images/08_devices.png)
+![Devices View](docs/images/08_devices.png?1)
 
 **Key Features:**
 - Per-machine usage breakdown
@@ -180,7 +180,7 @@ All screenshots show the interactive TUI dashboard with real-time data and keybo
 
 ### 9. Settings Menu - Configuration
 
-![Settings Menu](docs/images/09_settings.png)
+![Settings Menu](docs/images/09_settings.png?1)
 
 **Key Features:**
 - Color customization (solid colors and gradient ranges)
