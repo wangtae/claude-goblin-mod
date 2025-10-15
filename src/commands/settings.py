@@ -37,7 +37,7 @@ def run(console: Console) -> None:
         _display_settings_menu(console, prefs, machine_name, db_path)
 
         # Wait for user input
-        console.print("\n[dim]Enter setting key to edit ([#ff8800]1-5, 8-9, a-d[/#ff8800]), [#ff8800][r][/#ff8800]eset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
+        console.print("\n[dim]Enter setting key to edit ([#ff8800]1-5, 8-9, a-d[/#ff8800]), [#ff8800]\\[r][/#ff8800]eset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
 
         key = _read_key()
 
@@ -46,6 +46,8 @@ def run(console: Console) -> None:
         elif key in ['1', '2', '3', '4', '5', '8', '9']:
             setting_num = int(key)
             _edit_setting(console, setting_num, prefs, save_user_preference)
+        elif key in ['6', '7']:  # Model pricing (read-only)
+            _show_pricing_readonly_message(console)
         elif key.lower() == 'a':  # Auto Backup
             setting_num = 10
             _edit_setting(console, setting_num, prefs, save_user_preference)
@@ -268,19 +270,24 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
     console.print()
     console.print(f"[bold]Edit {name}[/bold]")
     console.print(f"[dim]Current value: {current_value}[/dim]")
+    console.print(f"[dim]Default value: {default}[/dim]")
 
     # Read input in normal mode
     if setting_num in [1, 2, 3, 4, 5]:
         # Color input
-        console.print("[dim]Enter hex color (e.g., #00A7E1) or press Enter to keep current:[/dim]")
+        console.print("[dim]Enter hex color (e.g., #00A7E1), 'd' for default, or press Enter to keep current:[/dim]")
         try:
             sys.stdout.write("> ")
             sys.stdout.flush()
             new_value = input().strip()
 
             if new_value:
+                # Check for default reset
+                if new_value.lower() in ['d', 'default']:
+                    save_func(key, default)
+                    console.print(f"[green]✓ {name} reset to default: {default}[/green]")
                 # Validate hex color format
-                if new_value.startswith('#') and len(new_value) == 7:
+                elif new_value.startswith('#') and len(new_value) == 7:
                     try:
                         int(new_value[1:], 16)  # Check if valid hex
                         save_func(key, new_value)
@@ -288,31 +295,65 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
                     except ValueError:
                         console.print("[red]✗ Invalid hex color format. Must be #RRGGBB[/red]")
                 else:
-                    console.print("[red]✗ Invalid hex color format. Must be #RRGGBB[/red]")
+                    console.print("[red]✗ Invalid hex color format. Must be #RRGGBB or 'd' for default[/red]")
         except (EOFError, KeyboardInterrupt):
             console.print("\n[yellow]Input cancelled[/yellow]")
     else:
-        # Interval input (6, 7)
-        console.print("[dim]Enter interval in seconds (minimum 10) or press Enter to keep current:[/dim]")
+        # Interval input (8, 9)
+        console.print("[dim]Enter interval in seconds (minimum 10), 'd' for default, or press Enter to keep current:[/dim]")
         try:
             sys.stdout.write("> ")
             sys.stdout.flush()
             new_value = input().strip()
 
             if new_value:
-                try:
-                    interval = int(new_value)
-                    if interval >= 10:
-                        save_func(key, str(interval))
-                        console.print(f"[green]✓ {name} updated to {interval} seconds[/green]")
-                    else:
-                        console.print("[red]✗ Interval must be at least 10 seconds[/red]")
-                except ValueError:
-                    console.print("[red]✗ Invalid number[/red]")
+                # Check for default reset
+                if new_value.lower() in ['d', 'default']:
+                    save_func(key, str(default))
+                    console.print(f"[green]✓ {name} reset to default: {default} seconds[/green]")
+                else:
+                    try:
+                        interval = int(new_value)
+                        if interval >= 10:
+                            save_func(key, str(interval))
+                            console.print(f"[green]✓ {name} updated to {interval} seconds[/green]")
+                        else:
+                            console.print("[red]✗ Interval must be at least 10 seconds[/red]")
+                    except ValueError:
+                        console.print("[red]✗ Invalid number. Enter a number or 'd' for default[/red]")
         except (EOFError, KeyboardInterrupt):
             console.print("\n[yellow]Input cancelled[/yellow]")
 
     console.print("\n[dim]Press any key to continue...[/dim]")
+    _read_key()
+
+
+def _show_pricing_readonly_message(console: Console) -> None:
+    """
+    Show message explaining that model pricing is read-only.
+
+    Args:
+        console: Rich console for rendering
+    """
+    console.print()
+    console.print("[bold yellow]Model Pricing (Read-Only)[/bold yellow]")
+    console.print()
+    console.print("[dim]Model pricing cannot be changed from the Settings menu.[/dim]")
+    console.print()
+    console.print("[cyan]To change model pricing:[/cyan]")
+    console.print("  [yellow]1.[/yellow] Edit the file: [cyan]src/config/defaults.py[/cyan]")
+    console.print("  [yellow]2.[/yellow] Find the [cyan]DEFAULT_MODEL_PRICING[/cyan] section")
+    console.print("  [yellow]3.[/yellow] Update the pricing values (per million tokens in USD)")
+    console.print("  [yellow]4.[/yellow] Restart the program to apply changes")
+    console.print()
+    console.print("[dim]Example:[/dim]")
+    console.print('[dim]  "claude-sonnet-4-5-20250929": {[/dim]')
+    console.print('[dim]      "input_price": 3.0,[/dim]')
+    console.print('[dim]      "output_price": 15.0,[/dim]')
+    console.print('[dim]      ...[/dim]')
+    console.print('[dim]  }[/dim]')
+    console.print()
+    console.print("[dim]Press any key to continue...[/dim]")
     _read_key()
 
 
@@ -340,14 +381,18 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
         current = get_backup_enabled()
         console.print("[bold]Edit Auto Backup[/bold]")
         console.print(f"[dim]Current value: {'Enabled' if current else 'Disabled'}[/dim]")
-        console.print("[dim]Enter 'yes' to enable or 'no' to disable, or press Enter to keep current:[/dim]")
+        console.print(f"[dim]Default value: Enabled[/dim]")
+        console.print("[dim]Enter 'yes' to enable, 'no' to disable, 'd' for default, or press Enter to keep current:[/dim]")
 
         try:
             sys.stdout.write("> ")
             sys.stdout.flush()
             new_value = input().strip().lower()
 
-            if new_value in ['yes', 'y', 'true', '1']:
+            if new_value in ['d', 'default']:
+                set_backup_enabled(True)
+                console.print("[green]✓ Auto Backup reset to default: Enabled[/green]")
+            elif new_value in ['yes', 'y', 'true', '1']:
                 set_backup_enabled(True)
                 console.print("[green]✓ Auto Backup enabled[/green]")
             elif new_value in ['no', 'n', 'false', '0']:
@@ -361,15 +406,19 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
         current = get_backup_keep_monthly()
         console.print("[bold]Edit Keep Monthly Backups[/bold]")
         console.print(f"[dim]Current value: {'Yes' if current else 'No'}[/dim]")
+        console.print(f"[dim]Default value: Yes[/dim]")
         console.print("[dim]Keep backups from the 1st of each month permanently?[/dim]")
-        console.print("[dim]Enter 'yes' or 'no', or press Enter to keep current:[/dim]")
+        console.print("[dim]Enter 'yes', 'no', 'd' for default, or press Enter to keep current:[/dim]")
 
         try:
             sys.stdout.write("> ")
             sys.stdout.flush()
             new_value = input().strip().lower()
 
-            if new_value in ['yes', 'y', 'true', '1']:
+            if new_value in ['d', 'default']:
+                set_backup_keep_monthly(True)
+                console.print("[green]✓ Keep Monthly Backups reset to default: Yes[/green]")
+            elif new_value in ['yes', 'y', 'true', '1']:
                 set_backup_keep_monthly(True)
                 console.print("[green]✓ Monthly backups will be kept permanently[/green]")
             elif new_value in ['no', 'n', 'false', '0']:
@@ -383,7 +432,8 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
         current = get_backup_retention_days()
         console.print("[bold]Edit Backup Retention (days)[/bold]")
         console.print(f"[dim]Current value: {current} days[/dim]")
-        console.print("[dim]Enter number of days to keep backups (minimum 1) or press Enter to keep current:[/dim]")
+        console.print(f"[dim]Default value: 30 days[/dim]")
+        console.print("[dim]Enter number of days (minimum 1), 'd' for default, or press Enter to keep current:[/dim]")
 
         try:
             sys.stdout.write("> ")
@@ -391,15 +441,19 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
             new_value = input().strip()
 
             if new_value:
-                try:
-                    days = int(new_value)
-                    if days >= 1:
-                        set_backup_retention_days(days)
-                        console.print(f"[green]✓ Backup retention set to {days} days[/green]")
-                    else:
-                        console.print("[red]✗ Days must be at least 1[/red]")
-                except ValueError:
-                    console.print("[red]✗ Invalid number[/red]")
+                if new_value.lower() in ['d', 'default']:
+                    set_backup_retention_days(30)
+                    console.print("[green]✓ Backup retention reset to default: 30 days[/green]")
+                else:
+                    try:
+                        days = int(new_value)
+                        if days >= 1:
+                            set_backup_retention_days(days)
+                            console.print(f"[green]✓ Backup retention set to {days} days[/green]")
+                        else:
+                            console.print("[red]✗ Days must be at least 1[/red]")
+                    except ValueError:
+                        console.print("[red]✗ Invalid number. Enter a number or 'd' for default[/red]")
         except (EOFError, KeyboardInterrupt):
             console.print("\n[yellow]Input cancelled[/yellow]")
 
@@ -430,12 +484,14 @@ def _edit_timezone_setting(console: Console, prefs: dict, save_func) -> None:
         console.print(f"[dim]Current: Auto ({tz_info['name']}, {tz_info['offset']})[/dim]")
     else:
         console.print(f"[dim]Current: {current_tz} ({tz_info['offset']})[/dim]")
+    console.print(f"[dim]Default: Auto (system timezone detection)[/dim]")
 
     console.print()
     console.print("[dim]Select timezone option:[/dim]")
     console.print("  [yellow][1][/yellow] Auto (system timezone detection)")
     console.print("  [yellow][2][/yellow] UTC")
     console.print("  [yellow][3][/yellow] Select from common timezones")
+    console.print("  [yellow][d][/yellow] Reset to default (Auto)")
     console.print("  [yellow][Enter][/yellow] Keep current setting")
     console.print()
 
@@ -448,7 +504,12 @@ def _edit_timezone_setting(console: Console, prefs: dict, save_func) -> None:
             # Keep current
             return
 
-        if choice == '1':
+        if choice.lower() in ['d', 'default']:
+            # Reset to default (Auto)
+            save_func('timezone', 'auto')
+            console.print("[green]✓ Timezone reset to default: Auto (system detection)[/green]")
+
+        elif choice == '1':
             # Auto mode
             save_func('timezone', 'auto')
             console.print("[green]✓ Timezone set to Auto (system detection)[/green]")

@@ -14,6 +14,15 @@
 
 Most features are accessed through keyboard shortcuts in the interactive dashboard - minimal command-line interface by design.
 
+> [!NOTE]
+> **About This Project**
+>
+> This tool was built as a quick utility for personal use - not as a polished, production-ready application. You may encounter bugs, rough edges, or missing features.
+>
+> **However**, since you're a Claude Code user, you have the perfect tool to fix any issues yourself! Think of this as a starter template that you can customize and improve with Claude Code's help.
+>
+> **Future Direction**: A VSCode extension would be a more robust solution than a CLI tool. This Python implementation serves as a proof-of-concept and interim solution.
+
 ---
 
 ## Quick Start
