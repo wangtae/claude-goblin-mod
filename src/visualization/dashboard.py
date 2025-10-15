@@ -437,16 +437,16 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
             sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
             hourly_breakdown = _create_hourly_breakdown(records)
             sections_to_render.append(("hourly", hourly_breakdown))
-    elif view_mode == "monthly":
-        project_breakdown = _create_project_breakdown(records)
-        sections_to_render.append(("project", project_breakdown))
-        daily_breakdown = _create_daily_breakdown(records)
-        sections_to_render.append(("daily", daily_breakdown))
-    elif view_mode == "yearly":
-        project_breakdown = _create_project_breakdown(records)
-        sections_to_render.append(("project", project_breakdown))
-        monthly_breakdown = _create_monthly_breakdown(records)
-        sections_to_render.append(("monthly", monthly_breakdown))
+        elif view_mode == "monthly":
+            project_breakdown = _create_project_breakdown(records)
+            sections_to_render.append(("project", project_breakdown))
+            daily_breakdown = _create_daily_breakdown(records)
+            sections_to_render.append(("daily", daily_breakdown))
+        elif view_mode == "yearly":
+            project_breakdown = _create_project_breakdown(records)
+            sections_to_render.append(("project", project_breakdown))
+            monthly_breakdown = _create_monthly_breakdown(records)
+            sections_to_render.append(("monthly", monthly_breakdown))
 
     # Render sections
     for section_type, section in sections_to_render:
@@ -1203,8 +1203,7 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
 
     # Create table with bars
     table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("#", style="yellow", justify="right", width=3)
-    table.add_column("Date", style="white", justify="left", width=17)
+    table.add_column("Date", style="white", justify="left", width=21)
     table.add_column("Bar", justify="left")
     table.add_column("Tokens", style=ORANGE, justify="right")
     table.add_column("Percentage", style=CYAN, justify="right")
@@ -1218,14 +1217,15 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
         from datetime import datetime
         date_obj = datetime.strptime(date, "%Y-%m-%d")
         day_name = date_obj.strftime("%a")  # Mon, Tue, Wed, etc.
-        date_with_day = f"{date} ({day_name})"
+
+        # Combine shortcut and date with single space: [1] 2025-10-15 (Mon)
+        date_with_shortcut = f"[yellow][{idx}][/yellow] {date} ({day_name})"
 
         # Create bar (same style as Tokens by Model)
         bar = _create_bar(tokens, max_tokens, width=20)
 
         table.add_row(
-            f"[yellow][{idx}][/yellow]",
-            date_with_day,
+            date_with_shortcut,
             bar,
             _format_number(tokens),
             f"[cyan]{percentage:.1f}%[/cyan]",
