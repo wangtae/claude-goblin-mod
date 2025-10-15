@@ -73,28 +73,126 @@ Access via keyboard shortcuts - no separate commands needed:
 
 ## Screenshots
 
-> [!NOTE]
-> Screenshots will be added once the project reaches v1.0
+All screenshots show the interactive TUI dashboard with real-time data and keyboard navigation.
 
-### Dashboard Overview
-<!-- TODO: Add screenshot of main dashboard -->
-The main interactive dashboard showing current usage statistics and navigation hints.
+### 1. Usage Mode - Real-time Limits
 
-### Usage Mode
-<!-- TODO: Add screenshot of usage mode -->
-Real-time usage limits with session, weekly, and Opus percentages.
+![Usage Mode](docs/images/01_vscode-usages.png)
 
-### Weekly View
-<!-- TODO: Add screenshot of weekly view -->
-Daily breakdown with drill-down to hourly statistics (press `1-7` for specific days).
+**Key Features:**
+- Current session usage (5-hour window) with reset countdown
+- Weekly limit across all models with percentage bars
+- Opus-specific weekly limit tracking
+- Token breakdown: Input, Output, Cache Write, Cache Read
+- Cost estimation and message count
+- Auto-refreshes in background
 
-### Heatmap View
-<!-- TODO: Add screenshot of heatmap mode -->
-GitHub-style activity heatmap showing usage patterns throughout the year.
+**Keyboard:** `u` to switch to this view
 
-### Devices View
-<!-- TODO: Add screenshot of devices mode -->
-Per-machine statistics when using multi-PC synchronization.
+### 2. Weekly View - Daily Breakdown
+
+![Weekly View](docs/images/02_weekly.png)
+
+**Key Features:**
+- 7-day overview with daily statistics
+- Visual progress bars for each day
+- Token usage by model (Sonnet/Opus breakdown)
+- Top 10 projects for the week
+- Press number keys `1-7` to drill down into hourly details
+
+**Keyboard:** `w` to switch to this view
+
+### 3. Weekly Daily Detail - Hourly Breakdown
+
+![Weekly Daily Detail](docs/images/03_weekly_daily.png)
+
+**Key Features:**
+- Hourly statistics for selected day
+- Time-based token usage patterns
+- Model and project breakdowns specific to that day
+- Press number keys `1-24` to view individual message details
+- Press `ESC` to return to weekly view
+
+**Keyboard:** `1-7` from weekly view to select a day
+
+### 4. Message Detail View - Individual Messages
+
+![Message Detail](docs/images/04_weekly_daily_messages.png)
+
+**Key Features:**
+- Individual message metadata (timestamp, model, tokens)
+- Input/Output token counts with cache statistics
+- Cost per message
+- Content preview for each message (42 characters)
+- User prompts and Assistant responses shown separately
+
+**Keyboard:** `1-24` from daily detail view to select an hour
+
+### 5. Monthly View - Project Focus
+
+![Monthly View](docs/images/05_monthly.png)
+
+**Key Features:**
+- Full month overview with daily bars
+- Token usage trends throughout the month
+- Top projects ranked by usage
+- Cost and percentage breakdowns
+- Navigate previous/next months with `<` and `>`
+
+**Keyboard:** `m` to switch to this view
+
+### 6. Yearly View - Annual Overview
+
+![Yearly View](docs/images/06_yearly.png)
+
+**Key Features:**
+- 12-month summary with monthly statistics
+- Annual token usage trends
+- Project rankings for the entire year
+- Year-to-date cost estimation
+- Navigate previous/next years with `<` and `>`
+
+**Keyboard:** `y` to switch to this view
+
+### 7. Heatmap View - Activity Patterns
+
+![Heatmap View](docs/images/07_heatmap.png)
+
+**Key Features:**
+- GitHub-style contribution graph
+- Color intensity based on token usage
+- Full year visualization (52 weeks)
+- Identify usage patterns and trends
+- Quick visual overview of activity
+
+**Keyboard:** `h` to switch to this view
+
+### 8. Devices View - Multi-PC Statistics
+
+![Devices View](docs/images/08_devices.png)
+
+**Key Features:**
+- Per-machine usage breakdown
+- Device names (customizable via settings)
+- Token and cost totals per device
+- Date range for each device's activity
+- Useful for multi-PC setups with OneDrive/iCloud sync
+
+**Keyboard:** `d` to switch to this view
+
+### 9. Settings Menu - Configuration
+
+![Settings Menu](docs/images/09_settings.png)
+
+**Key Features:**
+- Color customization (solid colors and gradient ranges)
+- Display mode preferences
+- Auto-refresh interval settings
+- Timezone configuration
+- Backup management options
+- Reset to defaults with confirmation
+
+**Keyboard:** `s` to open settings menu from any view
 
 ---
 

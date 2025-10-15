@@ -362,15 +362,16 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
 
                     # Reload preferences after settings close
                     from src.storage.snapshot_db import load_user_preferences
+                    from src.config.defaults import DEFAULT_COLORS
                     prefs = load_user_preferences()
                     view_mode_ref['usage_display_mode'] = int(prefs.get('usage_display_mode', '0'))
                     view_mode_ref['color_mode'] = prefs.get('color_mode', 'gradient')
                     view_mode_ref['colors'] = {
-                        'solid': prefs.get('color_solid', '#00A7E1'),
-                        'gradient_low': prefs.get('color_gradient_low', '#00C853'),
-                        'gradient_mid': prefs.get('color_gradient_mid', '#FFD600'),
-                        'gradient_high': prefs.get('color_gradient_high', '#FF1744'),
-                        'unfilled': prefs.get('color_unfilled', '#424242'),
+                        'color_solid': prefs.get('color_solid', DEFAULT_COLORS['color_solid']),
+                        'color_gradient_low': prefs.get('color_gradient_low', DEFAULT_COLORS['color_gradient_low']),
+                        'color_gradient_mid': prefs.get('color_gradient_mid', DEFAULT_COLORS['color_gradient_mid']),
+                        'color_gradient_high': prefs.get('color_gradient_high', DEFAULT_COLORS['color_gradient_high']),
+                        'color_unfilled': prefs.get('color_unfilled', DEFAULT_COLORS['color_unfilled']),
                     }
                     # Restore previous mode and trigger refresh
                     view_mode_ref['mode'] = previous_mode
@@ -564,6 +565,7 @@ def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, original_t
 
     # Load user preferences from DB
     from src.storage.snapshot_db import load_user_preferences
+    from src.config.defaults import DEFAULT_COLORS
     prefs = load_user_preferences()
 
     # Track current view mode, time offset, usage display mode, and color mode
@@ -571,11 +573,11 @@ def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, original_t
     usage_display_mode = int(prefs.get('usage_display_mode', '0'))
     color_mode = prefs.get('color_mode', 'gradient')
     colors = {
-        'solid': prefs.get('color_solid', '#00A7E1'),
-        'gradient_low': prefs.get('color_gradient_low', '#00C853'),
-        'gradient_mid': prefs.get('color_gradient_mid', '#FFD600'),
-        'gradient_high': prefs.get('color_gradient_high', '#FF1744'),
-        'unfilled': prefs.get('color_unfilled', '#424242'),
+        'color_solid': prefs.get('color_solid', DEFAULT_COLORS['color_solid']),
+        'color_gradient_low': prefs.get('color_gradient_low', DEFAULT_COLORS['color_gradient_low']),
+        'color_gradient_mid': prefs.get('color_gradient_mid', DEFAULT_COLORS['color_gradient_mid']),
+        'color_gradient_high': prefs.get('color_gradient_high', DEFAULT_COLORS['color_gradient_high']),
+        'color_unfilled': prefs.get('color_unfilled', DEFAULT_COLORS['color_unfilled']),
     }
 
     view_mode_ref = {
@@ -672,6 +674,7 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, original_ter
 
     # Load user preferences from DB
     from src.storage.snapshot_db import load_user_preferences
+    from src.config.defaults import DEFAULT_COLORS
     prefs = load_user_preferences()
 
     # Track current view mode, time offset, usage display mode, and color mode
@@ -679,11 +682,11 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, original_ter
     usage_display_mode = int(prefs.get('usage_display_mode', '0'))
     color_mode = prefs.get('color_mode', 'gradient')
     colors = {
-        'solid': prefs.get('color_solid', '#00A7E1'),
-        'gradient_low': prefs.get('color_gradient_low', '#00C853'),
-        'gradient_mid': prefs.get('color_gradient_mid', '#FFD600'),
-        'gradient_high': prefs.get('color_gradient_high', '#FF1744'),
-        'unfilled': prefs.get('color_unfilled', '#424242'),
+        'color_solid': prefs.get('color_solid', DEFAULT_COLORS['color_solid']),
+        'color_gradient_low': prefs.get('color_gradient_low', DEFAULT_COLORS['color_gradient_low']),
+        'color_gradient_mid': prefs.get('color_gradient_mid', DEFAULT_COLORS['color_gradient_mid']),
+        'color_gradient_high': prefs.get('color_gradient_high', DEFAULT_COLORS['color_gradient_high']),
+        'color_unfilled': prefs.get('color_unfilled', DEFAULT_COLORS['color_unfilled']),
     }
 
     view_mode_ref = {
