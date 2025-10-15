@@ -37,11 +37,11 @@ $ ./scripts/migrate_to_onedrive.sh
 === Claude Goblin OneDrive Migration ===
 
 Step 1: Detecting current database location
-Found databases at: /mnt/c/Users/wangt/OneDrive/.claude-goblin
+Found databases at: /mnt/c/Users/username/OneDrive/.claude-goblin
 
 Database files found:
--rw-r--r-- 1 wangt wangt  1.2M Oct 15 10:30 usage_history_HOME-WT.db
--rw-r--r-- 1 wangt wangt   48K Oct 15 10:30 machines.db
+-rw-r--r-- 1 user user  1.2M Oct 15 10:30 usage_history_HOME-PC.db
+-rw-r--r-- 1 user user   48K Oct 15 10:30 machines.db
 
 Step 2: Enter target OneDrive path
 Enter the full path to your OneDrive directory:
@@ -50,7 +50,7 @@ Example: /mnt/d/OneDrive
 > /mnt/d/OneDrive
 
 Migration plan:
-  From: /mnt/c/Users/wangt/OneDrive/.claude-goblin
+  From: /mnt/c/Users/username/OneDrive/.claude-goblin
   To:   /mnt/d/OneDrive/.claude-goblin
 
 Proceed with migration? [y/N]: y

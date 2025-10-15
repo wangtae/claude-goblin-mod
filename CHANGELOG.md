@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Improved OneDrive path detection with user confirmation in setup wizard
+- Migration script (`scripts/migrate_to_onedrive.sh`) for moving databases to correct OneDrive location
+- Setup wizard now prioritizes external drives (D:, E:, F:) over C: drive for OneDrive detection
+- FAQ section in main README.md with 20+ common questions and answers
+- Documentation for migration scripts in `scripts/README.md`
+- OneDrive path confirmation dialog - wizard now asks users to confirm auto-detected paths
+- Custom OneDrive path input option when auto-detection is incorrect
+
+### Changed
+- OneDrive detection priority changed to check `/mnt/d`, `/mnt/e`, `/mnt/f` before `/mnt/c` paths
+- Scripts README examples now use generic usernames instead of personal information
+
+### Fixed
+- OneDrive detection now correctly identifies external drive mounts in WSL2
+- Setup wizard allows users to confirm or override auto-detected OneDrive paths
+- Removed personal information (usernames, machine names) from documentation examples
+
 ## [0.1.5] - 2025-10-13
 
 ### Added

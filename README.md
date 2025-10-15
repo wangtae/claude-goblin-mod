@@ -586,6 +586,97 @@ ccu config set-db-path /mnt/d/OneDrive/.claude-goblin/usage_history.db
 
 ---
 
+## FAQ
+
+### General Questions
+
+**Q: Why use this instead of Claude Code's built-in `/usage`?**
+
+A: Claude Code only keeps 30 days of data and doesn't provide historical analysis. This tool preserves data indefinitely and offers multiple visualization modes (weekly, monthly, yearly, heatmap) with per-project and per-device breakdowns.
+
+**Q: Does this work with Claude Pro or only Claude Code?**
+
+A: This tool is **specifically for Claude Code** users. It reads the JSONL files that Claude Code creates in `~/.claude/projects/`. Claude Pro (web interface) doesn't create these files.
+
+**Q: Will this slow down Claude Code?**
+
+A: No. This tool only *reads* the JSONL files that Claude Code creates - it doesn't modify them or interfere with Claude Code's operation. File watching uses minimal resources.
+
+**Q: Is my data sent anywhere?**
+
+A: No. All data stays on your local machine (or your OneDrive/iCloud if you choose cloud sync). Nothing is sent to external servers.
+
+### Multi-PC Setup
+
+**Q: How do I set up multi-PC tracking?**
+
+A: On first run, the setup wizard will detect OneDrive (WSL2/Windows) or iCloud Drive (macOS) automatically. If both PCs use the same cloud storage path, they'll automatically sync. Each PC can have a different OneDrive mount point - just confirm the correct path in the wizard.
+
+**Q: Can I use different cloud storage on different PCs?**
+
+A: Each PC must use the same physical cloud storage folder (e.g., same OneDrive account). However, the mount point can differ (e.g., `/mnt/d/OneDrive` on PC1, `/mnt/e/OneDrive` on PC2). The setup wizard helps you configure this correctly.
+
+**Q: What if OneDrive path detection is wrong?**
+
+A: The setup wizard now asks you to confirm the detected path. If it's wrong, you can enter a custom path. You can also run the migration script: `./scripts/migrate_to_onedrive.sh`
+
+**Q: Do I need to manually sync between PCs?**
+
+A: No. OneDrive/iCloud handles syncing automatically. Both PCs write to the same database file, and SQLite's deduplication prevents conflicts.
+
+### Data & Privacy
+
+**Q: What data is stored?**
+
+A: Token counts, model names, project paths, timestamps, and message metadata. By default, **message content is NOT stored** unless you enable it in settings. See `src/storage/snapshot_db.py` for the exact schema.
+
+**Q: Can I exclude certain projects?**
+
+A: Currently no, but you can use `--anon` flag to anonymize project names in the dashboard (useful for screenshots).
+
+**Q: How do I delete all my data?**
+
+A: Delete the database file. Default location: `~/.claude/usage/usage_history.db` or check with `ccu config show`. Then run `ccu reset-db --force` to start fresh.
+
+### Technical
+
+**Q: Why SQLite instead of JSON/CSV?**
+
+A: SQLite provides:
+- Efficient querying for large datasets (millions of records)
+- Built-in deduplication (UNIQUE constraints)
+- Atomic writes (safe for multi-PC access)
+- No external dependencies
+
+**Q: Can I export data to CSV/JSON?**
+
+A: Not currently implemented, but the SQLite database is easy to query with any SQLite client. Use `sqlite3 ~/.claude/usage/usage_history.db` to access it directly.
+
+**Q: What happens if Claude Code updates its JSONL format?**
+
+A: The parser (`src/data/jsonl_parser.py`) may need updates. This is a known risk with parsing undocumented formats. If you encounter parsing errors, please file an issue with the error message and Claude Code version.
+
+**Q: Does this work on Windows (non-WSL)?**
+
+A: Not tested. The tool is designed for Unix-like systems (Linux, macOS, WSL2). Native Windows support may require path adjustments and testing.
+
+### Comparison to Original
+
+**Q: How is this fork different from the original claude-goblin?**
+
+A: Key differences:
+- ✅ **Multi-PC support** - OneDrive/iCloud sync with per-device statistics
+- ✅ **Streamlined** - Removed unused features (hooks, status bar, export)
+- ✅ **Better timezone handling** - Auto-detect with configurable settings
+- ✅ **Setup wizard** - Interactive first-time configuration
+- ✅ **Configuration system** - `~/.claude/goblin_config.json` for persistent settings
+
+**Q: Can I switch back to the original?**
+
+A: Yes, but you'll lose multi-PC features and configuration. Uninstall this fork (`pipx uninstall claude-goblin-mod`) and install the original (`pip install claude-goblin`). Database format is compatible.
+
+---
+
 ## Project Anonymization
 
 Perfect for sharing screenshots publicly:

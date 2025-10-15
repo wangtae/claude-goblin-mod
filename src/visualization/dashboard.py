@@ -1973,7 +1973,7 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             footer.append("tab", style=f"bold {YELLOW}")
             footer.append(" to change mode(", style=DIM)
             footer.append(current_mode_name, style="white")
-            footer.append("). ", style=DIM)
+            footer.append(")", style=DIM)
             footer.append("\n")
 
         # Add navigation hint for non-usage modes (second line)
