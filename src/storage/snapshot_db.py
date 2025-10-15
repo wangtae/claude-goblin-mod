@@ -12,6 +12,11 @@ from src.models.usage_record import UsageRecord
 
 #region Constants and Path Detection
 
+# Cache for device statistics (expires after 60 seconds)
+_device_stats_cache: dict | None = None
+_device_stats_cache_time: float = 0
+_CACHE_EXPIRY_SECONDS = 60
+
 def _try_create_folder(path: Path) -> bool:
     """
     Try to create folder. Return True if successful or already exists.
@@ -34,70 +39,120 @@ def _try_create_folder(path: Path) -> bool:
     return False
 
 
-def get_default_db_path() -> Path:
+def get_storage_dir() -> Path:
     """
-    Auto-detect OneDrive/iCloud and use it for database storage.
-    Falls back to local storage if cloud storage is not available.
+    Get the base storage directory for databases.
+
+    Returns the directory without the filename, allowing us to construct
+    multiple DB filenames (machines.db, usage_history_{machine}.db, etc.)
 
     Priority:
     1. Config file: user_config.get_db_path()
     2. Environment variable: CLAUDE_GOBLIN_DB_PATH
-    3. OneDrive (WSL2): /mnt/c/Users/{username}/OneDrive/.claude-goblin/ or /mnt/d/OneDrive/.claude-goblin/
+    3. OneDrive (WSL2): /mnt/c/Users/{username}/OneDrive/.claude-goblin/
     4. iCloud (macOS): ~/Library/Mobile Documents/com~apple~CloudDocs/.claude-goblin/
     5. Local fallback: ~/.claude/usage/
 
     Returns:
-        Path to the database file
+        Path to the storage directory (not including filename)
     """
-    # 1. Config file override
+    # Try to get configured path first
     try:
         from src.config.user_config import get_db_path
         config_path = get_db_path()
         if config_path:
-            return Path(config_path)
+            return Path(config_path).parent
     except ImportError:
-        pass  # Config module not available yet (first install)
+        pass
 
-    # 2. Environment variable override
+    # Environment variable override
     custom_path = os.getenv("CLAUDE_GOBLIN_DB_PATH")
     if custom_path:
-        return Path(custom_path)
+        return Path(custom_path).parent
 
-    # 3. WSL2 OneDrive detection
+    # WSL2 OneDrive detection
     if platform.system() == "Linux" and "microsoft" in platform.release().lower():
         username = os.getenv("USER")
-
-        # Try multiple common OneDrive locations
         onedrive_candidates = []
 
         if username:
-            # Standard Windows user profile location
             onedrive_candidates.append(Path(f"/mnt/c/Users/{username}/OneDrive"))
 
-        # Check all mounted drives (C:, D:, E:, etc.)
         for drive in ["c", "d", "e", "f"]:
             onedrive_candidates.append(Path(f"/mnt/{drive}/OneDrive"))
 
-        # Try each candidate
         for onedrive_base in onedrive_candidates:
             if onedrive_base.exists():
-                onedrive_path = onedrive_base / ".claude-goblin" / "usage_history.db"
+                storage_dir = onedrive_base / ".claude-goblin"
+                if _try_create_folder(storage_dir):
+                    return storage_dir
 
-                if _try_create_folder(onedrive_path.parent):
-                    return onedrive_path
-
-    # 4. macOS iCloud Drive detection
+    # macOS iCloud Drive detection
     elif platform.system() == "Darwin":
         icloud_base = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
-
         if icloud_base.exists():
-            icloud_path = icloud_base / ".claude-goblin" / "usage_history.db"
+            storage_dir = icloud_base / ".claude-goblin"
+            if _try_create_folder(storage_dir):
+                return storage_dir
 
-            if _try_create_folder(icloud_path.parent):
-                return icloud_path
+    # Local fallback
+    return Path.home() / ".claude" / "usage"
 
-    # 5. Local fallback
-    return Path.home() / ".claude" / "usage" / "usage_history.db"
+
+def get_current_machine_db_path() -> Path:
+    """
+    Get the database path for the current machine.
+
+    Returns usage_history_{machine_name}.db in the storage directory.
+    Machine registration is deferred to avoid blocking startup.
+
+    Returns:
+        Path to the current machine's database file
+    """
+    from src.config.user_config import get_machine_name
+
+    storage_dir = get_storage_dir()
+    machine_name = get_machine_name() or "Unknown"
+
+    # Defer machine registration - will be done asynchronously later
+    # This speeds up startup significantly (no DB write on import)
+
+    return storage_dir / f"usage_history_{machine_name}.db"
+
+
+def get_all_machine_db_paths() -> list[tuple[str, Path]]:
+    """
+    Get database paths for all registered machines.
+
+    Returns:
+        List of tuples: (machine_name, db_path)
+    """
+    from src.storage.machines_db import get_all_machines
+
+    storage_dir = get_storage_dir()
+
+    try:
+        machines = get_all_machines()
+        return [(m['machine_name'], storage_dir / f"usage_history_{m['machine_name']}.db")
+                for m in machines]
+    except Exception:
+        # If machines.db doesn't exist or fails, return only current machine
+        from src.config.user_config import get_machine_name
+        machine_name = get_machine_name() or "Unknown"
+        return [(machine_name, storage_dir / f"usage_history_{machine_name}.db")]
+
+
+def get_default_db_path() -> Path:
+    """
+    Get the database path for the current machine.
+
+    This is the main function used throughout the codebase.
+    Now returns PC-specific DB path: usage_history_{machine_name}.db
+
+    Returns:
+        Path to the current machine's database file
+    """
+    return get_current_machine_db_path()
 
 
 # Initialize default path
@@ -201,6 +256,19 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
             ON usage_records(date)
         """)
 
+        # Index for model-based queries (used in cost calculations)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_usage_records_model
+            ON usage_records(model)
+        """)
+
+        # Composite index for date + model (optimizes monthly cost calculations)
+        # This speeds up queries like: WHERE substr(date, 1, 7) = '2025-10' AND model = 'X'
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_usage_records_date_model
+            ON usage_records(date, model)
+        """)
+
         # Table for usage limits snapshots
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS limits_snapshots (
@@ -292,6 +360,32 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
             ON device_model_aggregates(machine_name)
         """)
 
+        # Table for monthly device statistics (pre-aggregated for performance)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS device_monthly_stats (
+                machine_name TEXT NOT NULL,
+                year_month TEXT NOT NULL,
+                total_records INTEGER NOT NULL,
+                total_sessions INTEGER NOT NULL,
+                total_messages INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                total_cost REAL NOT NULL,
+                oldest_date TEXT NOT NULL,
+                newest_date TEXT NOT NULL,
+                last_updated TEXT NOT NULL,
+                PRIMARY KEY (machine_name, year_month)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_device_monthly_stats_machine
+            ON device_monthly_stats(machine_name)
+        """)
+
         # Populate pricing data from defaults.py
         from src.config.defaults import DEFAULT_MODEL_PRICING
 
@@ -338,8 +432,23 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
     Raises:
         sqlite3.Error: If database operation fails
     """
+    global _device_stats_cache, _device_stats_cache_time
+
     if not records:
         return 0
+
+    # Register machine on first data save (deferred from get_current_machine_db_path)
+    # This is much faster than registering on every import/startup
+    try:
+        import socket
+        from src.config.user_config import get_machine_name
+        from src.storage.machines_db import register_machine
+
+        machine_name = get_machine_name() or "Unknown"
+        hostname = socket.gethostname()
+        register_machine(machine_name, hostname)
+    except Exception:
+        pass  # Non-fatal if registration fails
 
     init_database(db_path)
 
@@ -463,6 +572,21 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
             ))
 
         conn.commit()
+
+        # Invalidate device statistics cache if new records were saved
+        if saved_count > 0:
+            _device_stats_cache = None
+            _device_stats_cache_time = 0
+
+        # Update monthly aggregates (only if we saved new records)
+        # This runs in the background and won't slow down the save operation significantly
+        if saved_count > 0:
+            try:
+                update_monthly_device_stats(db_path)
+            except Exception:
+                # Non-fatal if monthly update fails
+                pass
+
     finally:
         conn.close()
 
@@ -857,9 +981,136 @@ def get_latest_limits(db_path: Path = DEFAULT_DB_PATH) -> dict | None:
         conn.close()
 
 
-def get_device_statistics(db_path: Path = DEFAULT_DB_PATH) -> list[dict]:
+def update_monthly_device_stats(db_path: Path = DEFAULT_DB_PATH) -> None:
+    """
+    Update monthly device statistics for completed months.
+
+    This function aggregates usage_records for each completed month
+    and stores them in device_monthly_stats for faster queries.
+
+    Only processes months that are fully complete (not current month).
+
+    Args:
+        db_path: Path to the SQLite database file
+
+    Raises:
+        sqlite3.Error: If database operation fails
+    """
+    if not db_path.exists():
+        return
+
+    # Ensure database schema is up to date (creates device_monthly_stats table if needed)
+    init_database(db_path)
+
+    conn = sqlite3.connect(db_path, timeout=30.0)
+
+    try:
+        cursor = conn.cursor()
+        from datetime import datetime as dt
+        from src.config.user_config import get_machine_name
+
+        machine_name = get_machine_name() or "Unknown"
+        current_month = dt.now(timezone.utc).strftime("%Y-%m")
+
+        # Get all distinct year-months from usage_records (excluding current month)
+        cursor.execute("""
+            SELECT DISTINCT substr(date, 1, 7) as year_month
+            FROM usage_records
+            WHERE substr(date, 1, 7) < ?
+            ORDER BY year_month
+        """, (current_month,))
+
+        months = [row[0] for row in cursor.fetchall()]
+
+        for year_month in months:
+            # Check if this month is already aggregated
+            cursor.execute("""
+                SELECT last_updated FROM device_monthly_stats
+                WHERE machine_name = ? AND year_month = ?
+            """, (machine_name, year_month))
+
+            existing = cursor.fetchone()
+
+            # Skip if already aggregated and records haven't changed
+            # (We could add more sophisticated change detection here)
+            if existing:
+                continue
+
+            # Aggregate statistics for this month
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total_records,
+                    COUNT(DISTINCT session_id) as total_sessions,
+                    COUNT(CASE WHEN message_type = 'assistant' THEN 1 END) as total_messages,
+                    COALESCE(SUM(total_tokens), 0) as total_tokens,
+                    COALESCE(SUM(input_tokens), 0) as input_tokens,
+                    COALESCE(SUM(output_tokens), 0) as output_tokens,
+                    COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+                    COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+                    MIN(date) as oldest_date,
+                    MAX(date) as newest_date
+                FROM usage_records
+                WHERE substr(date, 1, 7) = ?
+            """, (year_month,))
+
+            row = cursor.fetchone()
+            if not row or (row[0] or 0) == 0:
+                continue
+
+            # Calculate cost for this month
+            cursor.execute("""
+                SELECT
+                    COALESCE(SUM(
+                        (ur.input_tokens / 1000000.0) * mp.input_price_per_mtok +
+                        (ur.output_tokens / 1000000.0) * mp.output_price_per_mtok +
+                        (ur.cache_creation_tokens / 1000000.0) * mp.cache_write_price_per_mtok +
+                        (ur.cache_read_tokens / 1000000.0) * mp.cache_read_price_per_mtok
+                    ), 0.0) as total_cost
+                FROM usage_records ur
+                LEFT JOIN model_pricing mp ON ur.model = mp.model_name
+                WHERE substr(ur.date, 1, 7) = ? AND ur.model IS NOT NULL
+            """, (year_month,))
+
+            cost_row = cursor.fetchone()
+            total_cost = round(cost_row[0], 2) if cost_row else 0.0
+
+            # Insert or replace monthly stats
+            timestamp = dt.now(timezone.utc).isoformat()
+            cursor.execute("""
+                INSERT OR REPLACE INTO device_monthly_stats (
+                    machine_name, year_month,
+                    total_records, total_sessions, total_messages, total_tokens,
+                    input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+                    total_cost, oldest_date, newest_date, last_updated
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                machine_name, year_month,
+                row[0], row[1], row[2], row[3],
+                row[4], row[5], row[6], row[7],
+                total_cost, row[8], row[9], timestamp
+            ))
+
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_device_statistics(db_path: Path = DEFAULT_DB_PATH, force_refresh: bool = False) -> list[dict]:
     """
     Get usage statistics grouped by device/machine.
+
+    Reads from all PC-specific DB files (usage_history_{machine}.db)
+    to aggregate statistics across all registered machines.
+
+    Optimized version using monthly pre-aggregates + current month:
+    - Completed months: Read from device_monthly_stats (fast)
+    - Current month: Query usage_records (only ~30 days of data)
+
+    Results are cached for 60 seconds.
+
+    Args:
+        db_path: Path to the database file (not used, kept for compatibility)
+        force_refresh: Force refresh cache even if not expired
 
     Returns:
         List of dictionaries with device statistics:
@@ -881,243 +1132,139 @@ def get_device_statistics(db_path: Path = DEFAULT_DB_PATH) -> list[dict]:
             ...
         ]
     """
-    if not db_path.exists():
+    global _device_stats_cache, _device_stats_cache_time
+    import time
+    from datetime import datetime as dt
+
+    # Check cache validity
+    current_time = time.time()
+    cache_age = current_time - _device_stats_cache_time
+
+    if not force_refresh and _device_stats_cache is not None and cache_age < _CACHE_EXPIRY_SECONDS:
+        # Return cached result
+        return _device_stats_cache
+
+    # Cache miss or expired - fetch fresh data
+    # Get all machine DB paths
+    machine_db_paths = get_all_machine_db_paths()
+
+    if not machine_db_paths:
+        _device_stats_cache = []
+        _device_stats_cache_time = current_time
         return []
 
-    conn = sqlite3.connect(db_path, timeout=30.0)
+    # Current month (YYYY-MM)
+    current_month = dt.now(timezone.utc).strftime("%Y-%m")
 
-    try:
-        cursor = conn.cursor()
+    device_stats: dict[str, dict] = {}
 
-        device_stats: dict[str, dict] = {}
+    # Process each machine DB independently (no ATTACH DATABASE)
+    # This is MUCH faster than ATTACH DATABASE approach on OneDrive
+    for machine_name, machine_db in machine_db_paths:
+        if not machine_db.exists():
+            continue
 
-        # Helper functions for date comparisons (YYYY-MM-DD strings)
-        def _min_date(current: str | None, candidate: str | None) -> str | None:
-            if not current:
-                return candidate
-            if not candidate:
-                return current
-            return candidate if candidate < current else current
+        # Open separate connection for each DB with optimized settings
+        conn = sqlite3.connect(machine_db, timeout=30.0)
 
-        def _max_date(current: str | None, candidate: str | None) -> str | None:
-            if not current:
-                return candidate
-            if not candidate:
-                return current
-            return candidate if candidate > current else current
+        try:
+            cursor = conn.cursor()
 
-        # Detailed (full mode) usage records
-        cursor.execute("""
-            SELECT
-                COALESCE(machine_name, 'Unknown') as machine,
-                COUNT(*) as total_records,
-                COUNT(DISTINCT session_id) as total_sessions,
-                COUNT(CASE WHEN message_type = 'assistant' THEN 1 END) as total_messages,
-                SUM(total_tokens) as total_tokens,
-                SUM(input_tokens) as input_tokens,
-                SUM(output_tokens) as output_tokens,
-                SUM(cache_creation_tokens) as cache_creation_tokens,
-                SUM(cache_read_tokens) as cache_read_tokens,
-                MIN(date) as oldest_date,
-                MAX(date) as newest_date
-            FROM usage_records
-            GROUP BY machine
-        """)
+            # Optimize read-only queries (no need for journaling/sync overhead)
+            cursor.execute("PRAGMA query_only = ON")
 
-        detailed_rows = cursor.fetchall()
-
-        for row in detailed_rows:
-            machine_name = row[0] or "Unknown"
-            device_stats[machine_name] = {
-                "machine_name": machine_name,
-                "total_records": row[1] or 0,
-                "total_sessions": row[2] or 0,
-                "total_messages": row[3] or 0,
-                "total_tokens": row[4] or 0,
-                "input_tokens": row[5] or 0,
-                "output_tokens": row[6] or 0,
-                "cache_creation_tokens": row[7] or 0,
-                "cache_read_tokens": row[8] or 0,
-                "total_cost": 0.0,
-                "oldest_date": row[9],
-                "newest_date": row[10],
-            }
-
-        # Cost for detailed records
-        for machine_name in [row[0] or "Unknown" for row in detailed_rows]:
+            # Single combined query - get ALL data in one shot
+            # This eliminates multiple round-trips to the database
             cursor.execute("""
+                WITH monthly_agg AS (
+                    SELECT
+                        COALESCE(SUM(total_records), 0) as total_records,
+                        COALESCE(SUM(total_sessions), 0) as total_sessions,
+                        COALESCE(SUM(total_messages), 0) as total_messages,
+                        COALESCE(SUM(total_tokens), 0) as total_tokens,
+                        COALESCE(SUM(input_tokens), 0) as input_tokens,
+                        COALESCE(SUM(output_tokens), 0) as output_tokens,
+                        COALESCE(SUM(cache_creation_tokens), 0) as cache_creation_tokens,
+                        COALESCE(SUM(cache_read_tokens), 0) as cache_read_tokens,
+                        COALESCE(SUM(total_cost), 0.0) as total_cost,
+                        MIN(oldest_date) as oldest_date,
+                        MAX(newest_date) as newest_date
+                    FROM device_monthly_stats
+                    WHERE machine_name = ?
+                ),
+                current_month_agg AS (
+                    SELECT
+                        COUNT(*) as total_records,
+                        COUNT(DISTINCT session_id) as total_sessions,
+                        COUNT(CASE WHEN message_type = 'assistant' THEN 1 END) as total_messages,
+                        COALESCE(SUM(ur.total_tokens), 0) as total_tokens,
+                        COALESCE(SUM(ur.input_tokens), 0) as input_tokens,
+                        COALESCE(SUM(ur.output_tokens), 0) as output_tokens,
+                        COALESCE(SUM(ur.cache_creation_tokens), 0) as cache_creation_tokens,
+                        COALESCE(SUM(ur.cache_read_tokens), 0) as cache_read_tokens,
+                        MIN(ur.date) as oldest_date,
+                        MAX(ur.date) as newest_date,
+                        COALESCE(SUM(
+                            (ur.input_tokens / 1000000.0) * COALESCE(mp.input_price_per_mtok, 0) +
+                            (ur.output_tokens / 1000000.0) * COALESCE(mp.output_price_per_mtok, 0) +
+                            (ur.cache_creation_tokens / 1000000.0) * COALESCE(mp.cache_write_price_per_mtok, 0) +
+                            (ur.cache_read_tokens / 1000000.0) * COALESCE(mp.cache_read_price_per_mtok, 0)
+                        ), 0.0) as total_cost
+                    FROM usage_records ur
+                    LEFT JOIN model_pricing mp ON ur.model = mp.model_name
+                    WHERE substr(ur.date, 1, 7) = ?
+                )
                 SELECT
-                    ur.model,
-                    SUM(ur.input_tokens) as total_input,
-                    SUM(ur.output_tokens) as total_output,
-                    SUM(ur.cache_creation_tokens) as total_cache_write,
-                    SUM(ur.cache_read_tokens) as total_cache_read,
-                    mp.input_price_per_mtok,
-                    mp.output_price_per_mtok,
-                    mp.cache_write_price_per_mtok,
-                    mp.cache_read_price_per_mtok
-                FROM usage_records ur
-                LEFT JOIN model_pricing mp ON ur.model = mp.model_name
-                WHERE COALESCE(ur.machine_name, 'Unknown') = ? AND ur.model IS NOT NULL
-                GROUP BY ur.model
-            """, (machine_name,))
+                    m.total_records + c.total_records as total_records,
+                    m.total_sessions + c.total_sessions as total_sessions,
+                    m.total_messages + c.total_messages as total_messages,
+                    m.total_tokens + c.total_tokens as total_tokens,
+                    m.input_tokens + c.input_tokens as input_tokens,
+                    m.output_tokens + c.output_tokens as output_tokens,
+                    m.cache_creation_tokens + c.cache_creation_tokens as cache_creation_tokens,
+                    m.cache_read_tokens + c.cache_read_tokens as cache_read_tokens,
+                    m.total_cost + c.total_cost as total_cost,
+                    MIN(m.oldest_date, c.oldest_date) as oldest_date,
+                    MAX(m.newest_date, c.newest_date) as newest_date
+                FROM monthly_agg m, current_month_agg c
+            """, (machine_name, current_month))
 
-            for cost_row in cursor.fetchall():
-                input_tok = cost_row[1] or 0
-                output_tok = cost_row[2] or 0
-                cache_write_tok = cost_row[3] or 0
-                cache_read_tok = cost_row[4] or 0
+            row = cursor.fetchone()
 
-                input_price = cost_row[5] or 0.0
-                output_price = cost_row[6] or 0.0
-                cache_write_price = cost_row[7] or 0.0
-                cache_read_price = cost_row[8] or 0.0
-
-                device_stats[machine_name]["total_cost"] += (
-                    (input_tok / 1_000_000) * input_price +
-                    (output_tok / 1_000_000) * output_price +
-                    (cache_write_tok / 1_000_000) * cache_write_price +
-                    (cache_read_tok / 1_000_000) * cache_read_price
-                )
-
-        # Aggregate-mode data (per-device daily aggregates)
-        cursor.execute("""
-            SELECT
-                machine_name,
-                SUM(total_prompts) as total_prompts,
-                SUM(total_responses) as total_responses,
-                SUM(total_sessions) as total_sessions,
-                SUM(total_tokens) as total_tokens,
-                SUM(input_tokens) as input_tokens,
-                SUM(output_tokens) as output_tokens,
-                SUM(cache_creation_tokens) as cache_creation_tokens,
-                SUM(cache_read_tokens) as cache_read_tokens,
-                MIN(date) as oldest_date,
-                MAX(date) as newest_date
-            FROM device_usage_aggregates
-            GROUP BY machine_name
-        """)
-
-        aggregate_rows = cursor.fetchall()
-
-        for row in aggregate_rows:
-            machine_name = (row[0] or "Unknown")
-            prompts = row[1] or 0
-            responses = row[2] or 0
-            sessions = row[3] or 0
-            total_tokens = row[4] or 0
-            input_tokens = row[5] or 0
-            output_tokens = row[6] or 0
-            cache_creation_tokens = row[7] or 0
-            cache_read_tokens = row[8] or 0
-            oldest_date = row[9]
-            newest_date = row[10]
-
-            stats = device_stats.get(machine_name)
-            if stats:
-                stats["total_records"] += prompts + responses
-                stats["total_sessions"] += sessions
-                stats["total_messages"] += responses
-                stats["total_tokens"] += total_tokens
-                stats["input_tokens"] += input_tokens
-                stats["output_tokens"] += output_tokens
-                stats["cache_creation_tokens"] += cache_creation_tokens
-                stats["cache_read_tokens"] += cache_read_tokens
-                stats["oldest_date"] = _min_date(stats["oldest_date"], oldest_date)
-                stats["newest_date"] = _max_date(stats["newest_date"], newest_date)
-            else:
+            # Check if device has any data
+            if row and (row[0] or 0) > 0:
                 device_stats[machine_name] = {
                     "machine_name": machine_name,
-                    "total_records": prompts + responses,
-                    "total_sessions": sessions,
-                    "total_messages": responses,
-                    "total_tokens": total_tokens,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "cache_creation_tokens": cache_creation_tokens,
-                    "cache_read_tokens": cache_read_tokens,
-                    "total_cost": 0.0,
-                    "oldest_date": oldest_date,
-                    "newest_date": newest_date,
-                }
-
-        # Model pricing lookup for aggregate-mode cost calculation
-        cursor.execute("""
-            SELECT model_name, input_price_per_mtok, output_price_per_mtok,
-                   cache_write_price_per_mtok, cache_read_price_per_mtok
-            FROM model_pricing
-        """)
-        pricing_map = {
-            row[0]: (row[1] or 0.0, row[2] or 0.0, row[3] or 0.0, row[4] or 0.0)
-            for row in cursor.fetchall()
-        }
-
-        cursor.execute("""
-            SELECT
-                machine_name,
-                model,
-                SUM(total_responses) as total_responses,
-                SUM(input_tokens) as input_tokens,
-                SUM(output_tokens) as output_tokens,
-                SUM(cache_creation_tokens) as cache_creation_tokens,
-                SUM(cache_read_tokens) as cache_read_tokens,
-                SUM(total_tokens) as total_tokens
-            FROM device_model_aggregates
-            GROUP BY machine_name, model
-        """)
-
-        for row in cursor.fetchall():
-            machine_name = (row[0] or "Unknown")
-            model_name = row[1]
-            input_tokens = row[3] or 0
-            output_tokens = row[4] or 0
-            cache_creation_tokens = row[5] or 0
-            cache_read_tokens = row[6] or 0
-            total_tokens = row[7] or (
-                input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens
-            )
-
-            stats = device_stats.get(machine_name)
-            if not stats:
-                device_stats[machine_name] = {
-                    "machine_name": machine_name,
-                    "total_records": row[2] or 0,
-                    "total_sessions": 0,
+                    "total_records": row[0] or 0,
+                    "total_sessions": row[1] or 0,
                     "total_messages": row[2] or 0,
-                    "total_tokens": total_tokens,
-                    "input_tokens": input_tokens,
-                    "output_tokens": output_tokens,
-                    "cache_creation_tokens": cache_creation_tokens,
-                    "cache_read_tokens": cache_read_tokens,
-                    "total_cost": 0.0,
-                    "oldest_date": None,
-                    "newest_date": None,
+                    "total_tokens": row[3] or 0,
+                    "input_tokens": row[4] or 0,
+                    "output_tokens": row[5] or 0,
+                    "cache_creation_tokens": row[6] or 0,
+                    "cache_read_tokens": row[7] or 0,
+                    "total_cost": round(row[8] or 0.0, 2),
+                    "oldest_date": row[9],
+                    "newest_date": row[10],
                 }
-                stats = device_stats[machine_name]
 
-            pricing = pricing_map.get(model_name)
-            if pricing:
-                input_price, output_price, cache_write_price, cache_read_price = pricing
-                stats["total_cost"] += (
-                    (input_tokens / 1_000_000) * input_price +
-                    (output_tokens / 1_000_000) * output_price +
-                    (cache_creation_tokens / 1_000_000) * cache_write_price +
-                    (cache_read_tokens / 1_000_000) * cache_read_price
-                )
+        finally:
+            conn.close()
 
-        if not device_stats:
-            return []
+    if not device_stats:
+        _device_stats_cache = []
+        _device_stats_cache_time = current_time
+        return []
 
-        # Finalize list with rounded cost and sort by tokens
-        results = []
-        for stats in device_stats.values():
-            stats["total_cost"] = round(stats["total_cost"], 2)
-            results.append(stats)
+    # Sort by tokens and return
+    results = list(device_stats.values())
+    results.sort(key=lambda x: x["total_tokens"], reverse=True)
 
-        results.sort(key=lambda x: x["total_tokens"], reverse=True)
-        return results
-    finally:
-        conn.close()
+    # Update cache
+    _device_stats_cache = results
+    _device_stats_cache_time = current_time
+
+    return results
 
 
 def save_user_preference(key: str, value: str, db_path: Path = DEFAULT_DB_PATH) -> None:

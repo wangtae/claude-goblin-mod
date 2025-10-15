@@ -30,6 +30,7 @@ def render_device_statistics(console: Console) -> None:
     Args:
         console: Rich console for output
     """
+    # Get device statistics (now fast with optimized queries)
     device_stats = get_device_statistics()
 
     if not device_stats:
@@ -157,7 +158,7 @@ def _render_device_table(devices: list[dict]) -> Panel:
     sorted_devices = sorted(devices, key=lambda x: x['total_tokens'], reverse=True)
 
     # Create table (same style as model breakdown)
-    table = Table(show_header=False, box=None, padding=(0, 2))
+    table = Table(show_header=False, box=None, padding=(1, 2))
     table.add_column("Device", style="white", justify="left", width=25)
     table.add_column("Bar", justify="left")
     table.add_column("Tokens", style=ORANGE, justify="right")
