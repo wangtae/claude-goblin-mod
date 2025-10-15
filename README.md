@@ -6,50 +6,92 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 > [!IMPORTANT]
-> This is a **modified fork** of [claude-goblin](https://github.com/data-goblin/claude-goblin) with additional multi-PC support features and streamlined functionality.
+> This is a **modified fork** of [claude-goblin](https://github.com/data-goblin/claude-goblin) with multi-PC support and streamlined functionality.
 >
-> **Installation**: Run from source (see [Installation](#installation-modified-fork)) - `pip install claude-goblin` installs the original, not this fork.
+> **Installation**: Run from source (see [Installation](#installation)) - `pip install claude-goblin` installs the original, not this fork.
 
-Python command line tool for Claude Code usage analytics and long-term tracking with an interactive TUI dashboard.
+**Interactive TUI dashboard for Claude Code usage analytics and long-term tracking.**
 
-## New Features in This Fork
+Most features are accessed through keyboard shortcuts in the interactive dashboard - minimal command-line interface by design.
 
-- 🔄 **Automatic OneDrive Detection** - Auto-detects OneDrive across multiple drives (C:, D:, E:, F:)
-- ⚙️ **Configuration Management** - `ccu config` command for database path and machine name settings
-- 🖥️ **Multi-PC Support** - Track usage across multiple computers with automatic cloud sync
-- 📊 **Per-Machine Statistics** - View usage breakdown by computer in devices mode
-- 🌍 **Timezone Support** - Auto-detect system timezone with configurable settings
-- 🎯 **Simplified & Focused** - Removed unused features (hooks, status bar, export) for cleaner codebase
+---
 
-**Quick Start (Modified Fork):** See [Installation](#installation-modified-fork) for running from source.
+## Quick Start
 
-> [!NOTE]
-> Both `claude-goblin` and `ccu` work interchangeably as command aliases.
+```bash
+# Navigate to the fork directory
+cd /path/to/claude-goblin-mod
 
-## Example Outputs
+# Install dependencies
+pip install rich typer watchdog
 
-**TUI Dashboard:**
+# Run the dashboard
+python3 -m src.cli
+```
 
-![Example TUI dashboard](docs/images/dashboard.png)
-
-**GitHub activity-style heatmap:**
-
-![Example heatmap](docs/images/heatmap.png)
+That's it! The interactive dashboard will open with all your Claude Code usage data.
 
 ---
 
 ## Features
 
-- 📊 **Interactive Dashboard** - Real-time usage visualization with keyboard shortcuts
-- 📈 **Multiple View Modes** - Usage, Weekly, Monthly, Yearly, Heatmap, Devices
-- 💾 **Local Data Snapshotting** - Preserve Claude Code logs beyond 30-day limit
-- 🔄 **File Watching** - Auto-update dashboard when Claude Code creates new logs
-- 📅 **Historical Tracking** - Indefinite data preservation in SQLite database
-- 🌐 **Multi-PC Sync** - Automatic OneDrive/iCloud Drive detection and sync
-- 🏷️ **Project Anonymization** - Anonymize project names for sharing screenshots
-- ⚙️ **Configurable Settings** - Timezone, backup retention, color modes
+### Core Functionality
 
-## Installation (Modified Fork)
+- 📊 **Interactive Dashboard** - All features accessible via keyboard shortcuts (no complex CLI commands)
+- 🔄 **Real-time Updates** - Automatic file watching when Claude Code creates new logs
+- 📅 **Long-term Tracking** - Preserves usage data beyond Claude Code's 30-day limit
+- 🌐 **Multi-PC Sync** - Automatic OneDrive/iCloud Drive detection for seamless multi-computer tracking
+- 🖥️ **Per-Machine Stats** - Track usage breakdown across different computers
+
+### View Modes (All In-Dashboard)
+
+Access via keyboard shortcuts - no separate commands needed:
+
+- **Usage Mode** (`u`) - Current week limits with reset times and cost estimates
+- **Weekly View** (`w`) - Daily breakdown with hourly drill-down
+- **Monthly View** (`m`) - Project and daily statistics for current month
+- **Yearly View** (`y`) - Annual overview with monthly/project breakdowns
+- **Heatmap** (`h`) - GitHub-style activity visualization
+- **Devices** (`d`) - Per-machine usage statistics
+
+### This Fork's Enhancements
+
+- ✅ **Automatic OneDrive/iCloud Detection** - Zero-config multi-PC sync
+- ✅ **Timezone Support** - Auto-detect system timezone with configurable settings
+- ✅ **Streamlined Codebase** - Removed unused features (hooks, status bar, export)
+- ✅ **Configuration Management** - Simple config system for database path and machine names
+- ✅ **Project Anonymization** - `--anon` flag for sharing screenshots safely
+
+---
+
+## Screenshots
+
+> [!NOTE]
+> Screenshots will be added once the project reaches v1.0
+
+### Dashboard Overview
+<!-- TODO: Add screenshot of main dashboard -->
+The main interactive dashboard showing current usage statistics and navigation hints.
+
+### Usage Mode
+<!-- TODO: Add screenshot of usage mode -->
+Real-time usage limits with session, weekly, and Opus percentages.
+
+### Weekly View
+<!-- TODO: Add screenshot of weekly view -->
+Daily breakdown with drill-down to hourly statistics (press `1-7` for specific days).
+
+### Heatmap View
+<!-- TODO: Add screenshot of heatmap mode -->
+GitHub-style activity heatmap showing usage patterns throughout the year.
+
+### Devices View
+<!-- TODO: Add screenshot of devices mode -->
+Per-machine statistics when using multi-PC synchronization.
+
+---
+
+## Installation
 
 > [!WARNING]
 > This fork is not yet published to PyPI. `pip install claude-goblin` installs the **original** version, not this fork!
@@ -63,8 +105,7 @@ cd /path/to/claude-goblin-mod
 # Install dependencies only
 pip install rich typer watchdog
 
-# Run commands directly
-python3 -m src.cli --help
+# Run directly
 python3 -m src.cli  # Show dashboard
 ```
 
@@ -76,97 +117,78 @@ cd /path/to/claude-goblin-mod
 # Install in editable mode (creates ccu command)
 pip install -e .
 
-# Now you can use ccu commands
-ccu --help
+# Now you can use ccu anywhere
 ccu  # Show dashboard
 ```
 
-### Option 3: Create Shell Alias
+### Option 3: Shell Alias
 
 Add to `~/.bashrc` or `~/.zshrc`:
 ```bash
 alias ccu='python3 -m src.cli'
 ```
 
-Reload and use:
+Then reload:
 ```bash
 source ~/.bashrc
-ccu --help
+ccu  # Works from any directory
 ```
 
-## First-Time Setup
+---
 
-After installation, start tracking your Claude Code usage:
+## Usage
+
+### Starting the Dashboard
 
 ```bash
-# View your current usage dashboard
-ccu
-
-# The dashboard automatically saves data to the historical database
+ccu                          # Standard mode with file watching
+ccu --refresh=30             # Refresh every 30 seconds instead
+ccu --anon                   # Anonymize project names (for screenshots)
+ccu --watch-interval=30      # File watch check interval
+ccu --limits-interval=120    # Usage limits update interval
 ```
 
-**Note**: The dashboard automatically saves your data to the historical database every time you run it. No manual setup required.
+### Keyboard Shortcuts (In Dashboard)
 
-## Commands
+**View Modes:**
+- `u` - Usage mode (current limits and costs)
+- `w` - Weekly view
+- `m` - Monthly view
+- `y` - Yearly view
+- `h` - Heatmap view
+- `d` - Devices view (multi-PC stats)
 
-| Command | Description |
-|---------|-------------|
-| **Dashboard & Visualization** | |
-| `ccu` | Show interactive usage dashboard (default) |
-| `ccu --refresh=N` | Auto-refresh every N seconds (default: file watching) |
-| `ccu --anon` | Anonymize project names (project-001, project-002, etc.) |
-| `ccu --watch-interval=N` | File watch check interval in seconds (default: 60) |
-| `ccu --limits-interval=N` | Usage limits update interval in seconds (default: 60) |
-| `ccu heatmap` | Show GitHub-style activity heatmap in terminal |
-| `ccu heatmap --year 2024` | Show heatmap for specific year |
-| **Configuration** | |
-| `ccu config show` | Display all configuration settings |
-| `ccu config set-db-path <path>` | Set custom database path (e.g., OneDrive) |
-| `ccu config clear-db-path` | Clear custom path (use auto-detect) |
-| `ccu config set-machine-name <name>` | Set friendly machine name |
-| `ccu config clear-machine-name` | Clear custom name (use hostname) |
-| `ccu settings` | Interactive settings menu (timezone, backups, colors) |
-| **Database Management** | |
-| `ccu reset-db --force` | Reset database (delete and start fresh) |
-| `ccu init-db --force` | Initialize/reset database (alias for reset-db) |
-
-### Interactive Dashboard Modes
-
-The `ccu` command provides an interactive dashboard with multiple view modes:
-
-**Keyboard Shortcuts:**
-- `u` - Usage mode (current week usage limits with reset dates and costs)
-- `w` - Weekly mode (current week statistics, daily breakdown with drill-down)
-- `m` - Monthly mode (current month statistics, project breakdown, daily breakdown)
-- `y` - Yearly mode (current year statistics, project breakdown, monthly breakdown)
-- `h` - Heatmap mode (GitHub-style activity heatmap)
-- `d` - Devices mode (per-machine statistics)
-- `1-7` - View detailed hourly breakdown for specific day (in weekly mode)
-- `<` / `>` - Navigate previous/next period (weekly/monthly/yearly modes)
-- `tab` - Change display mode (color scheme and layout)
-- `r` - Manual refresh (update data immediately)
+**Navigation:**
+- `1-7` - Hourly drill-down for specific day (weekly mode)
+- `<` / `>` - Previous/next period (weekly/monthly/yearly)
+- `tab` - Change display mode/color scheme
+- `r` - Manual refresh
 - `s` - Settings menu
 - `q` / `Esc` - Quit
 
-**Features:**
-- **Real-time file watching** - Dashboard updates automatically when Claude Code creates new logs (default)
-- **Periodic refresh mode** - Use `--refresh=N` to update every N seconds instead
-- **Weekly date filtering** - Automatically filters data to current week limit period
-- **Background limits updater** - Updates usage limits every 60 seconds in a background thread
-- **Device tracking** - Shows usage breakdown by machine name (hostname or custom name)
-- **Hourly drill-down** - Press number keys (1-7) in weekly view to see hourly details
+**Everything is accessible via these keyboard shortcuts - no need to learn complex commands!**
 
-## Data Source
+### Additional Commands
 
-Claude Goblin reads usage data from Claude Code's local session logs:
+Only a few commands exist outside the dashboard:
+
+```bash
+# Heatmap in terminal (also accessible via 'h' in dashboard)
+ccu heatmap              # Current year
+ccu heatmap --year 2024  # Specific year
+
+# Configuration (rarely needed, OneDrive auto-detected)
+ccu config show                              # View config
+ccu config set-db-path <path>                # Set custom DB path
+ccu config set-machine-name "Home-Desktop"   # Set friendly name
+
+# Database management (rarely needed)
+ccu reset-db --force     # Reset database
 ```
-~/.claude/projects/*.jsonl
-```
 
-**Important**: Claude Code retains session logs for approximately **30 days** (rolling window). Claude Goblin solves this by:
-- Automatically saving data to an SQLite database (`~/.claude/usage/usage_history.db`)
-- Preserving historical data indefinitely
-- Merging current + historical data for complete analytics
+Most users will only ever run `ccu` to open the dashboard.
+
+---
 
 ## How It Works
 
@@ -176,14 +198,14 @@ graph TD
 
     B --> ING{Dashboard<br/>ccu}
 
-    ING --> DB[(Database<br/>~/.claude/usage/usage_history.db)]
+    ING --> DB[(SQLite Database<br/>Historical Data)]
 
-    DB --> CMD1{Dashboard Views}
+    DB --> CMD1{Interactive Views}
 
     CMD1 --> OUT1[Usage Mode]
     CMD1 --> OUT2[Weekly/Monthly/Yearly]
-    CMD1 --> OUT3[Heatmap Mode]
-    CMD1 --> OUT4[Devices Mode]
+    CMD1 --> OUT3[Heatmap]
+    CMD1 --> OUT4[Devices]
 
     style A fill:#e0e0e0,stroke:#333,color:#000
     style B fill:#ff8800,stroke:#333,color:#000
@@ -195,169 +217,117 @@ graph TD
 ```
 
 **Key Points:**
-- **JSONL files** are raw logs with a 30-day rolling window (older data disappears)
-- **Dashboard** reads JSONL and saves to DB (with automatic deduplication)
-- **Database** is the single source of truth - all displays read from here
-- **Multi-view dashboard** provides different perspectives on the same data
+- **JSONL files** - Claude Code's raw logs (30-day rolling window)
+- **Dashboard** - Reads JSONL and saves to SQLite (automatic deduplication)
+- **Database** - Single source of truth, preserves data indefinitely
+- **Interactive views** - All accessed via keyboard shortcuts in one dashboard
 
-### File Locations
+### Data Sources
 
 | File | Location | Purpose |
 |------|----------|---------|
-| **JSONL logs** | `~/.claude/projects/*.jsonl` | Current 30-day usage data from Claude Code |
-| **SQLite DB** | `~/.claude/usage/usage_history.db` (default) | Historical usage data preserved indefinitely |
-| **SQLite DB** | `/mnt/d/OneDrive/.claude-goblin/usage_history.db` (auto-detected) | OneDrive sync location (if available) |
-| **Config** | `~/.claude/goblin_config.json` | User configuration settings |
+| **JSONL logs** | `~/.claude/projects/*.jsonl` | Current 30-day usage from Claude Code |
+| **SQLite DB** | `~/.claude/usage/usage_history.db` | Historical data (default location) |
+| **SQLite DB** | `/mnt/d/OneDrive/.claude-goblin/usage_history.db` | OneDrive sync (auto-detected) |
+| **Config** | `~/.claude/goblin_config.json` | User configuration |
 
-## Multi-PC Setup (Fork Feature)
+---
 
-This fork automatically detects OneDrive and enables multi-PC synchronization.
+## Multi-PC Synchronization
 
-### Automatic Setup (Zero Configuration)
+This fork automatically detects OneDrive and iCloud Drive for seamless multi-PC tracking.
+
+### Zero-Configuration Setup
 
 ```bash
 # On PC-A (Desktop)
 ccu
 # → Auto-detects: /mnt/d/OneDrive/.claude-goblin/usage_history.db
-# → OneDrive automatically syncs to cloud
+# → OneDrive syncs to cloud automatically
 
 # On PC-B (Laptop)
 ccu
-# → Auto-detects same OneDrive path
-# → Automatically uses synced database
-# ✅ Your usage from both PCs is now combined!
+# → Auto-detects same OneDrive database
+# ✅ Combined usage from both PCs!
 ```
 
-### Manual Configuration
+### Database Location Priority
 
-If OneDrive is in a non-standard location:
-
-```bash
-# Check current settings
-ccu config show
-
-# Set custom OneDrive path
-ccu config set-db-path /mnt/e/MyOneDrive/.claude-goblin/usage_history.db
-
-# Set friendly machine name
-ccu config set-machine-name "Home-Desktop"
-```
+1. Config file setting (if manually set via `ccu config set-db-path`)
+2. Environment variable `CLAUDE_GOBLIN_DB_PATH`
+3. OneDrive auto-detection (WSL2: `/mnt/*/OneDrive/.claude-goblin/`)
+4. iCloud Drive auto-detection (macOS: `~/Library/Mobile Documents/com~apple~CloudDocs/.claude-goblin/`)
+5. Local fallback (`~/.claude/usage/`)
 
 ### Supported Cloud Storage
 
 - ✅ **OneDrive** (Windows/WSL2) - Auto-detected on drives C:, D:, E:, F:
-- ✅ **iCloud Drive** (macOS) - Auto-detected at `~/Library/Mobile Documents/com~apple~CloudDocs/`
-- ⚙️ **Custom paths** - Any path via `ccu config set-db-path`
+- ✅ **iCloud Drive** (macOS) - Auto-detected automatically
+- ⚙️ **Custom paths** - Any path via `ccu config set-db-path <path>`
 
-### How It Works
+### Deduplication
 
-1. **Database Location Priority**:
-   - Config file setting (if set manually)
-   - Environment variable `CLAUDE_GOBLIN_DB_PATH`
-   - OneDrive auto-detection (WSL2: `/mnt/*/OneDrive`)
-   - iCloud Drive auto-detection (macOS)
-   - Local fallback (`~/.claude/usage/`)
+SQLite UNIQUE constraint on `(session_id, message_uuid)` prevents duplicates - multiple PCs can safely write to the same database.
 
-2. **Automatic Deduplication**:
-   - Each record has unique `(session_id, message_uuid)`
-   - SQLite UNIQUE constraint prevents duplicates
-   - Multiple PCs can safely write to same database
-
-## Project Anonymization
-
-The `--anon` flag anonymizes project names when displaying usage data, perfect for sharing screenshots:
-
-```bash
-ccu --anon
-ccu heatmap --anon
-```
-
-Projects are renamed to `project-001`, `project-002`, etc., ranked by total token usage (project-001 has the highest usage).
+---
 
 ## What It Tracks
 
-- **Tokens**: Input, output, cache creation, cache read (by model and project)
-- **Prompts**: User prompts and assistant responses
-- **Sessions**: Unique conversation threads
-- **Models**: Which Claude models you've used (Sonnet, Opus, Haiku)
-- **Projects**: Folders/directories where you've used Claude
-- **Time**: Daily, hourly, monthly activity patterns throughout the year
-- **Usage Limits**: Real-time session, weekly, and Opus limits with automatic background updates
-- **Devices**: Per-machine statistics (machine name, tokens, cost, date range)
-- **Costs**: Estimated API costs for each limit period (session, weekly, Opus)
+- **Tokens** - Input, output, cache creation, cache read (by model and project)
+- **Models** - Claude Sonnet, Opus, Haiku usage breakdown
+- **Projects** - Folders/directories where you've used Claude Code
+- **Sessions** - Unique conversation threads
+- **Time Patterns** - Hourly, daily, monthly, yearly activity
+- **Usage Limits** - Real-time session, weekly, and Opus limits with background updates
+- **Devices** - Per-machine statistics (machine name, tokens, cost, date range)
+- **Cost Estimates** - Calculate equivalent API costs vs Claude Pro subscription
 
-It will also compute how much you would have had to pay if you used API pricing instead of a $200 Max plan.
+High "Cache Read" percentages (80-90%+) indicate efficient context reuse, which speeds up responses and reduces costs.
 
-## Technical Details
+---
 
-### Interactive Dashboard Implementation
+## Technical Implementation
 
-The dashboard uses multiple advanced features:
+### Real-time Updates
 
-**File Watching (Default Mode)**
-- Uses `watchdog` library to monitor `~/.claude/projects/*.jsonl` files
+**File Watching (Default)**
+- Uses `watchdog` library to monitor `~/.claude/projects/*.jsonl`
 - Updates dashboard automatically when Claude Code creates/modifies logs
-- More efficient than polling as it only updates on actual file changes
+- More efficient than polling
 
-**Periodic Refresh Mode** (`--refresh=N`)
+**Periodic Refresh** (`--refresh=N`)
 - Updates every N seconds via polling
-- Good for environments where file watching might not work reliably
+- Fallback for environments where file watching doesn't work
 
-**Background Threads**
-- Limits updater thread: Updates usage limits at configurable interval (default: 60 seconds)
-- Keyboard listener thread: Handles mode switching without blocking dashboard
-- Non-blocking architecture allows instant mode switching
+### Background Threads
 
-**Configurable Intervals**
-- `--watch-interval=N`: File watch check interval in seconds (default: 60)
-- `--limits-interval=N`: Usage limits update interval in seconds (default: 60)
-- Example: `ccu --watch-interval=30 --limits-interval=120`
-
-**Weekly Date Filtering**
-- Parses Claude's `/usage` week reset date (e.g., "Oct 17, 10am (Asia/Seoul)")
-- Filters records to current 7-day limit period
-- Shows only relevant data for current week limit
-
-**View Mode System**
-- Multiple display modes with instant switching
-- Time offset navigation for monthly/yearly modes (`<` / `>` keys)
-- Mode-specific breakdowns (daily/hourly for weekly, project/daily for monthly, etc.)
+- **Limits updater** - Fetches usage limits every 60 seconds (configurable)
+- **Keyboard listener** - Non-blocking input handling for instant mode switching
+- **File watcher** - Monitors JSONL files for changes
 
 ### Timezone Handling
 
-All timestamps in Claude Code's JSONL files are stored in **UTC**. Claude Goblin converts to your **local timezone** when grouping activity by date.
+Claude Code stores timestamps in **UTC**. This tool converts to your **local timezone** automatically:
+- Auto-detect from `/etc/timezone` (Linux/WSL)
+- Configurable in settings menu (press `s` in dashboard)
+- Support for 'auto' mode, UTC, and IANA timezones
 
-**Features:**
-- Auto-detect system timezone from `/etc/timezone` (Linux/WSL)
-- Configurable timezone in settings menu (setting #11)
-- Support for 'auto' mode, UTC, and common IANA timezones
-- Display times in local timezone throughout the dashboard
+### Weekly Date Filtering
 
-### Cache Efficiency
+Parses Claude's `/usage` reset dates (e.g., "Oct 17, 10am (Asia/Seoul)") and filters data to match the current 7-day limit period shown in Claude Code.
 
-The token breakdown shows cache efficiency. High "Cache Read" percentages (80-90%+) mean Claude Code is effectively reusing context, which:
-- Speeds up responses
-- Can reduce costs on usage-based plans
-- Indicates good context management
+---
 
 ## Requirements
 
-- Python >= 3.10
-- Claude Code (for generating usage data)
-- Rich >= 13.7.0 (terminal UI)
-- Typer >= 0.9.0 (CLI framework)
-- watchdog >= 3.0.0 (file watching for real-time dashboard updates)
+- **Python** >= 3.10
+- **Claude Code** (for generating usage data)
+- **Dependencies:**
+  - `rich` >= 13.7.0 - Terminal UI framework
+  - `typer` >= 0.9.0 - CLI framework
+  - `watchdog` >= 3.0.0 - File system monitoring
 
-## License
-
-MIT License - see LICENSE file for details
-
-## Contributing
-
-Contributions welcome! Please:
-1. Fork the repository
-2. Create a feature branch
-3. Submit a pull request
+---
 
 ## Troubleshooting
 
@@ -367,22 +337,60 @@ Contributions welcome! Please:
 
 ### Limits showing "Could not parse usage data"
 - Run `claude` in a trusted folder first
-- Claude needs folder trust to display usage limits
+- Claude needs folder trust to display `/usage` data
 
 ### Database errors
-- Try resetting: `ccu reset-db --force`
-- Then run: `ccu` to rebuild from current data
+```bash
+ccu reset-db --force  # Reset database
+ccu                   # Rebuild from current data
+```
+
+### Multi-PC sync not working
+```bash
+ccu config show  # Check detected database path
+ccu config set-db-path /path/to/OneDrive/.claude-goblin/usage_history.db
+```
+
+---
+
+## Project Anonymization
+
+Perfect for sharing screenshots publicly:
+
+```bash
+ccu --anon         # Anonymize in dashboard
+ccu heatmap --anon # Anonymize in heatmap
+```
+
+Projects are renamed to `project-001`, `project-002`, etc., ranked by total token usage (highest usage = project-001).
+
+---
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details
+
+---
+
+## Contributing
+
+Contributions welcome!
+
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
+
+---
 
 ## Credits
 
 **Original Project:** [claude-goblin](https://github.com/data-goblin/claude-goblin) by Kurt Buhler
 
-Built with:
+**Built with:**
 - [Rich](https://github.com/Textualize/rich) - Terminal UI framework
 - [Typer](https://github.com/tiangolo/typer) - CLI framework
 - [Watchdog](https://github.com/gorakhargosh/watchdog) - File system monitoring
 
 ---
 
-## **AI Tools Disclaimer**:
-This project was developed with assistance from Claude Code.
+**AI Tools Disclaimer:** This project was developed with assistance from Claude Code.
