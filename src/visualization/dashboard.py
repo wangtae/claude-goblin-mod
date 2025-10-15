@@ -435,8 +435,6 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
             sections_to_render.append(("project", project_breakdown))
             daily_breakdown_weekly = _create_daily_breakdown_weekly(records)
             sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
-            hourly_breakdown = _create_hourly_breakdown(records)
-            sections_to_render.append(("hourly", hourly_breakdown))
         elif view_mode == "monthly":
             project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
@@ -1235,6 +1233,7 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
     return Panel(
         table,
         title="[bold]Daily Usage",
+        subtitle="[dim]Press number keys (1-7) to view detailed hourly breakdown[/dim]",
         border_style="white",
         expand=True,
     )
