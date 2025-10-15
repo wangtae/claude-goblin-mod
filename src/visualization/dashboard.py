@@ -192,20 +192,9 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         # 0 = M1 (no border, bar+%), 1 = M2 (no border, separate %), 2 = M3 (border, bar+%), 3 = M4 (border, separate %)
 
         # Get color mode and colors from view_mode_ref
+        from src.config.defaults import DEFAULT_COLORS
         color_mode = view_mode_ref.get('color_mode', 'gradient') if view_mode_ref else 'gradient'
-        colors = view_mode_ref.get('colors', {
-            "solid": "#00A7E1",
-            "gradient_low": "#00C853",
-            "gradient_mid": "#FFD600",
-            "gradient_high": "#FF1744",
-            "unfilled": "#424242",
-        }) if view_mode_ref else {
-            "solid": "#00A7E1",
-            "gradient_low": "#00C853",
-            "gradient_mid": "#FFD600",
-            "gradient_high": "#FF1744",
-            "unfilled": "#424242",
-        }
+        colors = view_mode_ref.get('colors', DEFAULT_COLORS) if view_mode_ref else DEFAULT_COLORS
 
         # Determine bar width and style based on mode
         is_m1_mode = usage_display_mode == 0
@@ -717,20 +706,9 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
             weekly_opus_cost = _calculate_weekly_opus_cost(records)  # Weekly, opus only
 
             # Get color mode and colors from view_mode_ref
+            from src.config.defaults import DEFAULT_COLORS
             color_mode = view_mode_ref.get('color_mode', 'gradient') if view_mode_ref else 'gradient'
-            colors = view_mode_ref.get('colors', {
-                "solid": "#00A7E1",
-                "gradient_low": "#00C853",
-                "gradient_mid": "#FFD600",
-                "gradient_high": "#FF1744",
-                "unfilled": "#424242",
-            }) if view_mode_ref else {
-                "solid": "#00A7E1",
-                "gradient_low": "#00C853",
-                "gradient_mid": "#FFD600",
-                "gradient_high": "#FF1744",
-                "unfilled": "#424242",
-            }
+            colors = view_mode_ref.get('colors', DEFAULT_COLORS) if view_mode_ref else DEFAULT_COLORS
 
             # Calculate bar width based on terminal width (same as usage mode)
             terminal_width = console.width if console else 120

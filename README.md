@@ -47,7 +47,7 @@ That's it! The interactive dashboard will open with all your Claude Code usage d
 - 📊 **Interactive Dashboard** - All features accessible via keyboard shortcuts (no complex CLI commands)
 - 🔄 **Real-time Updates** - Automatic file watching when Claude Code creates new logs
 - 📅 **Long-term Tracking** - Preserves usage data beyond Claude Code's 30-day limit
-- 🌐 **Multi-PC Sync** - Automatic OneDrive/iCloud Drive detection for seamless multi-computer tracking
+- 🌐 **Multi-PC Sync** - Automatic cloud storage detection for seamless multi-computer tracking (OneDrive for WSL2/Windows, iCloud Drive for macOS)
 - 🖥️ **Per-Machine Stats** - Track usage breakdown across different computers
 
 ### View Modes (All In-Dashboard)
@@ -63,7 +63,7 @@ Access via keyboard shortcuts - no separate commands needed:
 
 ### This Fork's Enhancements
 
-- ✅ **Automatic OneDrive/iCloud Detection** - Zero-config multi-PC sync
+- ✅ **Automatic Cloud Storage Detection** - OneDrive (WSL2/Windows) or iCloud Drive (macOS) with zero-config
 - ✅ **Timezone Support** - Auto-detect system timezone with configurable settings
 - ✅ **Streamlined Codebase** - Removed unused features (hooks, status bar, export)
 - ✅ **Configuration Management** - Simple config system for database path and machine names
@@ -75,9 +75,22 @@ Access via keyboard shortcuts - no separate commands needed:
 
 All screenshots show the interactive TUI dashboard with real-time data and keyboard navigation.
 
+### 0. VSCode Integration - Terminal Usage
+
+![VSCode Usage](docs/images/00_vscode-usages.png)
+
+**Key Features:**
+- Runs seamlessly in VSCode's integrated terminal
+- Works in compact window sizes (minimal vertical space needed)
+- Supports various VSCode color themes
+- Full keyboard navigation without leaving the editor
+- Real-time updates while coding
+
+**Use Case:** Monitor Claude Code usage without switching applications
+
 ### 1. Usage Mode - Real-time Limits
 
-![Usage Mode](docs/images/01_vscode-usages.png)
+![Usage Mode](docs/images/01_usages.png)
 
 **Key Features:**
 - Current session usage (5-hour window) with reset countdown
@@ -176,7 +189,7 @@ All screenshots show the interactive TUI dashboard with real-time data and keybo
 - Device names (customizable via settings)
 - Token and cost totals per device
 - Date range for each device's activity
-- Useful for multi-PC setups with OneDrive/iCloud sync
+- Useful for multi-PC setups with cloud storage sync (OneDrive on WSL2/Windows, iCloud Drive on macOS)
 
 **Keyboard:** `d` to switch to this view
 
@@ -391,7 +404,9 @@ graph TD
 
 ## Multi-PC Synchronization
 
-This fork automatically detects OneDrive and iCloud Drive for seamless multi-PC tracking.
+This fork automatically detects cloud storage for seamless multi-PC tracking:
+- **OneDrive** (WSL2/Windows) - Automatically detected on `/mnt/c|d|e|f/OneDrive`
+- **iCloud Drive** (macOS) - Automatically detected in `~/Library/Mobile Documents/com~apple~CloudDocs`
 
 ### Zero-Configuration Setup
 
@@ -415,11 +430,16 @@ ccu
 4. iCloud Drive auto-detection (macOS: `~/Library/Mobile Documents/com~apple~CloudDocs/.claude-goblin/`)
 5. Local fallback (`~/.claude/usage/`)
 
-### Supported Cloud Storage
+### Supported Cloud Storage by Platform
 
-- ✅ **OneDrive** (Windows/WSL2) - Auto-detected on drives C:, D:, E:, F:
-- ✅ **iCloud Drive** (macOS) - Auto-detected automatically
-- ⚙️ **Custom paths** - Any path via `ccu config set-db-path <path>`
+| Platform | Cloud Storage | Detection Path | Status |
+|----------|---------------|----------------|--------|
+| **WSL2** | OneDrive | `/mnt/c/d/e/f/OneDrive/.claude-goblin/` | ✅ Auto-detected |
+| **Windows** | OneDrive | (via WSL2 mount) | ✅ Auto-detected |
+| **macOS** | iCloud Drive | `~/Library/Mobile Documents/com~apple~CloudDocs/.claude-goblin/` | ✅ Auto-detected |
+| **All** | Custom Path | Any location | ⚙️ Via `ccu config set-db-path` |
+
+**Note**: iCloud Drive only works on macOS. OneDrive is for WSL2/Windows users.
 
 ### Deduplication
 
