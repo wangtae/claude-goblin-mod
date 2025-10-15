@@ -1475,8 +1475,8 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     hourly_table.add_column("Cache Read", style="magenta", justify="right", width=14)
     hourly_table.add_column("Messages", style="white", justify="right", width=10)
 
-    # Sort by hour (ascending order for daily detail - chronological)
-    sorted_hours = sorted(hourly_data.items())
+    # Sort by hour in descending order (most recent first) to show current work at top
+    sorted_hours = sorted(hourly_data.items(), reverse=True)
 
     for hour, data in sorted_hours:
         hourly_table.add_row(
