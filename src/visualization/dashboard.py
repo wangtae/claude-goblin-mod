@@ -1446,9 +1446,13 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
         "messages": 0
     })
 
+    # Import timezone utilities
+    from src.utils.timezone import format_local_time
+
     for record in filtered_records:
         if record.token_usage:
-            hour = record.timestamp.strftime("%H:00")
+            # Convert UTC timestamp to local timezone for display
+            hour = format_local_time(record.timestamp, "%H:00")
             hourly_data[hour]["input_tokens"] += record.token_usage.input_tokens
             hourly_data[hour]["output_tokens"] += record.token_usage.output_tokens
             hourly_data[hour]["cache_creation"] += record.token_usage.cache_creation_tokens
@@ -1651,12 +1655,13 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
     if not is_updating:
         try:
             from src.storage.snapshot_db import get_database_stats
+            from src.utils.timezone import format_local_time
             db_stats = get_database_stats()
             if db_stats.get("newest_timestamp"):
                 timestamp_str = db_stats["newest_timestamp"]
                 try:
                     dt = datetime.fromisoformat(timestamp_str)
-                    last_update_time = dt.strftime("%H:%M:%S")
+                    last_update_time = format_local_time(dt, "%H:%M:%S")
                 except (ValueError, AttributeError):
                     pass
         except Exception:

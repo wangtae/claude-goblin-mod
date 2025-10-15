@@ -37,7 +37,7 @@ def run(console: Console) -> None:
         _display_settings_menu(console, prefs, machine_name, db_path)
 
         # Wait for user input
-        console.print("\n[dim]Enter setting number to edit (1-10), or press ESC to return...[/dim]", end="")
+        console.print("\n[dim]Enter setting number to edit (1-11), or press ESC to return...[/dim]", end="")
 
         key = _read_key()
 
@@ -48,6 +48,9 @@ def run(console: Console) -> None:
             _edit_setting(console, setting_num, prefs, save_user_preference)
         elif key == '0':  # Handle '10' as '0'
             setting_num = 10
+            _edit_setting(console, setting_num, prefs, save_user_preference)
+        elif key == '!':  # Handle '11' as '!'  (Shift+1)
+            setting_num = 11
             _edit_setting(console, setting_num, prefs, save_user_preference)
         elif key.lower() == 'i':
             handle_db_operation(console, "init")
@@ -104,6 +107,17 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
 
     color_mode = prefs.get('color_mode', 'gradient')
     status_table.add_row("Color Mode", "Solid" if color_mode == "solid" else "Gradient")
+
+    # Timezone display
+    from src.utils.timezone import get_user_timezone, get_timezone_info
+    tz_setting = prefs.get('timezone', 'auto')
+    actual_tz = get_user_timezone()
+    tz_info = get_timezone_info(actual_tz)
+    if tz_setting == 'auto':
+        tz_display = f"Auto ({tz_info['abbr']}, {tz_info['offset']})"
+    else:
+        tz_display = f"{tz_info['abbr']} ({tz_info['offset']})"
+    status_table.add_row("Display Timezone", tz_display)
 
     status_table.add_row("Machine Name", machine_name)
     status_table.add_row("Database Path", db_path)
@@ -172,6 +186,14 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     retention_days = get_backup_retention_days()
     settings_table.add_row("10", "Backup Retention (days)", str(retention_days))
 
+    # Timezone setting
+    tz_setting = prefs.get('timezone', 'auto')
+    if tz_setting == 'auto':
+        tz_value = f"Auto ({tz_info['abbr']})"
+    else:
+        tz_value = f"{tz_setting} ({tz_info['abbr']})"
+    settings_table.add_row("11", "Display Timezone", tz_value)
+
     settings_panel = Panel(
         settings_table,
         title="[bold]Settings (Editable)",
@@ -192,7 +214,7 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
 
     Args:
         console: Rich console for rendering
-        setting_num: Number of the setting to edit (1-10)
+        setting_num: Number of the setting to edit (1-11)
         prefs: Current preferences dictionary
         save_func: Function to save preference
     """
@@ -209,6 +231,11 @@ def _edit_setting(console: Console, setting_num: int, prefs: dict, save_func) ->
     # Handle backup settings separately (8, 9, 10)
     if setting_num in [8, 9, 10]:
         _edit_backup_setting(console, setting_num)
+        return
+
+    # Handle timezone setting separately (11)
+    if setting_num == 11:
+        _edit_timezone_setting(console, prefs, save_func)
         return
 
     if setting_num not in setting_map:
@@ -349,6 +376,98 @@ def _edit_backup_setting(console: Console, setting_num: int) -> None:
                     console.print("[red]✗ Invalid number[/red]")
         except (EOFError, KeyboardInterrupt):
             console.print("\n[yellow]Input cancelled[/yellow]")
+
+    console.print("\n[dim]Press any key to continue...[/dim]")
+    _read_key()
+
+
+def _edit_timezone_setting(console: Console, prefs: dict, save_func) -> None:
+    """
+    Edit timezone setting (11).
+
+    Args:
+        console: Rich console for rendering
+        prefs: Current preferences dictionary
+        save_func: Function to save preference
+    """
+    from src.utils.timezone import get_user_timezone, get_timezone_info, validate_timezone, list_common_timezones
+
+    console.print()
+    console.print("[bold]Edit Display Timezone[/bold]")
+
+    # Show current setting
+    current_tz = prefs.get('timezone', 'auto')
+    actual_tz = get_user_timezone()
+    tz_info = get_timezone_info(actual_tz)
+
+    if current_tz == 'auto':
+        console.print(f"[dim]Current: Auto ({tz_info['name']}, {tz_info['offset']})[/dim]")
+    else:
+        console.print(f"[dim]Current: {current_tz} ({tz_info['offset']})[/dim]")
+
+    console.print()
+    console.print("[dim]Select timezone option:[/dim]")
+    console.print("  [yellow][1][/yellow] Auto (system timezone detection)")
+    console.print("  [yellow][2][/yellow] UTC")
+    console.print("  [yellow][3][/yellow] Select from common timezones")
+    console.print("  [yellow][Enter][/yellow] Keep current setting")
+    console.print()
+    console.print("> ", end="")
+
+    try:
+        choice = console.input("").strip()
+
+        if not choice:
+            # Keep current
+            return
+
+        if choice == '1':
+            # Auto mode
+            save_func('timezone', 'auto')
+            console.print("[green]✓ Timezone set to Auto (system detection)[/green]")
+
+        elif choice == '2':
+            # UTC mode
+            save_func('timezone', 'UTC')
+            console.print("[green]✓ Timezone set to UTC[/green]")
+
+        elif choice == '3':
+            # Show common timezones
+            console.print()
+            console.print("[dim]Common timezones:[/dim]")
+            common_tzs = list_common_timezones()
+
+            for idx, tz in enumerate(common_tzs, start=1):
+                console.print(f"  [{idx:2d}] {tz['name']:25s} {tz['offset']}")
+
+            console.print()
+            console.print("[dim]Enter number (1-{}) or custom IANA timezone name:[/dim]".format(len(common_tzs)))
+            console.print("> ", end="")
+
+            tz_choice = console.input("").strip()
+
+            if tz_choice.isdigit():
+                # Numeric selection
+                idx = int(tz_choice)
+                if 1 <= idx <= len(common_tzs):
+                    selected_tz = common_tzs[idx - 1]['name']
+                    save_func('timezone', selected_tz)
+                    console.print(f"[green]✓ Timezone set to {selected_tz}[/green]")
+                else:
+                    console.print("[red]✗ Invalid selection[/red]")
+            elif tz_choice:
+                # Custom IANA name
+                if validate_timezone(tz_choice):
+                    save_func('timezone', tz_choice)
+                    console.print(f"[green]✓ Timezone set to {tz_choice}[/green]")
+                else:
+                    console.print("[red]✗ Invalid timezone name[/red]")
+
+        else:
+            console.print("[yellow]Invalid choice[/yellow]")
+
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[yellow]Input cancelled[/yellow]")
 
     console.print("\n[dim]Press any key to continue...[/dim]")
     _read_key()

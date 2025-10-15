@@ -244,6 +244,7 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
             ('machine_name', ''),                  # custom name or empty
             ('db_path', ''),                       # custom path or empty
             ('anonymize_projects', '0'),           # 0=off, 1=on
+            ('timezone', 'auto'),                  # auto | UTC | Asia/Seoul | ...
         ]
 
         for key, value in default_prefs:
@@ -1152,6 +1153,7 @@ def load_user_preferences(db_path: Path = DEFAULT_DB_PATH) -> dict:
         'machine_name': '',                  # custom name or empty
         'db_path': '',                       # custom path or empty
         'anonymize_projects': '0',           # 0=off, 1=on
+        'timezone': 'auto',                  # auto | UTC | Asia/Seoul | ...
     }
 
     if not db_path.exists():
