@@ -80,15 +80,25 @@ def _select_database_location(console: Console) -> Path | str | None:
     onedrive_path = None
 
     if platform.system() == "Linux" and "microsoft" in platform.release().lower():
-        # WSL2 - check for OneDrive
+        # WSL2 - check for OneDrive (prioritize external drives)
         username = os.getenv("USER")
-        for drive in ["c", "d", "e"]:
+
+        # Check external drives first (D:, E:, F:)
+        for drive in ["d", "e", "f"]:
             candidate = Path(f"/mnt/{drive}/OneDrive")
             if candidate.exists():
                 onedrive_path = candidate / ".claude-goblin" / "usage_history.db"
                 onedrive_available = True
                 break
 
+        # Check C: drive as fallback
+        if not onedrive_available:
+            candidate = Path("/mnt/c/OneDrive")
+            if candidate.exists():
+                onedrive_path = candidate / ".claude-goblin" / "usage_history.db"
+                onedrive_available = True
+
+        # Check C:/Users/{username}/OneDrive as last resort
         if not onedrive_available and username:
             candidate = Path(f"/mnt/c/Users/{username}/OneDrive")
             if candidate.exists():
@@ -156,13 +166,118 @@ def _select_database_location(console: Console) -> Path | str | None:
 
         if key in option_paths:
             console.print(key)
-            return option_paths[key]
+            selected_path = option_paths[key]
+
+            # If OneDrive was selected, ask for confirmation
+            if key == "1" and onedrive_available:
+                confirmed_path = _confirm_onedrive_path(console, selected_path)
+                if confirmed_path is None:
+                    return None  # User cancelled
+                return confirmed_path
+
+            return selected_path
 
         if key == custom_key:
             console.print(key)
             return _get_custom_path(console)
 
         console.print(f"\n[red]Invalid option. Please select 1-{len(options)} or ESC to cancel.[/red]\n")
+
+
+def _confirm_onedrive_path(console: Console, detected_path: Path) -> Path | None:
+    """
+    Confirm OneDrive path with user or allow modification.
+
+    Args:
+        console: Rich console for output
+        detected_path: Auto-detected OneDrive path
+
+    Returns:
+        Confirmed Path, custom Path, or None if cancelled
+    """
+    console.print()
+    console.print("[bold]Confirm OneDrive Path[/bold]")
+    console.print()
+    console.print("[dim]Detected OneDrive location:[/dim]")
+    console.print(f"  [cyan]{detected_path}[/cyan]")
+    console.print()
+    console.print("[dim]Is this correct?[/dim]")
+    console.print("  [green][y][/green] Yes, use this path")
+    console.print("  [yellow][n][/yellow] No, enter custom path")
+    console.print("  [dim][ESC] Cancel setup[/dim]")
+    console.print()
+
+    while True:
+        console.print("[dim]Your choice:[/dim] ", end="")
+        key = _read_key()
+
+        if key == '\x1b':  # ESC
+            console.print("[yellow]Cancelled[/yellow]")
+            return None
+
+        if key.lower() == 'y':
+            console.print(key)
+            console.print(f"[green]✓ Using detected path[/green]")
+            return detected_path
+
+        if key.lower() == 'n':
+            console.print(key)
+            # Ask for custom OneDrive path
+            return _get_custom_onedrive_path(console)
+
+        console.print(f"\n[red]Invalid choice. Press 'y', 'n', or ESC.[/red]\n")
+
+
+def _get_custom_onedrive_path(console: Console) -> Path | None:
+    """
+    Get custom OneDrive path from user when auto-detection is wrong.
+
+    Returns:
+        Custom Path or None if cancelled
+    """
+    console.print()
+    console.print("[bold]Custom OneDrive Path[/bold]")
+    console.print("[dim]Enter the correct OneDrive directory path (not including .claude-goblin):[/dim]")
+    console.print("[dim]Example: /mnt/d/OneDrive[/dim]")
+    console.print()
+
+    try:
+        sys.stdout.write("> ")
+        sys.stdout.flush()
+        path_str = input().strip()
+
+        if not path_str:
+            console.print("[yellow]Cancelled[/yellow]")
+            return None
+
+        onedrive_root = Path(path_str)
+
+        # Validate that it's a directory
+        if not onedrive_root.exists():
+            console.print(f"[red]✗ Directory does not exist: {onedrive_root}[/red]")
+            console.print("[yellow]Please check the path and try running setup wizard again.[/yellow]")
+            return None
+
+        if not onedrive_root.is_dir():
+            console.print(f"[red]✗ Path is not a directory: {onedrive_root}[/red]")
+            return None
+
+        # Construct full DB path
+        db_path = onedrive_root / ".claude-goblin" / "usage_history.db"
+
+        # Try to create the directory
+        try:
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            console.print(f"[green]✓ Using custom OneDrive path: {db_path}[/green]")
+            return db_path
+        except (PermissionError, OSError) as e:
+            console.print(f"[red]✗ Cannot create directory: {e}[/red]")
+            console.print("[yellow]Please check permissions and try again.[/yellow]")
+            return None
+
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[yellow]Cancelled[/yellow]")
+        return None
 
 
 def _get_custom_path(console: Console) -> Path | None:

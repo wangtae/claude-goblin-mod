@@ -75,11 +75,14 @@ def get_storage_dir() -> Path:
         username = os.getenv("USER")
         onedrive_candidates = []
 
+        # Check external drives first (OneDrive is often on D:/E:/F: in WSL)
+        for drive in ["d", "e", "f"]:
+            onedrive_candidates.append(Path(f"/mnt/{drive}/OneDrive"))
+
+        # Check C: drive OneDrive folders last
+        onedrive_candidates.append(Path("/mnt/c/OneDrive"))
         if username:
             onedrive_candidates.append(Path(f"/mnt/c/Users/{username}/OneDrive"))
-
-        for drive in ["c", "d", "e", "f"]:
-            onedrive_candidates.append(Path(f"/mnt/{drive}/OneDrive"))
 
         for onedrive_base in onedrive_candidates:
             if onedrive_base.exists():
