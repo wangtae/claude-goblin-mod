@@ -25,30 +25,6 @@ Most features are accessed through keyboard shortcuts in the interactive dashboa
 
 ---
 
-## Quick Start
-
-```bash
-# Install pipx (if not already installed)
-sudo apt install pipx       # Ubuntu/Debian
-brew install pipx           # macOS
-
-# Configure PATH
-pipx ensurepath
-source ~/.bashrc
-
-# Clone and install
-git clone https://github.com/wangtae/claude-goblin-mod.git
-cd claude-goblin-mod
-pipx install -e .
-
-# Run from anywhere
-ccu
-```
-
-That's it! The interactive dashboard will open with all your Claude Code usage data.
-
----
-
 ## Features
 
 ### Core Functionality
@@ -222,6 +198,31 @@ All screenshots show the interactive TUI dashboard with real-time data and keybo
 
 > [!IMPORTANT]
 > This fork is installed from source, not PyPI. `pip install claude-goblin` installs the **original** version, not this fork!
+
+### Quick Install (Recommended)
+
+If you want to get started quickly, try these steps:
+
+```bash
+# Install pipx (if not already installed)
+sudo apt install pipx       # Ubuntu/Debian
+brew install pipx           # macOS
+
+# Configure PATH
+pipx ensurepath
+source ~/.bashrc
+
+# Clone and install
+git clone https://github.com/wangtae/claude-goblin-mod.git
+cd claude-goblin-mod
+pipx install -e .
+
+# Run from anywhere
+ccu
+```
+
+> [!NOTE]
+> These quick install steps have not been fully tested across all environments. If you encounter issues, please refer to the detailed installation methods below or customize the setup using Claude Code.
 
 ### Recommended: Global Install with pipx
 

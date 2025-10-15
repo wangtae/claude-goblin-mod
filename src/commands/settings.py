@@ -166,11 +166,18 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     settings_table.add_column("Setting", style="white", justify="left", width=30)
     settings_table.add_column("Value", style="cyan", justify="left")
 
-    settings_table.add_row("[#ff8800][1][/#ff8800]", "Solid Color", prefs.get('color_solid', DEFAULT_COLORS['color_solid']))
-    settings_table.add_row("[#ff8800][2][/#ff8800]", "Gradient Low (0-60%)", prefs.get('color_gradient_low', DEFAULT_COLORS['color_gradient_low']))
-    settings_table.add_row("[#ff8800][3][/#ff8800]", "Gradient Mid (60-85%)", prefs.get('color_gradient_mid', DEFAULT_COLORS['color_gradient_mid']))
-    settings_table.add_row("[#ff8800][4][/#ff8800]", "Gradient High (85-100%)", prefs.get('color_gradient_high', DEFAULT_COLORS['color_gradient_high']))
-    settings_table.add_row("[#ff8800][5][/#ff8800]", "Unfilled Color", prefs.get('color_unfilled', DEFAULT_COLORS['color_unfilled']))
+    # Color settings - display with actual color
+    color_solid = prefs.get('color_solid', DEFAULT_COLORS['color_solid'])
+    color_gradient_low = prefs.get('color_gradient_low', DEFAULT_COLORS['color_gradient_low'])
+    color_gradient_mid = prefs.get('color_gradient_mid', DEFAULT_COLORS['color_gradient_mid'])
+    color_gradient_high = prefs.get('color_gradient_high', DEFAULT_COLORS['color_gradient_high'])
+    color_unfilled = prefs.get('color_unfilled', DEFAULT_COLORS['color_unfilled'])
+
+    settings_table.add_row("[#ff8800][1][/#ff8800]", "Solid Color", f"[{color_solid}]{color_solid}[/{color_solid}]")
+    settings_table.add_row("[#ff8800][2][/#ff8800]", "Gradient Low (0-60%)", f"[{color_gradient_low}]{color_gradient_low}[/{color_gradient_low}]")
+    settings_table.add_row("[#ff8800][3][/#ff8800]", "Gradient Mid (60-85%)", f"[{color_gradient_mid}]{color_gradient_mid}[/{color_gradient_mid}]")
+    settings_table.add_row("[#ff8800][4][/#ff8800]", "Gradient High (85-100%)", f"[{color_gradient_high}]{color_gradient_high}[/{color_gradient_high}]")
+    settings_table.add_row("[#ff8800][5][/#ff8800]", "Unfilled Color", f"[{color_unfilled}]{color_unfilled}[/{color_unfilled}]")
 
     # Model pricing settings (read-only - edit src/config/defaults.py to change)
     from src.storage.snapshot_db import get_model_pricing_for_settings
