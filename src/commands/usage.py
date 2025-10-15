@@ -417,6 +417,12 @@ def run(console: Console, refresh: int | None = None, anon: bool = False, watch_
     except:
         pass  # Not a TTY or stdin not available
 
+    # Hide cursor for cleaner look
+    try:
+        console.show_cursor(False)
+    except:
+        pass  # Not a TTY
+
     # Check for --anon flag: CLI flag > DB setting
     # Load anonymize setting from DB
     from src.storage.snapshot_db import load_user_preferences
@@ -466,6 +472,12 @@ def run(console: Console, refresh: int | None = None, anon: bool = False, watch_
         traceback.print_exc()
         sys.exit(1)
     finally:
+        # Restore cursor
+        try:
+            console.show_cursor(True)
+        except:
+            pass
+
         # Always restore terminal settings before exiting
         if original_terminal_settings is not None:
             try:

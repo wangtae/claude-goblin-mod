@@ -19,14 +19,21 @@ Most features are accessed through keyboard shortcuts in the interactive dashboa
 ## Quick Start
 
 ```bash
-# Navigate to the fork directory
-cd /path/to/claude-goblin-mod
+# Install pipx (if not already installed)
+sudo apt install pipx       # Ubuntu/Debian
+brew install pipx           # macOS
 
-# Install dependencies
-pip install rich typer watchdog
+# Configure PATH
+pipx ensurepath
+source ~/.bashrc
 
-# Run the dashboard
-python3 -m src.cli
+# Clone and install
+git clone https://github.com/wangtae/claude-goblin-mod.git
+cd claude-goblin-mod
+pipx install -e .
+
+# Run from anywhere
+ccu
 ```
 
 That's it! The interactive dashboard will open with all your Claude Code usage data.
@@ -93,45 +100,96 @@ Per-machine statistics when using multi-PC synchronization.
 
 ## Installation
 
-> [!WARNING]
-> This fork is not yet published to PyPI. `pip install claude-goblin` installs the **original** version, not this fork!
+> [!IMPORTANT]
+> This fork is installed from source, not PyPI. `pip install claude-goblin` installs the **original** version, not this fork!
 
-### Option 1: Run from Source (Recommended)
+### Recommended: Global Install with pipx
+
+Install once with `pipx`, then use `ccu` from anywhere (no virtual environment needed):
 
 ```bash
-# Navigate to the fork directory
-cd /path/to/claude-goblin-mod
+# Install pipx (if not already installed)
+sudo apt install pipx       # Ubuntu/Debian
+brew install pipx           # macOS
+pip install --user pipx     # Other systems
 
-# Install dependencies only
-pip install rich typer watchdog
+# Configure PATH
+pipx ensurepath
+source ~/.bashrc  # or restart terminal
 
-# Run directly
-python3 -m src.cli  # Show dashboard
+# Clone and install
+git clone https://github.com/wangtae/claude-goblin-mod.git
+cd claude-goblin-mod
+pipx install -e .
+
+# Now you can use ccu anywhere
+ccu  # Works from any directory!
 ```
 
-### Option 2: Local Editable Install
+**Why pipx?**
+- ✅ **Isolated environment** - No dependency conflicts with other Python packages
+- ✅ **Global access** - Use `ccu` from any directory without activating virtual environments
+- ✅ **Editable mode** - Source code changes are immediately reflected (perfect for development)
+- ✅ **Clean uninstall** - `pipx uninstall claude-goblin-mod` removes everything
+- ✅ **Recommended by Python packaging community** for CLI tools
+
+### Alternative: Local Editable Install (pip)
+
+For systems where pipx is not available or if you prefer pip:
 
 ```bash
-cd /path/to/claude-goblin-mod
+# Clone the repository
+git clone https://github.com/wangtae/claude-goblin-mod.git
+cd claude-goblin-mod
 
 # Install in editable mode (creates ccu command)
 pip install -e .
 
 # Now you can use ccu anywhere
-ccu  # Show dashboard
+ccu  # Works from any directory!
 ```
 
-### Option 3: Shell Alias
+**Note**: On some systems (Ubuntu 24.04+), you may encounter an "externally-managed-environment" error. In this case, use pipx instead (recommended) or create a virtual environment (see next section).
 
-Add to `~/.bashrc` or `~/.zshrc`:
+**If `ccu: command not found`**, add `~/.local/bin` to your PATH:
 ```bash
-alias ccu='python3 -m src.cli'
-```
-
-Then reload:
-```bash
+# Add to ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.local/bin:$PATH"
 source ~/.bashrc
-ccu  # Works from any directory
+```
+
+### Alternative: Virtual Environment
+
+For completely isolated installation:
+
+```bash
+git clone https://github.com/wangtae/claude-goblin-mod.git
+cd claude-goblin-mod
+
+# Create and activate virtual environment
+python3 -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install in editable mode
+pip install -e .
+
+# Use (while venv is active)
+ccu
+```
+
+### Alternative: Run from Source (No Install)
+
+For quick testing without installation:
+
+```bash
+git clone https://github.com/wangtae/claude-goblin-mod.git
+cd claude-goblin-mod
+
+# Install dependencies only
+pip install -r requirements.txt
+
+# Run directly
+python3 -m src.cli
 ```
 
 ---

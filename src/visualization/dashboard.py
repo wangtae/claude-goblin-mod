@@ -158,9 +158,8 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     """
     # Optionally clear screen and reset cursor to top
     if clear_screen:
-        import os
-        # Use system clear command for complete terminal reset
-        os.system('clear')
+        # Clear screen but preserve scroll history
+        console.clear()
 
     # For heatmap mode, show heatmap instead of dashboard
     if view_mode == "heatmap":
