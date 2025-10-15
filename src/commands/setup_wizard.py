@@ -21,38 +21,42 @@ def run_setup_wizard(console: Console) -> bool:
     Returns:
         True if setup completed successfully, False if cancelled
     """
-    console.clear()
-    console.print()
-    console.print(Panel.fit(
-        "[bold cyan]Welcome to Claude Goblin![/bold cyan]\n\n"
-        "This wizard will help you configure your usage tracking.",
-        border_style="cyan"
-    ))
-    console.print()
+    try:
+        console.clear()
+        console.print()
+        console.print(Panel.fit(
+            "[bold cyan]Welcome to Claude Goblin![/bold cyan]\n\n"
+            "This wizard will help you configure your usage tracking.",
+            border_style="cyan"
+        ))
+        console.print()
 
-    # Step 1: Database location
-    db_path = _select_database_location(console)
-    if db_path is None:
-        return False  # User cancelled
+        # Step 1: Database location
+        db_path = _select_database_location(console)
+        if db_path is None:
+            return False  # User cancelled
 
-    # Step 2: Machine name (optional)
-    machine_name = _configure_machine_name(console)
-    if machine_name is None:
-        return False  # User cancelled
+        # Step 2: Machine name (optional)
+        machine_name = _configure_machine_name(console)
+        if machine_name is None:
+            return False  # User cancelled
 
-    # Save configuration
-    from src.config.user_config import set_db_path, set_machine_name
+        # Save configuration
+        from src.config.user_config import set_db_path, set_machine_name
 
-    if db_path != "auto":
-        set_db_path(str(db_path))
+        if db_path != "auto":
+            set_db_path(str(db_path))
 
-    if machine_name:
-        set_machine_name(machine_name)
+        if machine_name:
+            set_machine_name(machine_name)
 
-    # Show summary
-    _show_setup_summary(console, db_path, machine_name)
+        # Show summary
+        _show_setup_summary(console, db_path, machine_name)
 
-    return True
+        return True
+    except KeyboardInterrupt:
+        # Ctrl+C pressed - propagate to exit immediately
+        raise
 
 
 def _select_database_location(console: Console) -> Path | str | None:
@@ -157,31 +161,35 @@ def _select_database_location(console: Console) -> Path | str | None:
 
     # Get user choice
     while True:
-        console.print("[dim]Select an option:[/dim] ", end="")
-        key = _read_key()
+        try:
+            console.print("[dim]Select an option:[/dim] ", end="")
+            key = _read_key()
 
-        if key == '\x1b':  # ESC
-            console.print("[yellow]Cancelled[/yellow]")
-            return None
+            if key == '\x1b':  # ESC
+                console.print("[yellow]Cancelled[/yellow]")
+                return None
 
-        if key in option_paths:
-            console.print(key)
-            selected_path = option_paths[key]
+            if key in option_paths:
+                console.print(key)
+                selected_path = option_paths[key]
 
-            # If OneDrive was selected, ask for confirmation
-            if key == "1" and onedrive_available:
-                confirmed_path = _confirm_onedrive_path(console, selected_path)
-                if confirmed_path is None:
-                    return None  # User cancelled
-                return confirmed_path
+                # If OneDrive was selected, ask for confirmation
+                if key == "1" and onedrive_available:
+                    confirmed_path = _confirm_onedrive_path(console, selected_path)
+                    if confirmed_path is None:
+                        return None  # User cancelled
+                    return confirmed_path
 
-            return selected_path
+                return selected_path
 
-        if key == custom_key:
-            console.print(key)
-            return _get_custom_path(console)
+            if key == custom_key:
+                console.print(key)
+                return _get_custom_path(console)
 
-        console.print(f"\n[red]Invalid option. Please select 1-{len(options)} or ESC to cancel.[/red]\n")
+            console.print(f"\n[red]Invalid option. Please select 1-{len(options)} or ESC to cancel.[/red]\n")
+        except KeyboardInterrupt:
+            # Ctrl+C pressed - propagate to exit immediately
+            raise
 
 
 def _confirm_onedrive_path(console: Console, detected_path: Path) -> Path | None:
@@ -208,24 +216,28 @@ def _confirm_onedrive_path(console: Console, detected_path: Path) -> Path | None
     console.print()
 
     while True:
-        console.print("[dim]Your choice:[/dim] ", end="")
-        key = _read_key()
+        try:
+            console.print("[dim]Your choice:[/dim] ", end="")
+            key = _read_key()
 
-        if key == '\x1b':  # ESC
-            console.print("[yellow]Cancelled[/yellow]")
-            return None
+            if key == '\x1b':  # ESC
+                console.print("[yellow]Cancelled[/yellow]")
+                return None
 
-        if key.lower() == 'y':
-            console.print(key)
-            console.print(f"[green]✓ Using detected path[/green]")
-            return detected_path
+            if key.lower() == 'y':
+                console.print(key)
+                console.print(f"[green]✓ Using detected path[/green]")
+                return detected_path
 
-        if key.lower() == 'n':
-            console.print(key)
-            # Ask for custom OneDrive path
-            return _get_custom_onedrive_path(console)
+            if key.lower() == 'n':
+                console.print(key)
+                # Ask for custom OneDrive path
+                return _get_custom_onedrive_path(console)
 
-        console.print(f"\n[red]Invalid choice. Press 'y', 'n', or ESC.[/red]\n")
+            console.print(f"\n[red]Invalid choice. Press 'y', 'n', or ESC.[/red]\n")
+        except KeyboardInterrupt:
+            # Ctrl+C pressed - propagate to exit immediately
+            raise
 
 
 def _get_custom_onedrive_path(console: Console) -> Path | None:
@@ -398,7 +410,11 @@ def _show_setup_summary(console: Console, db_path: Path | str, machine_name: str
     console.print("[dim]  • Run 'ccu config show' to view current settings[/dim]")
     console.print()
     console.print("[green]Press any key to continue...[/green]")
-    _read_key()
+    try:
+        _read_key()
+    except KeyboardInterrupt:
+        # Ctrl+C pressed - propagate to exit immediately
+        raise
 
 
 def _read_key() -> str:

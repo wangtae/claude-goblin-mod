@@ -133,32 +133,41 @@ def main() -> None:
     Exit:
         Press Ctrl+C, [q], or [Esc] to exit
     """
-    # Check if first-time setup is needed
     try:
-        from src.commands.setup_wizard import should_run_setup_wizard, run_setup_wizard, mark_setup_completed
+        # Check if first-time setup is needed
+        try:
+            from src.commands.setup_wizard import should_run_setup_wizard, run_setup_wizard, mark_setup_completed
 
-        if should_run_setup_wizard():
-            setup_console = Console()
-            if run_setup_wizard(setup_console):
-                mark_setup_completed()
-            else:
-                # User cancelled setup, use defaults
-                setup_console.print("\n[yellow]Setup cancelled. Using default settings.[/yellow]")
-                setup_console.print("[dim]You can run 'ccu config show' to view settings anytime.[/dim]\n")
-                mark_setup_completed()
-    except Exception as e:
-        # If setup wizard fails, continue with defaults
-        console = Console()
-        console.print(f"[yellow]Setup wizard error (using defaults): {e}[/yellow]")
+            if should_run_setup_wizard():
+                setup_console = Console()
+                if run_setup_wizard(setup_console):
+                    mark_setup_completed()
+                else:
+                    # User cancelled setup, use defaults
+                    setup_console.print("\n[yellow]Setup cancelled. Using default settings.[/yellow]")
+                    setup_console.print("[dim]You can run 'ccu config show' to view settings anytime.[/dim]\n")
+                    mark_setup_completed()
+        except KeyboardInterrupt:
+            # Ctrl+C during setup - exit immediately
+            import sys
+            sys.exit(0)
+        except Exception as e:
+            # If setup wizard fails, continue with defaults
+            console = Console()
+            console.print(f"[yellow]Setup wizard error (using defaults): {e}[/yellow]")
 
-    # Auto-backup on program start (silent, won't block execution)
-    try:
-        from src.utils.backup import auto_backup
-        auto_backup()
-    except Exception:
-        pass  # Silently ignore backup errors
+        # Auto-backup on program start (silent, won't block execution)
+        try:
+            from src.utils.backup import auto_backup
+            auto_backup()
+        except Exception:
+            pass  # Silently ignore backup errors
 
-    app()
+        app()
+    except KeyboardInterrupt:
+        # Ctrl+C at any point - exit immediately without message
+        import sys
+        sys.exit(0)
 
 
 if __name__ == "__main__":

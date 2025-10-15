@@ -591,8 +591,8 @@ def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, original_t
     }
     stop_event = threading.Event()
 
-    # Start keyboard listener thread
-    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=False)
+    # Start keyboard listener thread (daemon=True for instant Ctrl+C exit)
+    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=True)
     keyboard_thread.start()
 
     # Start background limits updater thread
@@ -638,9 +638,8 @@ def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, original_t
         stop_event.set()
         raise
     finally:
-        # Ensure threads finish
+        # Signal threads to stop (daemon threads will exit automatically)
         stop_event.set()
-        keyboard_thread.join(timeout=1.0)
 
 
 def _run_watch_dashboard(jsonl_files: list[Path], console: Console, original_terminal_settings, skip_limits: bool = False, anonymize: bool = False, watch_interval: int = 60, limits_interval: int = 60) -> None:
@@ -711,8 +710,8 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, original_ter
     watcher = watch_claude_files()
     watcher.start()
 
-    # Start keyboard listener thread (NOT daemon so we can clean up properly)
-    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=False)
+    # Start keyboard listener thread (daemon=True for instant Ctrl+C exit)
+    keyboard_thread = threading.Thread(target=_keyboard_listener, args=(view_mode_ref, stop_event), daemon=True)
     keyboard_thread.start()
 
     try:
@@ -762,9 +761,8 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, original_ter
         watcher.stop()
         raise
     finally:
-        # Ensure threads finish
+        # Signal threads to stop (daemon threads will exit automatically)
         stop_event.set()
-        keyboard_thread.join(timeout=1.0)
 
 
 def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: bool = False, skip_limits_update: bool = False, anonymize: bool = False, view_mode: str = "usage", view_mode_ref: dict | None = None, show_status: bool = True) -> None:

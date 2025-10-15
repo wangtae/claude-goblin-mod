@@ -181,7 +181,7 @@ All screenshots show the interactive TUI dashboard with real-time data and keybo
 
 ### 9. Settings Menu - Configuration
 
-![Settings Menu](docs/images/09_settings.png?1)
+![Settings Menu](docs/images/09_settings.png?2)
 
 **Key Features:**
 - Color customization (solid colors and gradient ranges)

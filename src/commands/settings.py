@@ -146,6 +146,19 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     status_table.add_column("Status Item", style="white", justify="left", width=25)
     status_table.add_column("Value", style="cyan", justify="left")
 
+    # Program version
+    try:
+        import tomllib
+        from pathlib import Path
+        pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+        with open(pyproject_path, "rb") as f:
+            pyproject_data = tomllib.load(f)
+            version = pyproject_data.get("project", {}).get("version", "Unknown")
+    except Exception:
+        version = "0.2.0"  # Fallback version
+
+    status_table.add_row("Program Version", version)
+
     display_mode_names = ["M1 (simple, bar+%)", "M2 (simple, bar %)", "M3 (panel, bar+%)", "M4 (panel, bar %)"]
     display_mode = int(prefs.get('usage_display_mode', '0'))
     status_table.add_row("Display Mode", display_mode_names[display_mode] if 0 <= display_mode < 4 else "M1")
@@ -239,8 +252,6 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     settings_table.add_row("[#ff8800][3][/#ff8800]", f"Gradient Mid ({color_range_low}-{color_range_high}%)", f"[{color_gradient_mid}]{color_gradient_mid}[/{color_gradient_mid}]")
     settings_table.add_row("[#ff8800][4][/#ff8800]", f"Gradient High ({color_range_high}-100%)", f"[{color_gradient_high}]{color_gradient_high}[/{color_gradient_high}]")
     settings_table.add_row("[#ff8800][5][/#ff8800]", "Unfilled Color", f"[{color_unfilled}]{color_unfilled}[/{color_unfilled}]")
-    settings_table.add_row("[#ff8800][e][/#ff8800]", "Color Range Low (%)", color_range_low)
-    settings_table.add_row("[#ff8800][f][/#ff8800]", "Color Range High (%)", color_range_high)
 
     # Model pricing settings (read-only - edit src/config/defaults.py to change)
     from src.storage.snapshot_db import get_model_pricing_for_settings
@@ -285,6 +296,10 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
     else:
         tz_value = f"{tz_setting} ({tz_info['abbr']})"
     settings_table.add_row("[#ff8800]\\[d][/#ff8800]", "Display Timezone", tz_value)
+
+    # Color range settings (alphabetically after a-d)
+    settings_table.add_row("[#ff8800]\\[e][/#ff8800]", "Color Range Low (%)", color_range_low)
+    settings_table.add_row("[#ff8800]\\[f][/#ff8800]", "Color Range High (%)", color_range_high)
 
     # Empty row for spacing
     settings_table.add_row("", "", "")
