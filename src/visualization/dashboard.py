@@ -592,7 +592,8 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
                 sections_to_render.append(("weekly_calendar", weekly_breakdown))
             else:
                 # Show monthly breakdown (default)
-                monthly_breakdown = _create_monthly_breakdown(records)
+                target_year = view_mode_ref.get('target_year') if view_mode_ref else None
+                monthly_breakdown = _create_monthly_breakdown(records, summary=summary, target_year=target_year)
                 sections_to_render.append(("monthly", monthly_breakdown))
 
     # Render sections
@@ -1656,17 +1657,23 @@ def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
     )
 
 
-def _create_monthly_breakdown(records: list[UsageRecord]) -> Panel:
+def _create_monthly_breakdown(
+    records: list[UsageRecord],
+    summary: UsageSummary | None = None,
+    target_year: int | None = None,
+) -> Panel:
     """
     Create table showing monthly usage breakdown for yearly mode.
 
     Args:
         records: List of usage records
+        summary: Aggregated usage summary (used when records are scoped)
+        target_year: Year to display when using summary data
 
     Returns:
         Panel with monthly breakdown table
     """
-    from src.models.pricing import calculate_cost, format_cost
+    from src.models.pricing import format_cost
 
     # Aggregate by month (format: "YYYY-MM")
     monthly_data: dict[str, dict] = defaultdict(lambda: {
@@ -1678,32 +1685,57 @@ def _create_monthly_breakdown(records: list[UsageRecord]) -> Panel:
         "messages": 0
     })
 
-    for record in records:
-        if record.token_usage and record.timestamp:
-            timestamp = record.timestamp
-            if timestamp.tzinfo:
-                local_ts = timestamp.astimezone()
-            else:
-                local_ts = timestamp
+    use_summary = summary is not None and isinstance(target_year, int)
 
-            # Extract year-month from local timestamp
-            month = local_ts.strftime("%Y-%m")
+    if use_summary:
+        from datetime import datetime
 
-            monthly_data[month]["input_tokens"] += record.token_usage.input_tokens
-            monthly_data[month]["output_tokens"] += record.token_usage.output_tokens
-            monthly_data[month]["cache_creation"] += record.token_usage.cache_creation_tokens
-            monthly_data[month]["cache_read"] += record.token_usage.cache_read_tokens
-            monthly_data[month]["messages"] += 1
+        for date_str, totals in summary.daily.items():
+            try:
+                date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+            except ValueError:
+                continue
 
-            if record.model and record.model != "<synthetic>":
-                cost = calculate_cost(
-                    record.token_usage.input_tokens,
-                    record.token_usage.output_tokens,
-                    record.model,
-                    record.token_usage.cache_creation_tokens,
-                    record.token_usage.cache_read_tokens,
-                )
-                monthly_data[month]["cost"] += cost
+            if date_obj.year != target_year:
+                continue
+
+            month = date_obj.strftime("%Y-%m")
+            bucket = monthly_data[month]
+            bucket["input_tokens"] += totals.input_tokens
+            bucket["output_tokens"] += totals.output_tokens
+            bucket["cache_creation"] += totals.cache_creation_tokens
+            bucket["cache_read"] += totals.cache_read_tokens
+            bucket["messages"] += totals.total_responses
+            bucket["cost"] += totals.total_cost
+    else:
+        from src.models.pricing import calculate_cost
+
+        for record in records:
+            if record.token_usage and record.timestamp:
+                timestamp = record.timestamp
+                if timestamp.tzinfo:
+                    local_ts = timestamp.astimezone()
+                else:
+                    local_ts = timestamp
+
+                # Extract year-month from local timestamp
+                month = local_ts.strftime("%Y-%m")
+
+                monthly_data[month]["input_tokens"] += record.token_usage.input_tokens
+                monthly_data[month]["output_tokens"] += record.token_usage.output_tokens
+                monthly_data[month]["cache_creation"] += record.token_usage.cache_creation_tokens
+                monthly_data[month]["cache_read"] += record.token_usage.cache_read_tokens
+                monthly_data[month]["messages"] += 1
+
+                if record.model and record.model != "<synthetic>":
+                    cost = calculate_cost(
+                        record.token_usage.input_tokens,
+                        record.token_usage.output_tokens,
+                        record.model,
+                        record.token_usage.cache_creation_tokens,
+                        record.token_usage.cache_read_tokens,
+                    )
+                    monthly_data[month]["cost"] += cost
 
     if not monthly_data:
         return Panel(

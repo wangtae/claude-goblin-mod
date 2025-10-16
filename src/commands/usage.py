@@ -21,6 +21,7 @@ from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import (
     load_usage_summary,
     load_recent_usage_records,
+    load_all_devices_historical_records_cached,
     save_limits_snapshot,
     save_snapshot,
 )
@@ -1013,17 +1014,22 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     all_records = []
     limits_from_db = None
 
+    def _load_records_for_view() -> list:
+        if view_mode in {VIEW_MODE_WEEKLY, VIEW_MODE_MONTHLY, VIEW_MODE_YEARLY, VIEW_MODE_HEATMAP}:
+            return load_all_devices_historical_records_cached()
+        return load_recent_usage_records()
+
     # Step 3: Prepare dashboard from database (using cached version for performance)
     try:
         if show_status:
             status_text = "[bold #ff8800]Initial database setup may take a while. Please wait..." if first_time_setup else "[bold #ff8800]Preparing dashboard..."
             with console.status(status_text, spinner="dots", spinner_style="#ff8800"):
                 usage_summary = load_usage_summary()
-                all_records = load_recent_usage_records()
+                all_records = _load_records_for_view()
                 limits_from_db = get_latest_limits()
         else:
             usage_summary = load_usage_summary()
-            all_records = load_recent_usage_records()
+            all_records = _load_records_for_view()
             limits_from_db = get_latest_limits()
     except (sqlite3.Error, OSError) as exc:
         _handle_database_exception("Failed to load usage data.", exc)
