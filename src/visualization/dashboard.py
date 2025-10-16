@@ -1277,11 +1277,11 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
         day_name = date_obj.strftime("%a")  # Mon, Tue, Wed, etc.
 
         # Check if this is the reset day and add time annotation
-        # Combine shortcut and date with single space: [1] 2025-10-15 (Mon) [09:59]
+        # Combine shortcut and date with comma: [1] 2025-10-15, Mon [09:59]
         if reset_day and reset_time and day_name == reset_day:
-            date_with_shortcut = f"[yellow][{idx}][/yellow] {date} ({day_name}) [purple][{reset_time}][/purple]"
+            date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name} [purple][{reset_time}][/purple]"
         else:
-            date_with_shortcut = f"[yellow][{idx}][/yellow] {date} ({day_name})"
+            date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name}"
 
         # If no data for this day, show "-" for tokens/cost and empty bar
         if tokens == 0:
@@ -1305,10 +1305,17 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
             cost_display,
         )
 
+    # Create dynamic subtitle based on actual number of dates
+    num_dates = len(sorted_dates)
+    if num_dates > 0:
+        subtitle_text = f"[dim]Press number keys (1-{num_dates}) to view detailed hourly breakdown[/dim]"
+    else:
+        subtitle_text = None
+
     return Panel(
         table,
         title="[bold]Daily Usage",
-        subtitle="[dim]Press number keys (1-7) to view detailed hourly breakdown[/dim]",
+        subtitle=subtitle_text,
         border_style="white",
         expand=True,
     )
