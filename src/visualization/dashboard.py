@@ -411,7 +411,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         from src.storage.snapshot_db import load_all_devices_messages_by_hour
         hourly_messages = load_all_devices_messages_by_hour(daily_detail_date, hourly_detail_hour)
         show_full_content = view_mode_ref.get('show_full_content', False) if view_mode_ref else False
-        message_detail = _create_message_detail_view(hourly_messages, daily_detail_date, hourly_detail_hour, show_full_content)
+        message_detail = _create_message_detail_view(hourly_messages, daily_detail_date, hourly_detail_hour, show_full_content, view_mode_ref)
         sections_to_render.append(("message_detail", message_detail))
     elif daily_detail_date:
         # Daily detail mode - show only the detail view without KPI section
@@ -2213,7 +2213,7 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     return Group(hourly_panel, spacing, model_panel, spacing, project_panel)
 
 
-def _create_message_detail_view(records: list[UsageRecord], target_date: str, target_hour: int, show_full_content: bool = False) -> Group:
+def _create_message_detail_view(records: list[UsageRecord], target_date: str, target_hour: int, show_full_content: bool = False, view_mode_ref: dict | None = None) -> Group:
     """
     Create detailed view for messages in a specific hour.
 
@@ -2221,6 +2221,8 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
         records: List of usage records for the target hour
         target_date: Target date in YYYY-MM-DD format (e.g., "2025-10-15")
         target_hour: Target hour in 24-hour format (0-23)
+        show_full_content: If True, show full message content; if False, show brief preview
+        view_mode_ref: Reference dict to track last viewed message ID
 
     Returns:
         Group containing message detail table and content previews
@@ -2255,6 +2257,28 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
     # Build list of message items (each is a small table with optional content)
     message_items = []
 
+    # Track last viewed message ID for auto-refresh separator
+    # Get the stored last_viewed_message_id from view_mode_ref
+    last_viewed_message_id = None
+    if view_mode_ref:
+        # Create a unique key for this specific hour view (date + hour)
+        hour_key = f"{target_date}_{target_hour}"
+        last_viewed_key = f"last_viewed_message_id_{hour_key}"
+        last_viewed_message_id = view_mode_ref.get(last_viewed_key)
+
+    # Find if we need to add separator: check if last_viewed_message_id exists in current records
+    found_last_viewed = False
+    add_separator_before_next = False
+    if last_viewed_message_id:
+        # Check if the last viewed message exists in current records
+        all_message_uuids = []
+        for session_id, session_records in sessions.items():
+            for record in session_records:
+                all_message_uuids.append(record.message_uuid)
+
+        if last_viewed_message_id in all_message_uuids:
+            found_last_viewed = True
+
     # Process each session
     for session_idx, (session_id, session_records) in enumerate(sessions.items()):
         # Add session separator (except before first session)
@@ -2263,6 +2287,20 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
 
         # Add each message in the session
         for record in session_records:
+            # Check if we should add separator before this message
+            if found_last_viewed and add_separator_before_next:
+                # Add separator line before this new message
+                separator_line = Text("─" * 100, style="dim")
+                message_items.append(Text(""))  # Empty line before separator
+                message_items.append(separator_line)
+                message_items.append(Text(""))  # Empty line after separator
+                add_separator_before_next = False  # Only add once
+
+            # Check if this is the last viewed message
+            if found_last_viewed and record.message_uuid == last_viewed_message_id:
+                # Next message should have separator before it
+                add_separator_before_next = True
+
             # Format time (HH:MM:SS in local timezone)
             time_str = format_local_time(record.timestamp, "%H:%M:%S", user_tz)
 
@@ -2385,6 +2423,14 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
         border_style="white",
         expand=True,
     )
+
+    # Update last_viewed_message_id to the last message in the current view
+    if view_mode_ref and records:
+        # Get the last message UUID (records are already sorted by timestamp)
+        last_message = records[-1]
+        hour_key = f"{target_date}_{target_hour}"
+        last_viewed_key = f"last_viewed_message_id_{hour_key}"
+        view_mode_ref[last_viewed_key] = last_message.message_uuid
 
     return Group(panel)
 
