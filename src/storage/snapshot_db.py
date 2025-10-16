@@ -22,6 +22,10 @@ _CACHE_EXPIRY_SECONDS = 60
 _device_records_cache: dict[str, dict] = {}
 _merged_records_cache: list[UsageRecord] | None = None
 
+# Cache for database stats (expensive query with model pricing joins)
+_database_stats_cache: dict | None = None
+_database_stats_cache_time: float = 0
+
 def _try_create_folder(path: Path) -> bool:
     """
     Try to create folder. Return True if successful or already exists.
@@ -1864,6 +1868,8 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
     """
     Get statistics about the historical database.
 
+    Results are cached for 60 seconds to avoid expensive queries on every render.
+
     Args:
         db_path: Path to the SQLite database file
 
@@ -1874,6 +1880,17 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
         - tokens_by_model: dict of model -> token count
         - avg_tokens_per_session, avg_tokens_per_prompt
     """
+    global _database_stats_cache, _database_stats_cache_time
+    import time
+
+    # Check cache validity
+    current_time = time.time()
+    cache_age = current_time - _database_stats_cache_time
+
+    if _database_stats_cache is not None and cache_age < _CACHE_EXPIRY_SECONDS:
+        return _database_stats_cache
+
+    # Cache miss or expired - fetch fresh data
     if not db_path.exists():
         return {
             "total_records": 0,
@@ -1991,7 +2008,7 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
         avg_cost_per_session = total_cost / total_sessions if total_sessions > 0 else 0
         avg_cost_per_response = total_cost / total_responses if total_responses > 0 else 0
 
-        return {
+        result = {
             "total_records": total_records,
             "total_days": total_days,
             "oldest_date": oldest_date,
@@ -2009,6 +2026,12 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
             "avg_cost_per_session": round(avg_cost_per_session, 2),
             "avg_cost_per_response": round(avg_cost_per_response, 4),
         }
+
+        # Update cache
+        _database_stats_cache = result
+        _database_stats_cache_time = current_time
+
+        return result
     finally:
         conn.close()
 
