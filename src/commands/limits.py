@@ -136,12 +136,7 @@ def capture_limits() -> dict | None:
 
         return None
 
-    except Exception as e:
-        # Debug: print the error to help diagnose issues
-        import sys
-        print(f"[DEBUG] capture_limits failed: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc(file=sys.stderr)
+    except Exception:
         return None
 
 

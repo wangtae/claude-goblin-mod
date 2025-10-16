@@ -126,9 +126,7 @@ def _parse_week_reset_date(week_reset_str: str) -> datetime | None:
             return utc_dt.replace(tzinfo=None)
 
         return None
-    except Exception as e:
-        import sys
-        print(f"[DEBUG] _parse_week_reset_date failed: {e}, input: {week_reset_str}", file=sys.stderr)
+    except Exception:
         return None
 
 
@@ -253,10 +251,6 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
     import sys
     import tty
     import termios
-    import os
-
-    # Enable debug mode with environment variable: DEBUG_ARROWS=1
-    debug_arrows = os.environ.get('DEBUG_ARROWS', '0') == '1'
 
     # Save terminal settings
     old_settings = termios.tcgetattr(sys.stdin)
@@ -272,9 +266,6 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
 
                 # Check for arrow keys (escape sequences)
                 if key == '\x1b':  # ESC
-                    if debug_arrows:
-                        print(f"\n[DEBUG] Got ESC, reading sequence...", file=sys.stderr)
-
                     # Read the rest of the escape sequence
                     # Arrow keys send: ESC [ A/B/C/D
                     # Wait a bit longer for the rest of the sequence to arrive
@@ -284,18 +275,11 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                             remaining.append(sys.stdin.read(1))
                         else:
                             # Timeout - might be a plain ESC press
-                            if debug_arrows:
-                                print(f"[DEBUG] Timeout reading sequence", file=sys.stderr)
                             break
-
-                    if debug_arrows:
-                        print(f"[DEBUG] Remaining: {[repr(c) for c in remaining]}, len={len(remaining)}", file=sys.stderr)
 
                     # Check if it's an arrow key
                     if len(remaining) == 2 and remaining[0] == '[':
                         arrow = remaining[1]
-                        if debug_arrows:
-                            print(f"[DEBUG] Arrow key: {repr(arrow)}, mode={view_mode_ref['mode']}", file=sys.stderr)
 
                         if arrow == 'D':  # Left arrow
                             # Go to previous period
@@ -303,8 +287,6 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                                 old_offset = view_mode_ref.get('offset', 0)
                                 view_mode_ref['offset'] = old_offset - 1
                                 view_mode_ref['changed'] = True
-                                if debug_arrows:
-                                    print(f"[DEBUG] Left arrow: offset {old_offset} -> {view_mode_ref['offset']}", file=sys.stderr)
                             continue  # Skip the rest of the key processing
                         elif arrow == 'C':  # Right arrow
                             # Go to next period (don't go beyond current)
@@ -313,10 +295,6 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                                 if current_offset < 0:  # Only allow if we're in the past
                                     view_mode_ref['offset'] = current_offset + 1
                                     view_mode_ref['changed'] = True
-                                    if debug_arrows:
-                                        print(f"[DEBUG] Right arrow: offset {current_offset} -> {view_mode_ref['offset']}", file=sys.stderr)
-                                elif debug_arrows:
-                                    print(f"[DEBUG] Right arrow: already at present (offset={current_offset})", file=sys.stderr)
                             continue  # Skip the rest of the key processing
 
                     # If we got here, it's a plain ESC press (not arrow key)
@@ -1014,10 +992,6 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     # Get time offset from view_mode_ref
     time_offset = view_mode_ref.get('offset', 0) if view_mode_ref else 0
 
-    # Debug: Time measurement for performance analysis
-    import time as time_module
-    t_start = time_module.time()
-
     # Apply view mode filter
     display_records = all_records
     if view_mode == VIEW_MODE_WEEKLY and limits_from_db and limits_from_db.get("week_reset"):
@@ -1137,22 +1111,12 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     if anonymize:
         display_records = _anonymize_projects(display_records)
 
-    t_filter = time_module.time()
-    print(f"[DEBUG] Filter time: {(t_filter - t_start)*1000:.1f}ms", file=sys.stderr)
-
     # Aggregate statistics with caching
     stats = _aggregate_with_cache(display_records, view_mode, time_offset)
-
-    t_aggregate = time_module.time()
-    print(f"[DEBUG] Aggregate time: {(t_aggregate - t_filter)*1000:.1f}ms", file=sys.stderr)
 
     # Render dashboard with limits from DB (no live fetch needed)
     # Note: fast_mode is always False to avoid showing warning message
     render_dashboard(stats, display_records, console, skip_limits=True, clear_screen=True, date_range=date_range, limits_from_db=limits_from_db, fast_mode=False, view_mode=view_mode, view_mode_ref=view_mode_ref)
-
-    t_render = time_module.time()
-    print(f"[DEBUG] Render time: {(t_render - t_aggregate)*1000:.1f}ms", file=sys.stderr)
-    print(f"[DEBUG] TOTAL time: {(t_render - t_start)*1000:.1f}ms", file=sys.stderr)
 
 
 def _aggregate_with_cache(display_records: list, view_mode: str, time_offset: int):
