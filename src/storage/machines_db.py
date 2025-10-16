@@ -50,9 +50,9 @@ def init_machines_db(db_path: Optional[Path] = None) -> None:
     try:
         cursor = conn.cursor()
 
-        # Enable WAL mode for consistency with other DBs
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")
+        # Use DELETE mode for OneDrive compatibility
+        cursor.execute("PRAGMA journal_mode=DELETE")
+        cursor.execute("PRAGMA synchronous=FULL")
 
         # Create machines table
         cursor.execute("""

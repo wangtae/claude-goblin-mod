@@ -49,16 +49,21 @@ def _get_device_cache_dir() -> Optional[Path]:
     """
     Return the directory for device cache files, creating it if possible.
 
+    Uses machine-specific subdirectories to prevent cache conflicts
+    across multiple PCs in OneDrive sync environments.
+
     Returns None if the directory cannot be created (e.g., permission issues).
     """
     try:
-        from src.config.user_config import get_app_data_dir
+        from src.config.user_config import get_app_data_dir, get_machine_name
 
         base_dir = get_app_data_dir()
+        machine_name = get_machine_name() or "Unknown"
     except (ImportError, AttributeError):
         return None
 
-    cache_dir = base_dir / "device_cache"
+    # Create machine-specific cache directory to avoid conflicts
+    cache_dir = base_dir / "device_cache" / machine_name
 
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -253,7 +258,14 @@ def update_global_usage_summaries(
     dates: set[str] | None = None,
     base_db_path: Path | None = None,
 ) -> None:
-    """Update global summary tables. Supports incremental updates when dates are provided."""
+    """
+    Update global summary tables. Supports incremental updates when dates are provided.
+    
+    Includes conflict prevention for multi-PC OneDrive environments:
+    - Uses file-based locking to prevent concurrent writes
+    - Implements retry logic with exponential backoff
+    - Only one PC updates global summaries at a time
+    """
 
     if base_db_path is None:
         base_db_path = DEFAULT_DB_PATH
@@ -263,6 +275,63 @@ def update_global_usage_summaries(
         return
 
     init_database(base_db_path)
+    
+    # Create lock file for global summary updates
+    lock_file = base_db_path.parent / "global_summary_update.lock"
+    
+    # Try to acquire lock with retry logic
+    max_retries = 5
+    retry_delay = 1.0  # seconds
+    
+    for attempt in range(max_retries):
+        try:
+            # Try to create lock file (atomic operation)
+            if not lock_file.exists():
+                from src.config.user_config import get_machine_name
+                machine_name = get_machine_name() or "Unknown"
+                
+                with lock_file.open("w") as f:
+                    f.write(f"{machine_name}\n")
+                    f.write(f"{datetime.now(timezone.utc).isoformat()}\n")
+                
+                # Successfully acquired lock, proceed with update
+                break
+            else:
+                # Lock file exists, check if it's stale (older than 10 minutes)
+                try:
+                    lock_time = datetime.fromisoformat(
+                        lock_file.read_text().splitlines()[1].strip()
+                    )
+                    if (datetime.now(timezone.utc) - lock_time).total_seconds() > 600:
+                        # Lock is stale, remove it and try again
+                        lock_file.unlink()
+                        continue
+                except (OSError, IndexError, ValueError):
+                    # Lock file is corrupted, remove it
+                    try:
+                        lock_file.unlink()
+                    except OSError:
+                        pass
+                    continue
+                
+                # Lock is active, wait and retry
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                else:
+                    # Could not acquire lock after all retries, skip update
+                    return
+        except (OSError, IOError):
+            # Error creating lock file, skip update
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(retry_delay)
+                retry_delay *= 2
+                continue
+            else:
+                return
 
     target_dates = sorted(dates) if dates else None
     target_months: set[str] | None = None
@@ -875,6 +944,13 @@ def update_global_usage_summaries(
         raise
     finally:
         base_conn.close()
+    
+    # Release lock file
+    try:
+        if lock_file.exists():
+            lock_file.unlink()
+    except OSError:
+        pass  # Ignore errors when releasing lock
 
 def load_usage_summary(
     start_date: Optional[str] = None,
@@ -1237,11 +1313,11 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
     try:
         cursor = conn.cursor()
 
-        # Enable WAL mode for better concurrent access
-        # WAL allows multiple readers and one writer simultaneously
-        # Safe for OneDrive sync as WAL files sync properly
-        cursor.execute("PRAGMA journal_mode=WAL")
-        cursor.execute("PRAGMA synchronous=NORMAL")  # Faster while still safe
+        # Use DELETE mode for OneDrive compatibility
+        # DELETE mode uses single .db file without WAL files
+        # More reliable for cloud sync services like OneDrive
+        cursor.execute("PRAGMA journal_mode=DELETE")
+        cursor.execute("PRAGMA synchronous=FULL")    # Safer for cloud sync
         cursor.execute("PRAGMA busy_timeout=30000")  # 30 second busy timeout
 
         # Table for daily aggregated snapshots
