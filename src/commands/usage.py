@@ -35,6 +35,11 @@ VIEW_MODE_MONTHLY = "monthly"
 VIEW_MODE_YEARLY = "yearly"
 VIEW_MODE_HEATMAP = "heatmap"
 VIEW_MODE_DEVICES = "devices"
+
+# Aggregation cache - stores computed stats for filtered record sets
+# Key: tuple of (mode, offset, record count, first timestamp, last timestamp)
+# Value: AggregatedStats object
+_aggregation_cache: dict[tuple, any] = {}
 #endregion
 
 
@@ -1131,12 +1136,58 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     if anonymize:
         display_records = _anonymize_projects(display_records)
 
-    # Aggregate statistics
-    stats = aggregate_all(display_records)
+    # Aggregate statistics with caching
+    stats = _aggregate_with_cache(display_records, view_mode, time_offset)
 
     # Render dashboard with limits from DB (no live fetch needed)
     # Note: fast_mode is always False to avoid showing warning message
     render_dashboard(stats, display_records, console, skip_limits=True, clear_screen=False, date_range=date_range, limits_from_db=limits_from_db, fast_mode=False, view_mode=view_mode, view_mode_ref=view_mode_ref)
+
+
+def _aggregate_with_cache(display_records: list, view_mode: str, time_offset: int):
+    """
+    Aggregate records with caching to avoid recomputing stats for same data.
+
+    Cache key includes view mode and offset to cache each view separately.
+    This dramatically speeds up page transitions (Weekly -> Monthly -> Yearly).
+
+    Args:
+        display_records: Filtered list of records to aggregate
+        view_mode: Current view mode (usage, weekly, monthly, yearly)
+        time_offset: Time offset for navigation (0 = current period)
+
+    Returns:
+        AggregatedStats object
+    """
+    global _aggregation_cache
+
+    # Create cache key from view mode, offset, and record fingerprint
+    # Record fingerprint: (count, first timestamp, last timestamp)
+    if display_records:
+        first_ts = min(r.timestamp for r in display_records if hasattr(r, 'timestamp'))
+        last_ts = max(r.timestamp for r in display_records if hasattr(r, 'timestamp'))
+        cache_key = (view_mode, time_offset, len(display_records), first_ts, last_ts)
+    else:
+        cache_key = (view_mode, time_offset, 0, None, None)
+
+    # Check cache
+    if cache_key in _aggregation_cache:
+        return _aggregation_cache[cache_key]
+
+    # Cache miss - compute aggregation
+    stats = aggregate_all(display_records)
+
+    # Store in cache
+    _aggregation_cache[cache_key] = stats
+
+    # Limit cache size to prevent memory bloat (keep last 20 entries)
+    if len(_aggregation_cache) > 20:
+        # Remove oldest entries (first 10)
+        keys_to_remove = list(_aggregation_cache.keys())[:10]
+        for key in keys_to_remove:
+            del _aggregation_cache[key]
+
+    return stats
 
 
 def _anonymize_projects(records: list) -> list:
