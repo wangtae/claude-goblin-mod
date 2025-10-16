@@ -412,7 +412,11 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         hourly_detail_hour = view_mode_ref.get("hourly_detail_hour")
 
     # Create footer with export info, date range, and view mode
+    import sys
+    t_footer_create_start = time_module.time()
     footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
+    t_footer_create_end = time_module.time()
+    print(f"[DEBUG] Footer CREATE: {(t_footer_create_end - t_footer_create_start)*1000:.1f}ms", file=sys.stderr)
 
     # Create breakdowns for each view mode
     sections_to_render = []
@@ -2496,9 +2500,14 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
         try:
             from src.storage.snapshot_db import get_database_stats
             from src.utils.timezone import format_local_time, get_user_timezone
+            import time as time_module
+            import sys
             # Get timezone once for performance
             user_tz = get_user_timezone()
+            t_db_stats_start = time_module.time()
             db_stats = get_database_stats()
+            t_db_stats_end = time_module.time()
+            print(f"[DEBUG] get_database_stats() in footer: {(t_db_stats_end - t_db_stats_start)*1000:.1f}ms", file=sys.stderr)
             if db_stats.get("newest_timestamp"):
                 timestamp_str = db_stats["newest_timestamp"]
                 try:
