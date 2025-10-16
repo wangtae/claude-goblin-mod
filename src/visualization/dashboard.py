@@ -228,8 +228,8 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
 
         # Default content when limits are unavailable (e.g., first launch or skip_limits=True)
         usage_content = Panel(
-            Text("Usage limits are not available yet.\n"
-                 "Press 'r' to refresh or wait for the next auto-update.",
+            Text("Usage limits are unavailable until Claude permissions are granted.\n"
+                 "Run 'claude' once in your terminal to authorize, then press 'r' to refresh or wait for the next auto-update.",
                  justify="center",
                  style=DIM),
             title="[bold]Usage Limits",
@@ -237,8 +237,19 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
             expand=True,
         )
 
+        if limits and limits.get("error") == "trust_prompt":
+            usage_content = Panel(
+                Text("Claude needs to trust this folder before usage limits are available.\n"
+                     "Run 'claude' once inside this directory to approve access, then launch 'ccu' from the same project path so both commands share the trusted workspace.\n"
+                     "After granting permissions, press 'r' to refresh or wait for the next auto-update.",
+                     justify="center",
+                     style=DIM),
+                title="[bold]Usage Limits",
+                border_style="white",
+                expand=True,
+            )
         # Show Usage Limits if available
-        if limits and "error" not in limits:
+        elif limits and "error" not in limits:
             # Format reset dates from "Oct 17, 10am" to "10/17"
             def format_reset_date(reset_str: str) -> str:
                 """Convert 'Oct 17, 10am (Asia/Seoul)' to '10/17'"""

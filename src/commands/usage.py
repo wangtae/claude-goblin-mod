@@ -5,8 +5,11 @@ import threading
 from datetime import datetime, timedelta
 from pathlib import Path
 import re
+import sqlite3
 
 from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
 
 from src.commands.limits import capture_limits
 from src.config.settings import (
@@ -16,7 +19,6 @@ from src.config.settings import (
 from src.config.user_config import get_tracking_mode
 from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import (
-    get_database_stats,
     load_usage_summary,
     load_recent_usage_records,
     save_limits_snapshot,
@@ -890,7 +892,45 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         view_mode_ref: Reference dict to check for view mode changes and time offset (for interruption)
         show_status: Show status messages (default: True, set to False for instant mode switching)
     """
-    from src.storage.snapshot_db import get_latest_limits, DEFAULT_DB_PATH, get_database_stats
+    from src.storage.snapshot_db import get_latest_limits, DEFAULT_DB_PATH
+
+    first_time_setup = not DEFAULT_DB_PATH.exists()
+    db_path_str = str(DEFAULT_DB_PATH).lower()
+    is_onedrive_path = "onedrive" in db_path_str
+
+    def _handle_database_exception(context: str, exc: Exception) -> None:
+        console.clear()
+
+        if is_onedrive_path:
+            panel_text = Text(
+                "OneDrive may still be downloading the shared database.\n"
+                "Wait until the `.claude-goblin/usage_history_*.db` file finishes syncing, then press 'r' to refresh or relaunch 'ccu'.\n"
+                "Initial downloads can take a few minutes.",
+                justify="center",
+                style="yellow",
+            )
+            console.print(
+                Panel(
+                    panel_text,
+                    title="[bold]OneDrive Sync[/bold]",
+                    border_style="yellow",
+                    expand=True,
+                )
+            )
+        else:
+            error_text = Text(
+                f"{context}\n{exc}",
+                justify="center",
+                style="red",
+            )
+            console.print(
+                Panel(
+                    error_text,
+                    title="[bold]Database Error[/bold]",
+                    border_style="red",
+                    expand=True,
+                )
+            )
 
     # Check if database exists when using --fast
     if skip_limits and not DEFAULT_DB_PATH.exists():
@@ -902,18 +942,22 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     # Update data unless in fast mode
     if not skip_limits:
         # Step 1: Update usage data
-        if show_status:
-            with console.status("[bold #ff8800]Updating usage data...", spinner="dots", spinner_style="#ff8800"):
-                current_records = parse_all_jsonl_files(jsonl_files)
+        try:
+            if show_status:
+                with console.status("[bold #ff8800]Updating usage data...", spinner="dots", spinner_style="#ff8800"):
+                    current_records = parse_all_jsonl_files(jsonl_files)
 
-                # Save to database (with automatic deduplication via UNIQUE constraint)
+                    # Save to database (with automatic deduplication via UNIQUE constraint)
+                    if current_records:
+                        save_snapshot(current_records)
+            else:
+                # Fast mode: no status messages
+                current_records = parse_all_jsonl_files(jsonl_files)
                 if current_records:
                     save_snapshot(current_records)
-        else:
-            # Fast mode: no status messages
-            current_records = parse_all_jsonl_files(jsonl_files)
-            if current_records:
-                save_snapshot(current_records)
+        except (sqlite3.Error, OSError) as exc:
+            _handle_database_exception("Failed to update usage data.", exc)
+            return
 
         # Step 2: Update limits data (if enabled and not skipped)
         if not skip_limits_update:
@@ -952,27 +996,40 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
                 if limits_result['completed']:
                     limits = limits_result['data']
                     if limits and "error" not in limits:
-                        save_limits_snapshot(
-                            session_pct=limits["session_pct"],
-                            week_pct=limits["week_pct"],
-                            opus_pct=limits["opus_pct"],
-                            session_reset=limits["session_reset"],
-                            week_reset=limits["week_reset"],
-                            opus_reset=limits["opus_reset"],
-                        )
+                        try:
+                            save_limits_snapshot(
+                                session_pct=limits["session_pct"],
+                                week_pct=limits["week_pct"],
+                                opus_pct=limits["opus_pct"],
+                                session_reset=limits["session_reset"],
+                                week_reset=limits["week_reset"],
+                                opus_reset=limits["opus_reset"],
+                            )
+                        except (sqlite3.Error, OSError) as exc:
+                            _handle_database_exception("Failed to cache usage limits.", exc)
+                            return
+
+    usage_summary = None
+    all_records = []
+    limits_from_db = None
 
     # Step 3: Prepare dashboard from database (using cached version for performance)
-    if show_status:
-        with console.status("[bold #ff8800]Preparing dashboard...", spinner="dots", spinner_style="#ff8800"):
+    try:
+        if show_status:
+            status_text = "[bold #ff8800]Initial database setup may take a while. Please wait..." if first_time_setup else "[bold #ff8800]Preparing dashboard..."
+            with console.status(status_text, spinner="dots", spinner_style="#ff8800"):
+                usage_summary = load_usage_summary()
+                all_records = load_recent_usage_records()
+                limits_from_db = get_latest_limits()
+        else:
             usage_summary = load_usage_summary()
             all_records = load_recent_usage_records()
             limits_from_db = get_latest_limits()
-    else:
-        usage_summary = load_usage_summary()
-        all_records = load_recent_usage_records()
-        limits_from_db = get_latest_limits()
+    except (sqlite3.Error, OSError) as exc:
+        _handle_database_exception("Failed to load usage data.", exc)
+        return
 
-    if not all_records and not usage_summary.daily:
+    if not all_records and not getattr(usage_summary, "daily", None):
         console.clear()
         console.print(
             "[yellow]No Claude Code usage data found.[/yellow]\n"

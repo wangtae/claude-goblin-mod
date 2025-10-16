@@ -447,6 +447,11 @@ On first run, an interactive wizard helps you choose the best database location:
 - **OneDrive** (WSL2/Windows) - Searches `/mnt/c|d|e|f/OneDrive`
 - **iCloud Drive** (macOS) - Searches `~/Library/Mobile Documents/com~apple~CloudDocs`
 
+### Multi-PC Initial Setup Tips
+
+- Do not run the first-time wizard on multiple PCs simultaneously—conflicting OneDrive syncs can corrupt the shared database file.
+- Complete setup on one machine, wait until OneDrive finishes syncing the `.claude-goblin/` database folder to every other device, and only then start installation on the next PC.
+
 ### Changing Database Location
 
 You can change the database path anytime:
@@ -577,6 +582,7 @@ Parses Claude's `/usage` reset dates (e.g., "Oct 17, 10am (Asia/Seoul)") and fil
 ### Limits showing "Could not parse usage data"
 - Run `claude` in a trusted folder first
 - Claude needs folder trust to display `/usage` data
+- Launch `ccu` from the same project directory where you run `claude` so both commands share the trusted context
 
 ### Database errors
 ```bash
