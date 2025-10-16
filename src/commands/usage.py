@@ -1011,9 +1011,6 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         )
         return
 
-    # Clear screen before displaying dashboard
-    console.clear()
-
     # Get time offset from view_mode_ref
     time_offset = view_mode_ref.get('offset', 0) if view_mode_ref else 0
 
@@ -1141,7 +1138,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
 
     # Render dashboard with limits from DB (no live fetch needed)
     # Note: fast_mode is always False to avoid showing warning message
-    render_dashboard(stats, display_records, console, skip_limits=True, clear_screen=False, date_range=date_range, limits_from_db=limits_from_db, fast_mode=False, view_mode=view_mode, view_mode_ref=view_mode_ref)
+    render_dashboard(stats, display_records, console, skip_limits=True, clear_screen=True, date_range=date_range, limits_from_db=limits_from_db, fast_mode=False, view_mode=view_mode, view_mode_ref=view_mode_ref)
 
 
 def _aggregate_with_cache(display_records: list, view_mode: str, time_offset: int):
