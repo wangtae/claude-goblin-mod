@@ -226,6 +226,17 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
             else:
                 limits = capture_limits()
 
+        # Default content when limits are unavailable (e.g., first launch or skip_limits=True)
+        usage_content = Panel(
+            Text("Usage limits are not available yet.\n"
+                 "Press 'r' to refresh or wait for the next auto-update.",
+                 justify="center",
+                 style=DIM),
+            title="[bold]Usage Limits",
+            border_style="white",
+            expand=True,
+        )
+
         # Show Usage Limits if available
         if limits and "error" not in limits:
             # Format reset dates from "Oct 17, 10am" to "10/17"

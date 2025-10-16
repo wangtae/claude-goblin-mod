@@ -495,6 +495,19 @@ When no custom path is set, the tool searches in this order:
 
 SQLite UNIQUE constraint on `(session_id, message_uuid)` prevents duplicates - multiple PCs can safely write to the same database.
 
+### Full Reset for Multi-PC Sync Issues
+
+If your synced database becomes inconsistent across machines, you can wipe the shared state and let `ccu` rebuild it cleanly. Make sure to back up any data you might need before proceeding.
+
+1. **Close `ccu` on every PC.** Ensure the dashboard and any background processes are stopped.
+2. **Remove local settings:** delete `~/.claude/claude-goblin-mod` on each machine. This clears cached configuration and device state.
+3. **Wait for OneDrive to finish syncing** pending changes (check the system tray/status menu on every PC).
+4. **Sign in to OneDrive on the web** and delete the `.claude-goblin/` folder. This automatically removes the same folder from every synced machine.
+5. **Verify locally** that the `.claude-goblin/` folder disappears from each PC’s OneDrive directory (e.g., `/mnt/c|d/OneDrive/.claude-goblin/` on WSL2).
+6. **Restart `ccu` on each machine.** The setup wizard will rerun, recreate the cloud database, and ingest the JSONL logs from scratch.
+
+After these steps, all devices will share a fresh, consistent database, and limits/background updates will be rebuilt automatically the next time the dashboard runs.
+
 ---
 
 ## What It Tracks
