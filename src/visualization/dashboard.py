@@ -465,20 +465,39 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
                 view_mode_ref['hourly_hours'] = hourly_hours_int
     else:
         # Normal mode - show KPI section and breakdowns
-        kpi_section = _create_kpi_section(summary, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db, view_mode_ref=view_mode_ref)
+        scoped_totals: DailyTotal | None = None
+        if view_mode == "weekly":
+            scoped_totals = _calculate_totals_for_records(records)
+        elif view_mode == "monthly":
+            target_year = view_mode_ref.get('target_year') if view_mode_ref else None
+            target_month = view_mode_ref.get('target_month') if view_mode_ref else None
+            if isinstance(target_year, int) and isinstance(target_month, int):
+                scoped_totals = _calculate_totals_for_month(summary, target_year, target_month)
+            if scoped_totals is None:
+                scoped_totals = _calculate_totals_for_records(records)
+        elif view_mode == "yearly":
+            target_year = view_mode_ref.get('target_year') if view_mode_ref else None
+            if isinstance(target_year, int):
+                scoped_totals = _calculate_totals_for_year(summary, target_year)
+            if scoped_totals is None:
+                scoped_totals = _calculate_totals_for_records(records)
+        else:
+            scoped_totals = _calculate_totals_for_records(records)
+
+        kpi_section = _create_kpi_section(summary, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db, view_mode_ref=view_mode_ref, scoped_totals=scoped_totals)
 
         # Render Summary (and Usage Limits in weekly mode)
         console.print(kpi_section, end="")
         console.print()  # Blank line between sections
 
         # Model breakdown is always important
-        model_breakdown = _create_model_breakdown(summary)
+        model_breakdown = _create_model_breakdown(records)
         sections_to_render.append(("model", model_breakdown))
 
         # Add mode-specific breakdown
         if view_mode == "weekly":
             # Show normal weekly breakdown
-            project_breakdown = _create_project_breakdown(summary)
+            project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
 
             # Check weekly display mode (limits or calendar)
@@ -499,7 +518,7 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
                 daily_breakdown_weekly = _create_daily_breakdown_weekly(records, week_start, week_end, reset_time, reset_day)
                 sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
         elif view_mode == "monthly":
-            project_breakdown = _create_project_breakdown(summary)
+            project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
 
             # Check monthly display mode (daily or weekly)
@@ -519,18 +538,22 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
 
             if monthly_display_mode == 'weekly':
                 # Show weekly breakdown (calendar weeks for this month)
-                from datetime import datetime
-                current_date = datetime.now()
-                # Note: time_offset is used for month navigation in usage.py
-                # For now, use current year/month (time_offset will be handled in usage.py)
-                weekly_breakdown = _create_weekly_breakdown_for_month(records, current_date.year, current_date.month)
+                target_year = view_mode_ref.get('target_year') if view_mode_ref else None
+                target_month = view_mode_ref.get('target_month') if view_mode_ref else None
+                if not isinstance(target_year, int) or not isinstance(target_month, int):
+                    from datetime import datetime
+                    current_date = datetime.now()
+                    target_year = current_date.year
+                    target_month = current_date.month
+
+                weekly_breakdown = _create_weekly_breakdown_for_month(records, target_year, target_month)
                 sections_to_render.append(("weekly_month", weekly_breakdown))
             else:
                 # Show daily breakdown (default)
                 daily_breakdown = _create_daily_breakdown(records, monthly_daily_summary)
                 sections_to_render.append(("daily", daily_breakdown))
         elif view_mode == "yearly":
-            project_breakdown = _create_project_breakdown(summary)
+            project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
 
             # Check yearly display mode (monthly or weekly)
@@ -538,11 +561,12 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
 
             if yearly_display_mode == 'weekly':
                 # Show weekly breakdown (calendar weeks)
-                from datetime import datetime
-                current_year = datetime.now().year
-                # Note: time_offset is used for year navigation in usage.py
-                # For now, use current year (time_offset will be handled in usage.py)
-                weekly_breakdown = _create_weekly_breakdown_calendar(records, current_year)
+                target_year = view_mode_ref.get('target_year') if view_mode_ref else None
+                if not isinstance(target_year, int):
+                    from datetime import datetime
+                    target_year = datetime.now().year
+
+                weekly_breakdown = _create_weekly_breakdown_calendar(records, target_year)
                 sections_to_render.append(("weekly_calendar", weekly_breakdown))
             else:
                 # Show monthly breakdown (default)
@@ -658,7 +682,110 @@ def _calculate_weekly_opus_cost(records: list[UsageRecord]) -> float:
     return weekly_cost
 
 
-def _create_kpi_section(summary: UsageSummary, records: list[UsageRecord], view_mode: str = "monthly", skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None, view_mode_ref: dict | None = None) -> Group:
+def _calculate_totals_for_month(summary: UsageSummary, year: int, month: int) -> DailyTotal | None:
+    """Aggregate totals from UsageSummary for a specific month."""
+    from datetime import datetime
+
+    aggregated = DailyTotal(date=f"{year:04d}-{month:02d}")
+    found = False
+
+    for date_str, totals in summary.daily.items():
+        try:
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            continue
+
+        if date_obj.year == year and date_obj.month == month:
+            aggregated.total_prompts += totals.total_prompts
+            aggregated.total_responses += totals.total_responses
+            aggregated.total_sessions += totals.total_sessions
+            aggregated.total_tokens += totals.total_tokens
+            aggregated.input_tokens += totals.input_tokens
+            aggregated.output_tokens += totals.output_tokens
+            aggregated.cache_creation_tokens += totals.cache_creation_tokens
+            aggregated.cache_read_tokens += totals.cache_read_tokens
+            aggregated.total_cost += totals.total_cost
+            found = True
+
+    return aggregated if found else None
+
+
+def _calculate_totals_for_year(summary: UsageSummary, year: int) -> DailyTotal | None:
+    """Aggregate totals from UsageSummary for a specific year."""
+    from datetime import datetime
+
+    aggregated = DailyTotal(date=f"{year:04d}")
+    found = False
+
+    for date_str, totals in summary.daily.items():
+        try:
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        except ValueError:
+            continue
+
+        if date_obj.year == year:
+            aggregated.total_prompts += totals.total_prompts
+            aggregated.total_responses += totals.total_responses
+            aggregated.total_sessions += totals.total_sessions
+            aggregated.total_tokens += totals.total_tokens
+            aggregated.input_tokens += totals.input_tokens
+            aggregated.output_tokens += totals.output_tokens
+            aggregated.cache_creation_tokens += totals.cache_creation_tokens
+            aggregated.cache_read_tokens += totals.cache_read_tokens
+            aggregated.total_cost += totals.total_cost
+            found = True
+
+    return aggregated if found else None
+
+
+def _calculate_totals_for_records(records: list[UsageRecord]) -> DailyTotal:
+    """
+    Aggregate high-level totals for a scoped set of usage records.
+
+    Args:
+        records: Usage records to aggregate
+
+    Returns:
+        DailyTotal object containing aggregated metrics
+    """
+    from src.models.pricing import calculate_cost
+
+    totals = DailyTotal(date="scoped")
+    unique_sessions: set[str] = set()
+    total_cost = 0.0
+
+    for record in records:
+        if record.session_id:
+            unique_sessions.add(record.session_id)
+
+        if record.is_user_prompt:
+            totals.total_prompts += 1
+        elif record.is_assistant_response:
+            totals.total_responses += 1
+
+        usage = record.token_usage
+        if usage:
+            totals.total_tokens += usage.total_tokens
+            totals.input_tokens += usage.input_tokens
+            totals.output_tokens += usage.output_tokens
+            totals.cache_creation_tokens += usage.cache_creation_tokens
+            totals.cache_read_tokens += usage.cache_read_tokens
+
+            if record.model and record.model != "<synthetic>":
+                total_cost += calculate_cost(
+                    usage.input_tokens,
+                    usage.output_tokens,
+                    record.model,
+                    usage.cache_creation_tokens,
+                    usage.cache_read_tokens,
+                )
+
+    totals.total_sessions = len(unique_sessions)
+    totals.total_cost = total_cost
+    return totals
+
+
+def _create_kpi_section(summary: UsageSummary, records: list[UsageRecord], view_mode: str = "monthly", skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None, view_mode_ref: dict | None = None, scoped_totals: DailyTotal | None = None) -> Group:
     """
     Create KPI cards with individual limit boxes beneath each (only for weekly mode).
 
@@ -676,12 +803,14 @@ def _create_kpi_section(summary: UsageSummary, records: list[UsageRecord], view_
     """
     from src.models.pricing import format_cost
 
-    # Use summary totals for all-time metrics
-    total_cost = summary.totals.total_cost
-    total_input_tokens = summary.totals.input_tokens
-    total_output_tokens = summary.totals.output_tokens
-    total_cache_creation = summary.totals.cache_creation_tokens
-    total_cache_read = summary.totals.cache_read_tokens
+    totals_source = scoped_totals or summary.totals
+
+    total_cost = totals_source.total_cost
+    total_input_tokens = totals_source.input_tokens
+    total_output_tokens = totals_source.output_tokens
+    total_cache_creation = totals_source.cache_creation_tokens
+    total_cache_read = totals_source.cache_read_tokens
+    total_messages = totals_source.total_prompts + totals_source.total_responses
 
     # Create KPI cards in 2 rows of 3 cards each
     kpi_grid = Table.grid(padding=(0, 2), expand=False)
@@ -698,7 +827,7 @@ def _create_kpi_section(summary: UsageSummary, records: list[UsageRecord], view_
     )
 
     messages_card = Panel(
-        Text(_format_number(summary.totals.total_prompts), style="bold white"),
+        Text(_format_number(total_messages), style="bold white"),
         title="Messages",
         border_style="white",
         width=36,
@@ -811,54 +940,65 @@ def _create_kpi_section(summary: UsageSummary, records: list[UsageRecord], view_
     return Group(kpi_grid)
 
 
-def _create_model_breakdown(summary: UsageSummary) -> Panel:
+def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
     """
     Create table showing token usage and cost per model.
 
     Args:
-        records: List of usage records
+        records: Usage records scoped to the current view
 
     Returns:
         Panel with model breakdown table including costs
     """
     from src.models.pricing import calculate_cost, format_cost
 
-    # Use aggregated model totals from summary
-    model_data = summary.models
+    model_totals: defaultdict[str, dict[str, float]] = defaultdict(lambda: {"tokens": 0, "cost": 0.0})
 
-    if not model_data:
+    for record in records:
+        usage = record.token_usage
+        if not usage:
+            continue
+
+        model_name = record.model or "<unknown>"
+        tokens = usage.total_tokens
+        model_totals[model_name]["tokens"] += tokens
+
+        if record.model and record.model != "<synthetic>":
+            model_totals[model_name]["cost"] += calculate_cost(
+                usage.input_tokens,
+                usage.output_tokens,
+                record.model,
+                usage.cache_creation_tokens,
+                usage.cache_read_tokens,
+            )
+
+    if not model_totals:
         return Panel(
             Text("No model data available", style=DIM),
             title="[bold]Tokens by Model",
             border_style="white",
         )
 
-    # Calculate totals
-    total_tokens = sum(data.total_tokens for data in model_data.values())
-    total_cost = sum(data.total_cost for data in model_data.values())
-    max_tokens = max(data.total_tokens for data in model_data.values())
+    total_tokens = sum(data["tokens"] for data in model_totals.values())
+    total_cost = sum(data["cost"] for data in model_totals.values())
+    max_tokens = max((data["tokens"] for data in model_totals.values()), default=0)
 
-    # Sort by usage
-    sorted_models = sorted(model_data.items(), key=lambda x: x[1].total_tokens, reverse=True)
+    sorted_models = sorted(model_totals.items(), key=lambda x: x[1]["tokens"], reverse=True)
 
-    # Create table
     table = Table(show_header=True, box=None, padding=(0, 2))
     table.add_column("Model", style="white", justify="left", width=30, overflow="crop")
-    table.add_column("", justify="left", width=20)  # Bar column (no header)
+    table.add_column("", justify="left", width=20)
     table.add_column("Tokens", style=ORANGE, justify="right", width=12)
     table.add_column("%", style=CYAN, justify="right", width=8)
     table.add_column("Cost", style="green", justify="right", width=10)
 
     for model, data in sorted_models:
-        # Shorten model name
         display_name = model.split("/")[-1] if "/" in model else model
         if "claude" in display_name.lower():
             display_name = display_name.replace("claude-", "")
 
-        tokens = data.total_tokens
+        tokens = data["tokens"]
         percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
-
-        # Create bar
         bar = _create_bar(tokens, max_tokens, width=20)
 
         table.add_row(
@@ -866,18 +1006,16 @@ def _create_model_breakdown(summary: UsageSummary) -> Panel:
             bar,
             _format_number(tokens),
             f"[cyan]{percentage:.1f}%[/cyan]",
-            format_cost(data.total_cost),
+            format_cost(data["cost"]),
         )
 
-    # Add separator line before total
     table.add_row("", "", "", "", "")
 
-    # Add total row
     table.add_row(
         "[bold]Total",
         Text(""),
         f"[bold]{_format_number(total_tokens)}",
-        "[bold cyan]100.0%",
+        "[bold cyan]100.0%" if total_tokens > 0 else "[bold cyan]0.0%",
         f"[bold green]{format_cost(total_cost)}",
     )
 
@@ -889,7 +1027,7 @@ def _create_model_breakdown(summary: UsageSummary) -> Panel:
     )
 
 
-def _create_project_breakdown(summary: UsageSummary) -> Panel:
+def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     """
     Create table showing token usage and cost per project.
 
@@ -899,51 +1037,59 @@ def _create_project_breakdown(summary: UsageSummary) -> Panel:
     Returns:
         Panel with project breakdown table
     """
-    from src.models.pricing import format_cost
+    from src.models.pricing import calculate_cost, format_cost
 
-    folder_data = summary.projects
+    folder_totals: defaultdict[str, dict[str, float]] = defaultdict(lambda: {"tokens": 0, "cost": 0.0})
 
-    if not folder_data:
+    for record in records:
+        usage = record.token_usage
+        if not usage:
+            continue
+
+        folder = record.folder or "<unknown>"
+        folder_totals[folder]["tokens"] += usage.total_tokens
+
+        if record.model and record.model != "<synthetic>":
+            folder_totals[folder]["cost"] += calculate_cost(
+                usage.input_tokens,
+                usage.output_tokens,
+                record.model,
+                usage.cache_creation_tokens,
+                usage.cache_read_tokens,
+            )
+
+    if not folder_totals:
         return Panel(
             Text("No project data available", style=DIM),
             title="[bold]Tokens by Project",
             border_style="white",
         )
 
-    # Calculate total
-    total_tokens = sum(data.total_tokens for data in folder_data.values())
-
-    # Sort by usage
-    sorted_folders = sorted(folder_data.items(), key=lambda x: x[1].total_tokens, reverse=True)
-
-    # Limit to top 10 projects
+    total_tokens = sum(data["tokens"] for data in folder_totals.values())
+    total_cost = sum(data["cost"] for data in folder_totals.values())
+    sorted_folders = sorted(folder_totals.items(), key=lambda x: x[1]["tokens"], reverse=True)
     sorted_folders = sorted_folders[:10]
-    max_tokens = max(data.total_tokens for _, data in sorted_folders)
+    max_tokens = max((data["tokens"] for _, data in sorted_folders), default=0)
 
-    # Create table
     table = Table(show_header=True, box=None, padding=(0, 2))
     table.add_column("Project", style="white", justify="left", width=30, overflow="crop")
-    table.add_column("", justify="left", width=20)  # Bar column (no header)
+    table.add_column("", justify="left", width=20)
     table.add_column("Tokens", style=ORANGE, justify="right", width=12)
     table.add_column("%", style=CYAN, justify="right", width=8)
     table.add_column("Cost", style="green", justify="right", width=10)
 
     for folder, data in sorted_folders:
-        # Show only last 2 parts of path (without .../ prefix)
         parts = folder.split("/")
         if len(parts) > 2:
             display_name = "/".join(parts[-2:])
         else:
             display_name = folder
 
-        # Manually truncate to 35 chars without ellipses
         if len(display_name) > 35:
             display_name = display_name[:35]
 
-        tokens = data.total_tokens
+        tokens = data["tokens"]
         percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
-
-        # Create bar
         bar = _create_bar(tokens, max_tokens, width=20)
 
         table.add_row(
@@ -951,8 +1097,18 @@ def _create_project_breakdown(summary: UsageSummary) -> Panel:
             bar,
             _format_number(tokens),
             f"[cyan]{percentage:.1f}%[/cyan]",
-            format_cost(data.total_cost),
+            format_cost(data["cost"]),
         )
+
+    table.add_row("", "", "", "", "")
+
+    table.add_row(
+        "[bold]Total",
+        Text(""),
+        f"[bold]{_format_number(total_tokens)}",
+        "[bold cyan]100.0%" if total_tokens > 0 else "[bold cyan]0.0%",
+        f"[bold green]{format_cost(total_cost)}",
+    )
 
     return Panel(
         table,
@@ -992,10 +1148,16 @@ def _create_daily_breakdown(records: list[UsageRecord], daily_summary: dict[str,
 
     if records:
         for record in records:
-            if record.token_usage:
-                # Extract date from timestamp
-                date = record.timestamp.strftime("%Y-%m-%d")
-                record_date = record.timestamp.date()
+            if record.token_usage and record.timestamp:
+                timestamp = record.timestamp
+                if timestamp.tzinfo:
+                    local_ts = timestamp.astimezone()
+                else:
+                    local_ts = timestamp
+
+                # Extract date from local timestamp
+                date = local_ts.strftime("%Y-%m-%d")
+                record_date = local_ts.date()
 
                 # Update min/max dates
                 if min_date is None or record_date < min_date:
@@ -1122,10 +1284,10 @@ def _create_daily_breakdown_calendar_week(records: list[UsageRecord]) -> Panel:
         Panel with daily breakdown in graph format
     """
     from src.models.pricing import calculate_cost, format_cost
-    from datetime import datetime, timedelta
+    from datetime import timedelta
 
     # Get current ISO calendar week
-    now = datetime.now()
+    now = datetime.now().astimezone()
     iso_cal = now.isocalendar()
     current_year = iso_cal[0]
     current_week = iso_cal[1]
@@ -1142,10 +1304,15 @@ def _create_daily_breakdown_calendar_week(records: list[UsageRecord]) -> Panel:
     })
 
     for record in records:
-        if record.token_usage:
-            # Extract date from timestamp
-            date = record.timestamp.strftime("%Y-%m-%d")
-            record_date = record.timestamp.date()
+        if record.token_usage and record.timestamp:
+            timestamp = record.timestamp
+            if timestamp.tzinfo:
+                local_ts = timestamp.astimezone()
+            else:
+                local_ts = timestamp
+
+            date = local_ts.strftime("%Y-%m-%d")
+            record_date = local_ts.date()
 
             # Only include records within calendar week
             if week_start_date <= record_date <= week_end_date:
@@ -1241,141 +1408,115 @@ def _create_daily_breakdown_calendar_week(records: list[UsageRecord]) -> Panel:
 
 
 def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=None, week_end_date=None, reset_time=None, reset_day=None) -> Panel:
-    """
-    Create graph-style daily usage breakdown for weekly mode.
-    Shows all 7 days of the week period, including days with no usage.
-    Days without data show "-" for tokens/cost and 0% for percentage.
+    """Create weekly daily breakdown using scoped records."""
 
-    Args:
-        records: List of usage records (already filtered to week period)
-        week_start_date: Start date of the week period (date object)
-        week_end_date: End date of the week period (date object)
-        reset_time: Reset time in HH:MM format (e.g., "09:59")
-        reset_day: Reset day of week (e.g., "Fri", "Mon")
-
-    Returns:
-        Panel with daily breakdown in graph format
-    """
+    from datetime import datetime, timedelta
     from src.models.pricing import calculate_cost, format_cost
-    from datetime import timedelta
 
-    # Aggregate by date (format: "YYYY-MM-DD")
-    daily_data: dict[str, dict] = defaultdict(lambda: {
-        "total_tokens": 0,
-        "cost": 0.0
+    if week_start_date is None or week_end_date is None:
+        return Panel(
+            Text("No daily data available", style=DIM),
+            title="[bold]Daily Usage",
+            border_style="white",
+        )
+
+    if isinstance(week_start_date, datetime):
+        week_start_date = week_start_date.date()
+    if isinstance(week_end_date, datetime):
+        week_end_date = week_end_date.date()
+
+    if week_end_date < week_start_date:
+        week_end_date = week_start_date
+
+    daily_totals: dict[str, dict[str, float]] = defaultdict(lambda: {
+        "tokens": 0,
+        "cost": 0.0,
     })
 
     for record in records:
-        if record.token_usage:
-            date = record.timestamp.strftime("%Y-%m-%d")
-            daily_data[date]["total_tokens"] += record.token_usage.total_tokens
+        usage = record.token_usage
+        if not usage or not record.timestamp:
+            continue
+
+        timestamp = record.timestamp
+        if timestamp.tzinfo:
+            local_ts = timestamp.astimezone()
+        else:
+            local_ts = timestamp
+
+        record_date = local_ts.date()
+        if week_start_date <= record_date <= week_end_date:
+            date_key = record_date.strftime("%Y-%m-%d")
+            daily_totals[date_key]["tokens"] += usage.total_tokens
 
             if record.model and record.model != "<synthetic>":
-                cost = calculate_cost(
-                    record.token_usage.input_tokens,
-                    record.token_usage.output_tokens,
+                daily_totals[date_key]["cost"] += calculate_cost(
+                    usage.input_tokens,
+                    usage.output_tokens,
                     record.model,
-                    record.token_usage.cache_creation_tokens,
-                    record.token_usage.cache_read_tokens,
+                    usage.cache_creation_tokens,
+                    usage.cache_read_tokens,
                 )
-                daily_data[date]["cost"] += cost
 
-    # If week range not provided, try to infer from records
-    if week_start_date is None or week_end_date is None:
-        # Try to find min/max from records
-        dates_with_data = []
-        for record in records:
-            if record.token_usage:
-                dates_with_data.append(record.timestamp.date())
-
-        if dates_with_data:
-            week_start_date = min(dates_with_data)
-            week_end_date = max(dates_with_data)
-        else:
-            # No data at all
-            return Panel(
-                Text("No daily data available", style=DIM),
-                title="[bold]Daily Usage",
-                border_style="white",
-            )
-
-    # Generate all dates in the week range (should be exactly 7 days)
-    all_dates = []
+    all_dates: list[tuple[str, dict[str, float]]] = []
     current_date = week_start_date
     while current_date <= week_end_date:
-        date_str = current_date.strftime("%Y-%m-%d")
-        if date_str in daily_data:
-            all_dates.append((date_str, daily_data[date_str]))
-        else:
-            # Day with no data - use zeros
-            all_dates.append((date_str, {
-                "total_tokens": 0,
-                "cost": 0.0
-            }))
+        date_key = current_date.strftime("%Y-%m-%d")
+        all_dates.append((date_key, daily_totals.get(date_key, {"tokens": 0, "cost": 0.0})))
         current_date += timedelta(days=1)
 
-    # Calculate totals and max for scaling (only from days with data)
-    total_tokens = sum(data["total_tokens"] for _, data in all_dates)
-    max_tokens = max((data["total_tokens"] for _, data in all_dates), default=0)
+    if not all_dates:
+        return Panel(
+            Text("No daily data available", style=DIM),
+            title="[bold]Daily Usage",
+            border_style="white",
+        )
 
-    # Sort by date in ascending order (oldest first)
-    sorted_dates = sorted(all_dates, reverse=False)
+    total_tokens = sum(data["tokens"] for _, data in all_dates)
+    max_tokens = max((data["tokens"] for _, data in all_dates), default=0)
 
-    # Create table with bars
     table = Table(show_header=True, box=None, padding=(0, 2))
     table.add_column("Date", style="white", justify="left", width=30)
-    table.add_column("", justify="left", width=20)  # Bar column (no header)
+    table.add_column("", justify="left", width=20)
     table.add_column("Tokens", style=ORANGE, justify="right", width=12)
     table.add_column("%", style=CYAN, justify="right", width=8)
     table.add_column("Cost", style="green", justify="right", width=10)
 
-    for idx, (date, data) in enumerate(sorted_dates, start=1):
-        tokens = data["total_tokens"]
+    today = datetime.now().date()
+
+    for idx, (date_str, data) in enumerate(all_dates, start=1):
+        tokens = data["tokens"]
         percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
+        cost_display = format_cost(data["cost"]) if data["cost"] else "-"
 
-        # Parse date and get day of week
-        from datetime import datetime
-        date_obj = datetime.strptime(date, "%Y-%m-%d")
-        day_name = date_obj.strftime("%a")  # Mon, Tue, Wed, etc.
-
-        # Check if date is in the future (show shortcut in gray for future dates)
-        today = datetime.now().date()
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        day_name = date_obj.strftime("%a")
         is_future = date_obj.date() > today
         is_today = date_obj.date() == today
 
-        # Check if this is the reset day and add time annotation
-        # Combine shortcut and date with comma: [1] 2025-10-15, Mon [09:59]
-        # Add [T] for today in bright cyan
         if is_future:
-            # Future date - show shortcut in gray (inactive)
             if reset_day and reset_time and day_name == reset_day:
-                date_with_shortcut = f"[dim][{idx}][/dim] {date}, {day_name} [purple][{reset_time}][/purple]"
+                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name} [purple][{reset_time}][/purple]"
             else:
-                date_with_shortcut = f"[dim][{idx}][/dim] {date}, {day_name}"
+                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name}"
         else:
-            # Past or today - show shortcut in yellow (active)
             if reset_day and reset_time and day_name == reset_day:
-                date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name} [purple][{reset_time}][/purple]"
+                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name} [purple][{reset_time}][/purple]"
             else:
-                date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name}"
+                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name}"
 
-            # Add Today marker for today
             if is_today:
                 date_with_shortcut += " [bright_cyan]Today[/bright_cyan]"
 
-        # If no data for this day, show "-" for tokens/cost and empty bar
         if tokens == 0:
-            # Empty bar (all dim)
             bar = Text("▬" * 20, style=DIM)
             tokens_display = "[dim]-[/dim]"
             percentage_display = "[dim]-[/dim]"
-            cost_display = "[dim]-[/dim]"
+            cost_display = "[dim]-[/dim]" if cost_display == "-" else f"[dim]{cost_display}[/dim]"
         else:
-            # Normal display with bar
             bar = _create_bar(tokens, max_tokens, width=20)
             tokens_display = _format_number(tokens)
             percentage_display = f"[cyan]{percentage:.1f}%[/cyan]"
-            cost_display = format_cost(data["cost"])
 
         table.add_row(
             date_with_shortcut,
@@ -1385,12 +1526,8 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
             cost_display,
         )
 
-    # Create dynamic subtitle based on actual number of dates
-    num_dates = len(sorted_dates)
-    if num_dates > 0:
-        subtitle_text = f"[dim]Press number keys (1-{num_dates}) to view detailed hourly breakdown[/dim]"
-    else:
-        subtitle_text = None
+    num_dates = len(all_dates)
+    subtitle_text = f"[dim]Press number keys (1-{num_dates}) to view detailed hourly breakdown[/dim]" if num_dates else None
 
     return Panel(
         table,
@@ -1424,9 +1561,14 @@ def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
     })
 
     for record in records:
-        if record.token_usage:
-            # Extract hour from timestamp
-            hour = record.timestamp.strftime("%H:00")
+        if record.token_usage and record.timestamp:
+            timestamp = record.timestamp
+            if timestamp.tzinfo:
+                local_ts = timestamp.astimezone()
+            else:
+                local_ts = timestamp
+
+            hour = local_ts.strftime("%H:00")
 
             hourly_data[hour]["input_tokens"] += record.token_usage.input_tokens
             hourly_data[hour]["output_tokens"] += record.token_usage.output_tokens
@@ -1515,9 +1657,15 @@ def _create_monthly_breakdown(records: list[UsageRecord]) -> Panel:
     })
 
     for record in records:
-        if record.token_usage:
-            # Extract year-month from timestamp
-            month = record.timestamp.strftime("%Y-%m")
+        if record.token_usage and record.timestamp:
+            timestamp = record.timestamp
+            if timestamp.tzinfo:
+                local_ts = timestamp.astimezone()
+            else:
+                local_ts = timestamp
+
+            # Extract year-month from local timestamp
+            month = local_ts.strftime("%Y-%m")
 
             monthly_data[month]["input_tokens"] += record.token_usage.input_tokens
             monthly_data[month]["output_tokens"] += record.token_usage.output_tokens
@@ -1606,31 +1754,43 @@ def _create_weekly_breakdown_for_month(records: list[UsageRecord], year: int, mo
     from src.models.pricing import calculate_cost, format_cost
     from datetime import datetime, timedelta
 
-    # Aggregate by ISO week
-    weekly_data: dict[int, dict] = defaultdict(lambda: {
+    # Aggregate by ISO week (keyed by Monday start date)
+    weekly_data: dict[str, dict] = defaultdict(lambda: {
         "input_tokens": 0,
         "output_tokens": 0,
         "cache_creation": 0,
         "cache_read": 0,
         "messages": 0,
-        "cost": 0.0
+        "cost": 0.0,
+        "iso_week": None,
+        "iso_year": None,
+        "week_start": None,
     })
 
     for record in records:
         if record.token_usage and record.timestamp:
-            # Get ISO week number
-            iso_cal = record.timestamp.isocalendar()
-            iso_year = iso_cal[0]
-            iso_week = iso_cal[1]
+            timestamp = record.timestamp
+            if timestamp.tzinfo:
+                local_ts = timestamp.astimezone()
+            else:
+                local_ts = timestamp
 
-            # Only include weeks from the target year and month
-            # Check if the record's date is in the target month
-            if record.timestamp.year == year and record.timestamp.month == month:
-                weekly_data[iso_week]["input_tokens"] += record.token_usage.input_tokens
-                weekly_data[iso_week]["output_tokens"] += record.token_usage.output_tokens
-                weekly_data[iso_week]["cache_creation"] += record.token_usage.cache_creation_tokens
-                weekly_data[iso_week]["cache_read"] += record.token_usage.cache_read_tokens
-                weekly_data[iso_week]["messages"] += 1
+            iso_year, iso_week, _ = local_ts.isocalendar()
+
+            # Only include weeks from the target year and month (local time)
+            if local_ts.year == year and local_ts.month == month:
+                week_start = (local_ts - timedelta(days=local_ts.weekday())).date()
+                key = week_start.isoformat()
+                bucket = weekly_data[key]
+                bucket["input_tokens"] += record.token_usage.input_tokens
+                bucket["output_tokens"] += record.token_usage.output_tokens
+                bucket["cache_creation"] += record.token_usage.cache_creation_tokens
+                bucket["cache_read"] += record.token_usage.cache_read_tokens
+                bucket["messages"] += 1
+                if bucket["iso_week"] is None:
+                    bucket["iso_week"] = iso_week
+                    bucket["iso_year"] = iso_year
+                    bucket["week_start"] = week_start
 
                 if record.model and record.model != "<synthetic>":
                     cost = calculate_cost(
@@ -1640,7 +1800,7 @@ def _create_weekly_breakdown_for_month(records: list[UsageRecord], year: int, mo
                         record.token_usage.cache_creation_tokens,
                         record.token_usage.cache_read_tokens,
                     )
-                    weekly_data[iso_week]["cost"] += cost
+                    bucket["cost"] += cost
 
     if not weekly_data:
         return Panel(
@@ -1650,7 +1810,7 @@ def _create_weekly_breakdown_for_month(records: list[UsageRecord], year: int, mo
         )
 
     # Sort by week number (ascending - oldest first)
-    sorted_weeks = sorted(weekly_data.items())
+    sorted_weeks = sorted(weekly_data.items(), key=lambda item: item[1]["week_start"])
 
     # Calculate max for bar scaling
     max_total_tokens = max((data["input_tokens"] + data["output_tokens"] for _, data in sorted_weeks), default=0)
@@ -1664,15 +1824,13 @@ def _create_weekly_breakdown_for_month(records: list[UsageRecord], year: int, mo
     table.add_column("Messages", style="white", justify="right", width=10)
     table.add_column("Cost", style="green", justify="right", width=10)
 
-    for week_num, data in sorted_weeks:
-        # Get the Monday of this week to determine the display format
-        from datetime import datetime
-        monday = datetime.fromisocalendar(year, week_num, 1)
+    for _, data in sorted_weeks:
+        week_start = data.get("week_start")
+        if week_start is None:
+            continue
+        iso_week = data.get("iso_week") or week_start.isocalendar()[1]
+        week_label = f"{week_start.strftime('%Y-%m-%d')} (W{iso_week:02d})"
 
-        # Format week as "2025-09-W40" (year-month-week)
-        week_label = f"{year}-{month:02d}-W{week_num:02d}"
-
-        # Calculate total tokens for bar
         total_tokens = data["input_tokens"] + data["output_tokens"]
 
         # Create bar
@@ -1716,30 +1874,43 @@ def _create_weekly_breakdown_calendar(records: list[UsageRecord], year: int) -> 
     """
     from src.models.pricing import calculate_cost, format_cost
 
-    # Aggregate by ISO week
-    weekly_data: dict[int, dict] = defaultdict(lambda: {
+    # Aggregate by ISO week (keyed by Monday start date)
+    weekly_data: dict[str, dict] = defaultdict(lambda: {
         "input_tokens": 0,
         "output_tokens": 0,
         "cache_creation": 0,
         "cache_read": 0,
         "messages": 0,
-        "cost": 0.0
+        "cost": 0.0,
+        "iso_week": None,
+        "iso_year": None,
+        "week_start": None,
     })
 
     for record in records:
         if record.token_usage and record.timestamp:
-            # Get ISO week number
-            iso_cal = record.timestamp.isocalendar()
-            iso_year = iso_cal[0]
-            iso_week = iso_cal[1]
+            timestamp = record.timestamp
+            if timestamp.tzinfo:
+                local_ts = timestamp.astimezone()
+            else:
+                local_ts = timestamp
 
-            # Only include weeks from the target year
+            iso_year, iso_week, _ = local_ts.isocalendar()
+
+            # Only include weeks from the target year (local time)
             if iso_year == year:
-                weekly_data[iso_week]["input_tokens"] += record.token_usage.input_tokens
-                weekly_data[iso_week]["output_tokens"] += record.token_usage.output_tokens
-                weekly_data[iso_week]["cache_creation"] += record.token_usage.cache_creation_tokens
-                weekly_data[iso_week]["cache_read"] += record.token_usage.cache_read_tokens
-                weekly_data[iso_week]["messages"] += 1
+                week_start = (local_ts - timedelta(days=local_ts.weekday())).date()
+                key = week_start.isoformat()
+                bucket = weekly_data[key]
+                bucket["input_tokens"] += record.token_usage.input_tokens
+                bucket["output_tokens"] += record.token_usage.output_tokens
+                bucket["cache_creation"] += record.token_usage.cache_creation_tokens
+                bucket["cache_read"] += record.token_usage.cache_read_tokens
+                bucket["messages"] += 1
+                if bucket["iso_week"] is None:
+                    bucket["iso_week"] = iso_week
+                    bucket["iso_year"] = iso_year
+                    bucket["week_start"] = week_start
 
                 if record.model and record.model != "<synthetic>":
                     cost = calculate_cost(
@@ -1749,7 +1920,7 @@ def _create_weekly_breakdown_calendar(records: list[UsageRecord], year: int) -> 
                         record.token_usage.cache_creation_tokens,
                         record.token_usage.cache_read_tokens,
                     )
-                    weekly_data[iso_week]["cost"] += cost
+                    bucket["cost"] += cost
 
     if not weekly_data:
         return Panel(
@@ -1758,8 +1929,8 @@ def _create_weekly_breakdown_calendar(records: list[UsageRecord], year: int) -> 
             border_style="white",
         )
 
-    # Sort by week number (ascending - oldest first)
-    sorted_weeks = sorted(weekly_data.items())
+    # Sort by week start date (ascending - oldest first)
+    sorted_weeks = sorted(weekly_data.items(), key=lambda item: item[1]["week_start"])
 
     # Calculate max for bar scaling
     max_total_tokens = max((data["input_tokens"] + data["output_tokens"] for _, data in sorted_weeks), default=0)
@@ -1773,14 +1944,12 @@ def _create_weekly_breakdown_calendar(records: list[UsageRecord], year: int) -> 
     table.add_column("Messages", style="white", justify="right", width=10)
     table.add_column("Cost", style="green", justify="right", width=10)
 
-    for week_num, data in sorted_weeks:
-        # Get the Monday of this week to determine the month
-        from datetime import datetime
-        monday = datetime.fromisocalendar(year, week_num, 1)
-        month = monday.month
-
-        # Format week as "2025-09-W40" (year-month-week)
-        week_label = f"{year}-{month:02d}-W{week_num:02d}"
+    for _, data in sorted_weeks:
+        week_start = data.get("week_start")
+        if week_start is None:
+            continue
+        iso_week = data.get("iso_week") or week_start.isocalendar()[1]
+        week_label = f"{week_start.strftime('%Y-%m-%d')} (W{iso_week:02d})"
 
         # Calculate total tokens for bar
         total_tokens = data["input_tokens"] + data["output_tokens"]

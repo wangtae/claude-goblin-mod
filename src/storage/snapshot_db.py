@@ -41,7 +41,7 @@ _DEVICE_CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 hours
 _CACHE_FILENAME_SANITIZER = re.compile(r"[^A-Za-z0-9_.-]+")
 _CACHE_EXTENSION = ".pkl"
 _CACHE_LEGACY_EXTENSION = ".json"
-_RECENT_USAGE_DEFAULT_EXTRA_DAYS = 0
+_RECENT_USAGE_DEFAULT_EXTRA_DAYS = 7
 
 
 
@@ -253,16 +253,51 @@ def update_global_usage_summaries(
     dates: set[str] | None = None,
     base_db_path: Path | None = None,
 ) -> None:
-    """Recompute global daily, weekly, and monthly summaries across all devices."""
+    """Update global summary tables. Supports incremental updates when dates are provided."""
+
     if base_db_path is None:
         base_db_path = DEFAULT_DB_PATH
 
     machine_db_paths = get_all_machine_db_paths()
-
     if not machine_db_paths:
         return
 
     init_database(base_db_path)
+
+    target_dates = sorted(dates) if dates else None
+    target_months: set[str] | None = None
+    target_weeks: set[tuple[int, int]] | None = None
+    dates_needed: list[str] | None = None
+
+    if target_dates:
+        target_months = {date[:7] for date in target_dates}
+        target_weeks = set()
+        needed = set(target_dates)
+
+        for date_str in target_dates:
+            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+            iso_year, iso_week, _ = dt.isocalendar()
+            target_weeks.add((iso_year, iso_week))
+
+        for iso_year, iso_week in target_weeks:
+            monday = datetime.fromisocalendar(iso_year, iso_week, 1).date()
+            for offset in range(7):
+                needed.add((monday + timedelta(days=offset)).strftime("%Y-%m-%d"))
+
+        for month in target_months:
+            year, month_num = map(int, month.split("-"))
+            first_day = datetime(year, month_num, 1).date()
+            if month_num == 12:
+                next_first = datetime(year + 1, 1, 1).date()
+            else:
+                next_first = datetime(year, month_num + 1, 1).date()
+            delta = (next_first - first_day).days
+            for offset in range(delta):
+                needed.add((first_day + timedelta(days=offset)).strftime("%Y-%m-%d"))
+
+        dates_needed = sorted(needed)
+    else:
+        dates_needed = None
 
     daily_totals: dict[str, DailyTotal] = {}
     daily_machine_sets: dict[str, set[str]] = defaultdict(set)
@@ -276,8 +311,8 @@ def update_global_usage_summaries(
     model_totals: dict[str, ModelTotal] = {}
     project_totals: dict[str, ProjectTotal] = {}
 
-    date_to_week: dict[str, tuple[int, int]] = {}
-    date_to_month: dict[str, str] = {}
+    model_daily_totals: dict[tuple[str, str], tuple[int, int, int, int, int, float]] = {}
+    project_daily_totals: dict[tuple[str, str], tuple[int, float]] = {}
 
     for machine_name, machine_db in machine_db_paths:
         if not machine_db.exists():
@@ -293,62 +328,134 @@ def update_global_usage_summaries(
             cursor = conn.cursor()
             cursor.execute("PRAGMA query_only = ON")
 
-            cursor.execute(
-                """
-                SELECT
-                    date,
-                    total_prompts,
-                    total_responses,
-                    total_sessions,
-                    total_tokens,
-                    input_tokens,
-                    output_tokens,
-                    cache_creation_tokens,
-                    cache_read_tokens
-                FROM daily_snapshots
-                """
-            )
+            if dates_needed:
+                placeholders = ",".join("?" * len(dates_needed))
+                cursor.execute(
+                    f"""
+                    SELECT
+                        date,
+                        total_prompts,
+                        total_responses,
+                        total_sessions,
+                        total_tokens,
+                        input_tokens,
+                        output_tokens,
+                        cache_creation_tokens,
+                        cache_read_tokens
+                    FROM daily_snapshots
+                    WHERE date IN ({placeholders})
+                    """,
+                    dates_needed,
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        date,
+                        total_prompts,
+                        total_responses,
+                        total_sessions,
+                        total_tokens,
+                        input_tokens,
+                        output_tokens,
+                        cache_creation_tokens,
+                        cache_read_tokens
+                    FROM daily_snapshots
+                    """
+                )
             daily_rows = cursor.fetchall()
 
-            cursor.execute(
-                """
-                SELECT
-                    date,
-                    SUM(COALESCE(cost, 0.0))
-                FROM usage_records
-                GROUP BY date
-                """
-            )
+            if dates_needed:
+                placeholders = ",".join("?" * len(dates_needed))
+                cursor.execute(
+                    f"""
+                    SELECT
+                        date,
+                        SUM(COALESCE(cost, 0.0))
+                    FROM usage_records
+                    WHERE date IN ({placeholders})
+                    GROUP BY date
+                    """,
+                    dates_needed,
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        date,
+                        SUM(COALESCE(cost, 0.0))
+                    FROM usage_records
+                    GROUP BY date
+                    """
+                )
             cost_rows = cursor.fetchall()
 
-            cursor.execute(
-                """
-                SELECT
-                    model,
-                    SUM(total_tokens),
-                    SUM(input_tokens),
-                    SUM(output_tokens),
-                    SUM(cache_creation_tokens),
-                    SUM(cache_read_tokens),
-                    SUM(COALESCE(cost, 0.0))
-                FROM usage_records
-                WHERE model IS NOT NULL
-                GROUP BY model
-                """
-            )
+            if dates_needed:
+                placeholders = ",".join("?" * len(dates_needed))
+                cursor.execute(
+                    f"""
+                    SELECT
+                        date,
+                        model,
+                        SUM(total_tokens),
+                        SUM(input_tokens),
+                        SUM(output_tokens),
+                        SUM(cache_creation_tokens),
+                        SUM(cache_read_tokens),
+                        SUM(COALESCE(cost, 0.0))
+                    FROM usage_records
+                    WHERE model IS NOT NULL AND date IN ({placeholders})
+                    GROUP BY date, model
+                    """,
+                    dates_needed,
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        date,
+                        model,
+                        SUM(total_tokens),
+                        SUM(input_tokens),
+                        SUM(output_tokens),
+                        SUM(cache_creation_tokens),
+                        SUM(cache_read_tokens),
+                        SUM(COALESCE(cost, 0.0))
+                    FROM usage_records
+                    WHERE model IS NOT NULL
+                    GROUP BY date, model
+                    """
+                )
             model_rows = cursor.fetchall()
 
-            cursor.execute(
-                """
-                SELECT
-                    folder,
-                    SUM(total_tokens),
-                    SUM(COALESCE(cost, 0.0))
-                FROM usage_records
-                WHERE folder IS NOT NULL
-                GROUP BY folder
-                """
-            )
+            if dates_needed:
+                placeholders = ",".join("?" * len(dates_needed))
+                cursor.execute(
+                    f"""
+                    SELECT
+                        date,
+                        folder,
+                        SUM(total_tokens),
+                        SUM(COALESCE(cost, 0.0))
+                    FROM usage_records
+                    WHERE folder IS NOT NULL AND date IN ({placeholders})
+                    GROUP BY date, folder
+                    """,
+                    dates_needed,
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        date,
+                        folder,
+                        SUM(total_tokens),
+                        SUM(COALESCE(cost, 0.0))
+                    FROM usage_records
+                    WHERE folder IS NOT NULL
+                    GROUP BY date, folder
+                    """
+                )
             project_rows = cursor.fetchall()
         finally:
             conn.close()
@@ -374,19 +481,16 @@ def update_global_usage_summaries(
             totals.output_tokens += output_tokens
             totals.cache_creation_tokens += cache_creation
             totals.cache_read_tokens += cache_read
-
             daily_machine_sets[date].add(machine_name)
 
-            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            date_obj = datetime.strptime(date, "%Y-%m-%d").date()
             iso_year, iso_week, _ = date_obj.isocalendar()
             week_key = (iso_year, iso_week)
-
-            if week_key not in weekly_totals:
-                week_start = date_obj - timedelta(days=date_obj.weekday())
-                week_end = week_start + timedelta(days=6)
-                weekly_totals[week_key] = {
-                    "week_start": week_start.strftime("%Y-%m-%d"),
-                    "week_end": week_end.strftime("%Y-%m-%d"),
+            week_entry = weekly_totals.setdefault(
+                week_key,
+                {
+                    "week_start": (date_obj - timedelta(days=date_obj.weekday())).strftime("%Y-%m-%d"),
+                    "week_end": (date_obj - timedelta(days=date_obj.weekday()) + timedelta(days=6)).strftime("%Y-%m-%d"),
                     "total_prompts": 0,
                     "total_responses": 0,
                     "total_sessions": 0,
@@ -396,9 +500,8 @@ def update_global_usage_summaries(
                     "cache_creation_tokens": 0,
                     "cache_read_tokens": 0,
                     "total_cost": 0.0,
-                }
-
-            week_entry = weekly_totals[week_key]
+                },
+            )
             week_entry["total_prompts"] += prompts
             week_entry["total_responses"] += responses
             week_entry["total_sessions"] += sessions
@@ -408,7 +511,6 @@ def update_global_usage_summaries(
             week_entry["cache_creation_tokens"] += cache_creation
             week_entry["cache_read_tokens"] += cache_read
             weekly_machine_sets[week_key].add(machine_name)
-            date_to_week[date] = week_key
 
             month_key = date[:7]
             month_totals = monthly_totals.setdefault(month_key, DailyTotal(date=month_key))
@@ -421,7 +523,6 @@ def update_global_usage_summaries(
             month_totals.cache_creation_tokens += cache_creation
             month_totals.cache_read_tokens += cache_read
             monthly_machine_sets[month_key].add(machine_name)
-            date_to_month[date] = month_key
 
         for date, cost in cost_rows:
             value = float(cost or 0.0)
@@ -429,61 +530,83 @@ def update_global_usage_summaries(
             totals.total_cost += value
             daily_machine_sets[date].add(machine_name)
 
-            month_key = date_to_month.get(date)
-            if month_key is None:
-                month_key = date[:7]
-                monthly_totals.setdefault(month_key, DailyTotal(date=month_key))
-                date_to_month[date] = month_key
-            monthly_totals[month_key].total_cost += value
-            monthly_machine_sets[month_key].add(machine_name)
-
-            week_key = date_to_week.get(date)
-            if week_key is None:
-                date_obj = datetime.strptime(date, "%Y-%m-%d")
-                iso_year, iso_week, _ = date_obj.isocalendar()
-                week_key = (iso_year, iso_week)
-                if week_key not in weekly_totals:
-                    week_start = date_obj - timedelta(days=date_obj.weekday())
-                    week_end = week_start + timedelta(days=6)
-                    weekly_totals[week_key] = {
-                        "week_start": week_start.strftime("%Y-%m-%d"),
-                        "week_end": week_end.strftime("%Y-%m-%d"),
-                        "total_prompts": 0,
-                        "total_responses": 0,
-                        "total_sessions": 0,
-                        "total_tokens": 0,
-                        "input_tokens": 0,
-                        "output_tokens": 0,
-                        "cache_creation_tokens": 0,
-                        "cache_read_tokens": 0,
-                        "total_cost": 0.0,
-                    }
-                date_to_week[date] = week_key
-
-            weekly_totals[week_key]["total_cost"] += value
+            dt = datetime.strptime(date, "%Y-%m-%d").date()
+            week_key = dt.isocalendar()[:2]
+            weekly_totals.setdefault(
+                week_key,
+                {
+                    "week_start": (dt - timedelta(days=dt.weekday())).strftime("%Y-%m-%d"),
+                    "week_end": (dt - timedelta(days=dt.weekday()) + timedelta(days=6)).strftime("%Y-%m-%d"),
+                    "total_prompts": 0,
+                    "total_responses": 0,
+                    "total_sessions": 0,
+                    "total_tokens": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cache_creation_tokens": 0,
+                    "cache_read_tokens": 0,
+                    "total_cost": 0.0,
+                },
+            )["total_cost"] += value
             weekly_machine_sets[week_key].add(machine_name)
 
+            month_key = date[:7]
+            monthly_totals.setdefault(month_key, DailyTotal(date=month_key)).total_cost += value
+            monthly_machine_sets[month_key].add(machine_name)
+
         for row in model_rows:
-            model = row[0]
+            date = row[0]
+            model = row[1]
             if not model:
                 continue
+            total_tokens = row[2] or 0
+            input_tokens = row[3] or 0
+            output_tokens = row[4] or 0
+            cache_creation = row[5] or 0
+            cache_read = row[6] or 0
+            cost = float(row[7] or 0.0)
 
             model_summary = model_totals.setdefault(model, ModelTotal(model=model))
-            model_summary.total_tokens += row[1] or 0
-            model_summary.input_tokens += row[2] or 0
-            model_summary.output_tokens += row[3] or 0
-            model_summary.cache_creation_tokens += row[4] or 0
-            model_summary.cache_read_tokens += row[5] or 0
-            model_summary.total_cost += float(row[6] or 0.0)
+            model_summary.total_tokens += total_tokens
+            model_summary.input_tokens += input_tokens
+            model_summary.output_tokens += output_tokens
+            model_summary.cache_creation_tokens += cache_creation
+            model_summary.cache_read_tokens += cache_read
+            model_summary.total_cost += cost
+
+            key = (date, model)
+            prev = model_daily_totals.get(key)
+            if prev:
+                acum = (
+                    prev[0] + total_tokens,
+                    prev[1] + input_tokens,
+                    prev[2] + output_tokens,
+                    prev[3] + cache_creation,
+                    prev[4] + cache_read,
+                    prev[5] + cost,
+                )
+            else:
+                acum = (total_tokens, input_tokens, output_tokens, cache_creation, cache_read, cost)
+            model_daily_totals[key] = acum
 
         for row in project_rows:
-            folder = row[0]
+            date = row[0]
+            folder = row[1]
             if not folder:
                 continue
+            total_tokens = row[2] or 0
+            cost = float(row[3] or 0.0)
 
             project_summary = project_totals.setdefault(folder, ProjectTotal(folder=folder))
-            project_summary.total_tokens += row[1] or 0
-            project_summary.total_cost += float(row[2] or 0.0)
+            project_summary.total_tokens += total_tokens
+            project_summary.total_cost += cost
+
+            key = (date, folder)
+            prev = project_daily_totals.get(key)
+            if prev:
+                project_daily_totals[key] = (prev[0] + total_tokens, prev[1] + cost)
+            else:
+                project_daily_totals[key] = (total_tokens, cost)
 
     timestamp = datetime.now(timezone.utc).isoformat()
 
@@ -493,8 +616,13 @@ def update_global_usage_summaries(
         cursor.execute("PRAGMA busy_timeout = 30000")
         cursor.execute("BEGIN")
 
-        cursor.execute("DELETE FROM global_daily_summary")
-        daily_rows = [
+        if target_dates:
+            placeholders = ",".join("?" * len(target_dates))
+            cursor.execute(f"DELETE FROM global_daily_summary WHERE date IN ({placeholders})", target_dates)
+        else:
+            cursor.execute("DELETE FROM global_daily_summary")
+
+        daily_rows_out = [
             (
                 date,
                 totals.total_prompts,
@@ -510,6 +638,7 @@ def update_global_usage_summaries(
                 timestamp,
             )
             for date, totals in sorted(daily_totals.items())
+            if target_dates is None or date in target_dates
         ]
         cursor.executemany(
             """
@@ -528,30 +657,20 @@ def update_global_usage_summaries(
                 last_updated
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            daily_rows,
+            daily_rows_out,
         )
 
-        cursor.execute("DELETE FROM global_weekly_summary")
-        weekly_rows = [
-            (
-                key[0],
-                key[1],
-                data["week_start"],
-                data["week_end"],
-                data["total_prompts"],
-                data["total_responses"],
-                data["total_sessions"],
-                data["total_tokens"],
-                data["input_tokens"],
-                data["output_tokens"],
-                data["cache_creation_tokens"],
-                data["cache_read_tokens"],
-                data["total_cost"],
-                len(weekly_machine_sets.get(key, set())),
-                timestamp,
-            )
-            for key, data in sorted(weekly_totals.items())
-        ]
+        if target_weeks:
+            for iso_year, iso_week in target_weeks:
+                cursor.execute(
+                    "DELETE FROM global_weekly_summary WHERE iso_year = ? AND iso_week = ?",
+                    (iso_year, iso_week),
+                )
+            weekly_items = [(k, weekly_totals[k]) for k in target_weeks if k in weekly_totals]
+        else:
+            cursor.execute("DELETE FROM global_weekly_summary")
+            weekly_items = sorted(weekly_totals.items())
+
         cursor.executemany(
             """
             INSERT OR REPLACE INTO global_weekly_summary (
@@ -572,27 +691,36 @@ def update_global_usage_summaries(
                 last_updated
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            weekly_rows,
+            [
+                (
+                    key[0],
+                    key[1],
+                    data["week_start"],
+                    data["week_end"],
+                    data["total_prompts"],
+                    data["total_responses"],
+                    data["total_sessions"],
+                    data["total_tokens"],
+                    data["input_tokens"],
+                    data["output_tokens"],
+                    data["cache_creation_tokens"],
+                    data["cache_read_tokens"],
+                    data["total_cost"],
+                    len(weekly_machine_sets.get(key, set())),
+                    timestamp,
+                )
+                for key, data in weekly_items
+            ],
         )
 
-        cursor.execute("DELETE FROM global_monthly_summary")
-        monthly_rows = [
-            (
-                month,
-                totals.total_prompts,
-                totals.total_responses,
-                totals.total_sessions,
-                totals.total_tokens,
-                totals.input_tokens,
-                totals.output_tokens,
-                totals.cache_creation_tokens,
-                totals.cache_read_tokens,
-                totals.total_cost,
-                len(monthly_machine_sets.get(month, set())),
-                timestamp,
-            )
-            for month, totals in sorted(monthly_totals.items())
-        ]
+        if target_months:
+            for month in target_months:
+                cursor.execute("DELETE FROM global_monthly_summary WHERE year_month = ?", (month,))
+            monthly_items = [(m, monthly_totals[m]) for m in target_months if m in monthly_totals]
+        else:
+            cursor.execute("DELETE FROM global_monthly_summary")
+            monthly_items = sorted(monthly_totals.items())
+
         cursor.executemany(
             """
             INSERT OR REPLACE INTO global_monthly_summary (
@@ -610,24 +738,91 @@ def update_global_usage_summaries(
                 last_updated
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            monthly_rows,
+            [
+                (
+                    month,
+                    totals.total_prompts,
+                    totals.total_responses,
+                    totals.total_sessions,
+                    totals.total_tokens,
+                    totals.input_tokens,
+                    totals.output_tokens,
+                    totals.cache_creation_tokens,
+                    totals.cache_read_tokens,
+                    totals.total_cost,
+                    len(monthly_machine_sets.get(month, set())),
+                    timestamp,
+                )
+                for month, totals in monthly_items
+            ],
+        )
+
+        if target_dates:
+            placeholders = ",".join("?" * len(target_dates))
+            cursor.execute(f"DELETE FROM global_model_daily_summary WHERE date IN ({placeholders})", target_dates)
+            cursor.execute(f"DELETE FROM global_project_daily_summary WHERE date IN ({placeholders})", target_dates)
+        else:
+            cursor.execute("DELETE FROM global_model_daily_summary")
+            cursor.execute("DELETE FROM global_project_daily_summary")
+
+        model_daily_rows = [
+            (
+                date,
+                model,
+                totals[0],
+                totals[1],
+                totals[2],
+                totals[3],
+                totals[4],
+                totals[5],
+                timestamp,
+            )
+            for (date, model), totals in sorted(model_daily_totals.items())
+            if target_dates is None or date in target_dates
+        ]
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO global_model_daily_summary (
+                date,
+                model,
+                total_tokens,
+                input_tokens,
+                output_tokens,
+                cache_creation_tokens,
+                cache_read_tokens,
+                total_cost,
+                last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            model_daily_rows,
+        )
+
+        project_daily_rows = [
+            (
+                date,
+                folder,
+                totals[0],
+                totals[1],
+                timestamp,
+            )
+            for (date, folder), totals in sorted(project_daily_totals.items())
+            if target_dates is None or date in target_dates
+        ]
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO global_project_daily_summary (
+                date,
+                folder,
+                total_tokens,
+                total_cost,
+                last_updated
+            ) VALUES (?, ?, ?, ?, ?)
+            """,
+            project_daily_rows,
         )
 
         cursor.execute("DELETE FROM global_model_summary")
-        model_rows_out = [
-            (
-                model,
-                totals.total_tokens,
-                totals.input_tokens,
-                totals.output_tokens,
-                totals.cache_creation_tokens,
-                totals.cache_read_tokens,
-                totals.total_cost,
-                timestamp,
-            )
-            for model, totals in sorted(model_totals.items())
-        ]
-        cursor.executemany(
+        cursor.execute(
             """
             INSERT OR REPLACE INTO global_model_summary (
                 model,
@@ -638,31 +833,40 @@ def update_global_usage_summaries(
                 cache_read_tokens,
                 total_cost,
                 last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            )
+            SELECT
+                model,
+                SUM(total_tokens),
+                SUM(input_tokens),
+                SUM(output_tokens),
+                SUM(cache_creation_tokens),
+                SUM(cache_read_tokens),
+                SUM(total_cost),
+                ?
+            FROM global_model_daily_summary
+            GROUP BY model
             """,
-            model_rows_out,
+            (timestamp,),
         )
 
         cursor.execute("DELETE FROM global_project_summary")
-        project_rows_out = [
-            (
-                folder,
-                totals.total_tokens,
-                totals.total_cost,
-                timestamp,
-            )
-            for folder, totals in sorted(project_totals.items())
-        ]
-        cursor.executemany(
+        cursor.execute(
             """
             INSERT OR REPLACE INTO global_project_summary (
                 folder,
                 total_tokens,
                 total_cost,
                 last_updated
-            ) VALUES (?, ?, ?, ?)
+            )
+            SELECT
+                folder,
+                SUM(total_tokens),
+                SUM(total_cost),
+                ?
+            FROM global_project_daily_summary
+            GROUP BY folder
             """,
-            project_rows_out,
+            (timestamp,),
         )
 
         cursor.execute("COMMIT")
@@ -671,7 +875,6 @@ def update_global_usage_summaries(
         raise
     finally:
         base_conn.close()
-
 
 def load_usage_summary(
     start_date: Optional[str] = None,
@@ -849,7 +1052,12 @@ def load_recent_usage_records(
     first_of_month = today.replace(day=1)
     cutoff_date = (first_of_month - timedelta(days=max(include_previous_days, 0))).strftime("%Y-%m-%d")
 
-    return load_all_devices_historical_records(start_date=cutoff_date, end_date=None)
+    all_records = load_all_devices_historical_records_cached()
+    if not all_records:
+        return []
+
+    recent_records = [record for record in all_records if record.date_key >= cutoff_date]
+    return recent_records
 
 
 #endregion
@@ -1304,6 +1512,32 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
                 total_tokens INTEGER NOT NULL,
                 total_cost REAL NOT NULL,
                 last_updated TEXT NOT NULL
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS global_model_daily_summary (
+                date TEXT NOT NULL,
+                model TEXT NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                total_cost REAL NOT NULL,
+                last_updated TEXT NOT NULL,
+                PRIMARY KEY (date, model)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS global_project_daily_summary (
+                date TEXT NOT NULL,
+                folder TEXT NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                total_cost REAL NOT NULL,
+                last_updated TEXT NOT NULL,
+                PRIMARY KEY (date, folder)
             )
         """)
 

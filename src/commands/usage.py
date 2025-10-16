@@ -987,59 +987,96 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
 
     # Apply view mode filter
     display_records = list(all_records)
-    if view_mode == VIEW_MODE_WEEKLY and limits_from_db and limits_from_db.get("week_reset"):
-        # Parse week reset date and filter records for weekly mode only
-        week_reset_date = _parse_week_reset_date(limits_from_db["week_reset"])
-        if week_reset_date:
-            # Apply offset for week navigation
-            adjusted_week_reset_date = week_reset_date - timedelta(weeks=-time_offset)
-            display_records = _filter_records_by_week(all_records, adjusted_week_reset_date)
+    if view_mode == VIEW_MODE_WEEKLY:
+        if limits_from_db and limits_from_db.get("week_reset"):
+            # Parse week reset date and filter records for weekly mode only
+            week_reset_date = _parse_week_reset_date(limits_from_db["week_reset"])
+            if week_reset_date:
+                # Apply offset for week navigation
+                adjusted_week_reset_date = week_reset_date - timedelta(weeks=-time_offset)
+                display_records = _filter_records_by_week(all_records, adjusted_week_reset_date)
 
-            # Calculate week range for display (with time boundaries)
-            week_start_datetime = adjusted_week_reset_date - timedelta(days=7)
-            week_end_datetime = adjusted_week_reset_date
+                # Calculate week range for display (with time boundaries)
+                week_start_datetime = adjusted_week_reset_date - timedelta(days=7)
+                week_end_datetime = adjusted_week_reset_date
 
-            # Extract reset time (HH:MM format)
-            reset_time_str = adjusted_week_reset_date.strftime("%H:%M")
+                # Extract reset time (HH:MM format)
+                reset_time_str = adjusted_week_reset_date.strftime("%H:%M")
 
-            # Get reset day of week (e.g., "Fri" for Friday)
-            from zoneinfo import ZoneInfo
-            from datetime import timezone
-            # Convert to local timezone for display
-            tz_name = limits_from_db.get("week_reset", "").split("(")[-1].rstrip(")") if "(" in limits_from_db.get("week_reset", "") else "UTC"
-            try:
-                tz = ZoneInfo(tz_name)
-                local_reset_time = adjusted_week_reset_date.replace(tzinfo=timezone.utc).astimezone(tz)
-                reset_day_name = local_reset_time.strftime("%a")  # Mon, Tue, Wed, etc.
-                reset_time_str = local_reset_time.strftime("%H:%M")
-            except Exception:
-                reset_day_name = adjusted_week_reset_date.strftime("%a")
+                # Get reset day of week (e.g., "Fri" for Friday)
+                from zoneinfo import ZoneInfo
+                from datetime import timezone
+                # Convert to local timezone for display
+                tz_name = limits_from_db.get("week_reset", "").split("(")[-1].rstrip(")") if "(" in limits_from_db.get("week_reset", "") else "UTC"
+                try:
+                    tz = ZoneInfo(tz_name)
+                    local_reset_time = adjusted_week_reset_date.replace(tzinfo=timezone.utc).astimezone(tz)
+                    reset_day_name = local_reset_time.strftime("%a")  # Mon, Tue, Wed, etc.
+                    reset_time_str = local_reset_time.strftime("%H:%M")
+                except Exception:
+                    reset_day_name = adjusted_week_reset_date.strftime("%a")
 
-            if not display_records:
-                # Fall back to monthly if no data in weekly range
-                display_records = all_records
-                view_mode = VIEW_MODE_MONTHLY
-            else:
-                # Store weekly dates for keyboard navigation
-                # Extract unique dates and sort them (oldest first, matching daily breakdown display)
-                from collections import defaultdict
-                daily_data = defaultdict(int)
+                week_start_date = week_start_datetime.date()
+                week_end_date = (week_end_datetime - timedelta(seconds=1)).date()
+                total_days = (week_end_date - week_start_date).days
+                if total_days < 0:
+                    total_days = 6
+                    week_end_date = week_start_date + timedelta(days=total_days)
 
-                for record in display_records:
-                    if record.token_usage:
-                        date = record.timestamp.strftime("%Y-%m-%d") if hasattr(record, 'timestamp') else record.date_key
-                        daily_data[date] += record.token_usage.total_tokens
+                week_dates = [
+                    (week_start_date + timedelta(days=offset)).strftime("%Y-%m-%d")
+                    for offset in range(total_days + 1)
+                ]
 
-                # Sort by date in ascending order (oldest first) to match display order
-                sorted_dates = sorted(daily_data.keys(), reverse=False)
-
-                # Store in view_mode_ref for keyboard listener and dashboard rendering
                 if view_mode_ref:
-                    view_mode_ref['weekly_dates'] = sorted_dates
-                    view_mode_ref['week_start_date'] = week_start_datetime.date()
-                    view_mode_ref['week_end_date'] = (week_end_datetime - timedelta(seconds=1)).date()
-                    view_mode_ref['week_reset_time'] = reset_time_str  # HH:MM format
-                    view_mode_ref['week_reset_day'] = reset_day_name   # Day of week (Mon, Tue, etc.)
+                    view_mode_ref['weekly_dates'] = week_dates
+                    view_mode_ref['week_start_date'] = week_start_date
+                    view_mode_ref['week_end_date'] = week_end_date
+                    view_mode_ref['week_reset_time'] = reset_time_str
+                    view_mode_ref['week_reset_day'] = reset_day_name
+        else:
+            from datetime import timezone
+
+            # Determine base end date using latest record (local date) or current day
+            latest_record = None
+            if all_records:
+                latest_record = max(
+                    (record for record in all_records if getattr(record, "timestamp", None)),
+                    key=lambda r: r.timestamp,
+                    default=None,
+                )
+
+            if latest_record and latest_record.timestamp:
+                base_end_date = latest_record.timestamp.astimezone().date()
+            else:
+                base_end_date = datetime.now(timezone.utc).astimezone().date()
+
+            # Apply offset (negative offsets move backwards)
+            target_end_date = base_end_date + timedelta(weeks=time_offset)
+            target_start_date = target_end_date - timedelta(days=6)
+
+            filtered_records = []
+            for record in all_records:
+                try:
+                    record_date = record.timestamp.astimezone().date()
+                except Exception:
+                    continue
+
+                if target_start_date <= record_date <= target_end_date:
+                    filtered_records.append(record)
+
+            display_records = filtered_records
+
+            if view_mode_ref:
+                week_dates = [
+                    (target_start_date + timedelta(days=offset)).strftime("%Y-%m-%d")
+                    for offset in range(7)
+                ]
+                view_mode_ref['weekly_dates'] = week_dates
+                view_mode_ref['week_start_date'] = target_start_date
+                view_mode_ref['week_end_date'] = target_end_date
+                view_mode_ref['week_reset_time'] = None
+                view_mode_ref['week_reset_day'] = None
     elif view_mode == VIEW_MODE_MONTHLY:
         # Filter by month with offset
         now = datetime.now()
@@ -1068,7 +1105,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
             except Exception:
                 continue
 
-        display_records = filtered if filtered else all_records
+        display_records = filtered
     elif view_mode == VIEW_MODE_YEARLY:
         # Filter by year with offset
         target_year = datetime.now().year + time_offset
@@ -1086,7 +1123,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
             except Exception:
                 continue
 
-        display_records = filtered if filtered else all_records
+        display_records = filtered
 
     # Get date range for footer
     dates = sorted(set(r.date_key for r in display_records))
