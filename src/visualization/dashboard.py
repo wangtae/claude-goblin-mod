@@ -474,8 +474,11 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         print(f"[DEBUG] KPI section: {(t_kpi_end - t_kpi_start)*1000:.1f}ms", file=sys.stderr)
 
         # Render Summary (and Usage Limits in weekly mode)
+        t_kpi_print_start = time_module.time()
         console.print(kpi_section, end="")
         console.print()  # Blank line between sections
+        t_kpi_print_end = time_module.time()
+        print(f"[DEBUG] KPI section PRINT: {(t_kpi_print_end - t_kpi_print_start)*1000:.1f}ms", file=sys.stderr)
 
         # Model breakdown is always important
         t_model_start = time_module.time()
@@ -564,7 +567,10 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     print(f"[DEBUG] Console.print sections: {(t_print_end - t_print_start)*1000:.1f}ms", file=sys.stderr)
 
     # Always render footer
+    t_footer_start = time_module.time()
     console.print(footer, end="")
+    t_footer_end = time_module.time()
+    print(f"[DEBUG] Footer print: {(t_footer_end - t_footer_start)*1000:.1f}ms", file=sys.stderr)
 
 
 def _calculate_session_cost(records: list[UsageRecord]) -> float:
