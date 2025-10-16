@@ -419,6 +419,21 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                         from src.storage.snapshot_db import save_user_preference
                         save_user_preference('usage_display_mode', str(new_display))
                         save_user_preference('color_mode', new_color)
+                    elif view_mode_ref['mode'] == VIEW_MODE_WEEKLY:
+                        # Toggle between limits and calendar week
+                        current = view_mode_ref.get('weekly_display_mode', 'limits')
+                        view_mode_ref['weekly_display_mode'] = 'calendar' if current == 'limits' else 'limits'
+                        view_mode_ref['changed'] = True
+                    elif view_mode_ref['mode'] == VIEW_MODE_MONTHLY:
+                        # Toggle between daily and weekly breakdown
+                        current = view_mode_ref.get('monthly_display_mode', 'daily')
+                        view_mode_ref['monthly_display_mode'] = 'weekly' if current == 'daily' else 'daily'
+                        view_mode_ref['changed'] = True
+                    elif view_mode_ref['mode'] == VIEW_MODE_YEARLY:
+                        # Toggle between monthly and weekly breakdown
+                        current = view_mode_ref.get('yearly_display_mode', 'monthly')
+                        view_mode_ref['yearly_display_mode'] = 'weekly' if current == 'monthly' else 'monthly'
+                        view_mode_ref['changed'] = True
                 elif key == 's':  # Settings menu
                     # Save current view mode to restore later
                     previous_mode = view_mode_ref['mode']
@@ -673,6 +688,9 @@ def _run_refresh_dashboard(jsonl_files: list[Path], console: Console, original_t
         'usage_display_mode': usage_display_mode,
         'color_mode': color_mode,
         'colors': colors,
+        'weekly_display_mode': 'limits',  # 'limits' or 'calendar'
+        'monthly_display_mode': 'daily',  # 'daily' or 'weekly'
+        'yearly_display_mode': 'monthly',  # 'monthly' or 'weekly'
         'original_terminal_settings': original_terminal_settings,  # Store for settings page
     }
     stop_event = threading.Event()
@@ -781,6 +799,9 @@ def _run_watch_dashboard(jsonl_files: list[Path], console: Console, original_ter
         'usage_display_mode': usage_display_mode,
         'color_mode': color_mode,
         'colors': colors,
+        'weekly_display_mode': 'limits',  # 'limits' or 'calendar'
+        'monthly_display_mode': 'daily',  # 'daily' or 'weekly'
+        'yearly_display_mode': 'monthly',  # 'monthly' or 'weekly'
         'original_terminal_settings': original_terminal_settings,  # Store for settings page
     }
     stop_event = threading.Event()

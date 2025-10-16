@@ -470,24 +470,61 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
             project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
 
-            # Get week range from view_mode_ref if available
-            week_start = view_mode_ref.get('week_start_date') if view_mode_ref else None
-            week_end = view_mode_ref.get('week_end_date') if view_mode_ref else None
-            reset_time = view_mode_ref.get('week_reset_time') if view_mode_ref else None
-            reset_day = view_mode_ref.get('week_reset_day') if view_mode_ref else None
+            # Check weekly display mode (limits or calendar)
+            weekly_display_mode = view_mode_ref.get('weekly_display_mode', 'limits') if view_mode_ref else 'limits'
 
-            daily_breakdown_weekly = _create_daily_breakdown_weekly(records, week_start, week_end, reset_time, reset_day)
-            sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
+            if weekly_display_mode == 'calendar':
+                # Show calendar week (Mon-Sun, current ISO week)
+                daily_breakdown_calendar = _create_daily_breakdown_calendar_week(records)
+                sections_to_render.append(("daily_calendar", daily_breakdown_calendar))
+            else:
+                # Show Usage Limits week (default)
+                # Get week range from view_mode_ref if available
+                week_start = view_mode_ref.get('week_start_date') if view_mode_ref else None
+                week_end = view_mode_ref.get('week_end_date') if view_mode_ref else None
+                reset_time = view_mode_ref.get('week_reset_time') if view_mode_ref else None
+                reset_day = view_mode_ref.get('week_reset_day') if view_mode_ref else None
+
+                daily_breakdown_weekly = _create_daily_breakdown_weekly(records, week_start, week_end, reset_time, reset_day)
+                sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
         elif view_mode == "monthly":
             project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
-            daily_breakdown = _create_daily_breakdown(records)
-            sections_to_render.append(("daily", daily_breakdown))
+
+            # Check monthly display mode (daily or weekly)
+            monthly_display_mode = view_mode_ref.get('monthly_display_mode', 'daily') if view_mode_ref else 'daily'
+
+            if monthly_display_mode == 'weekly':
+                # Show weekly breakdown (calendar weeks for this month)
+                from datetime import datetime
+                current_date = datetime.now()
+                # Note: time_offset is used for month navigation in usage.py
+                # For now, use current year/month (time_offset will be handled in usage.py)
+                weekly_breakdown = _create_weekly_breakdown_for_month(records, current_date.year, current_date.month)
+                sections_to_render.append(("weekly_month", weekly_breakdown))
+            else:
+                # Show daily breakdown (default)
+                daily_breakdown = _create_daily_breakdown(records)
+                sections_to_render.append(("daily", daily_breakdown))
         elif view_mode == "yearly":
             project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
-            monthly_breakdown = _create_monthly_breakdown(records)
-            sections_to_render.append(("monthly", monthly_breakdown))
+
+            # Check yearly display mode (monthly or weekly)
+            yearly_display_mode = view_mode_ref.get('yearly_display_mode', 'monthly') if view_mode_ref else 'monthly'
+
+            if yearly_display_mode == 'weekly':
+                # Show weekly breakdown (calendar weeks)
+                from datetime import datetime
+                current_year = datetime.now().year
+                # Note: time_offset is used for year navigation in usage.py
+                # For now, use current year (time_offset will be handled in usage.py)
+                weekly_breakdown = _create_weekly_breakdown_calendar(records, current_year)
+                sections_to_render.append(("weekly_calendar", weekly_breakdown))
+            else:
+                # Show monthly breakdown (default)
+                monthly_breakdown = _create_monthly_breakdown(records)
+                sections_to_render.append(("monthly", monthly_breakdown))
 
     # Render sections
     for section_type, section in sections_to_render:
@@ -1146,33 +1183,179 @@ def _create_daily_breakdown(records: list[UsageRecord]) -> Panel:
             }))
         current_date += timedelta(days=1)
 
-    # Sort by date in descending order (most recent first)
-    sorted_dates = sorted(all_dates, reverse=True)
+    # Sort by date in ascending order (oldest first)
+    sorted_dates = sorted(all_dates, reverse=False)
 
-    # Create table with English column names
+    # Calculate max total tokens for bar scaling
+    max_total_tokens = max((data["input_tokens"] + data["output_tokens"] for _, data in sorted_dates), default=0)
+
+    # Create table with bar graph
     table = Table(show_header=True, box=None, padding=(0, 2))
-    table.add_column("Date", style="purple", justify="left", width=12)
-    table.add_column("Cost", style="green", justify="right", width=10)
-    table.add_column("Input", style=BLUE, justify="right", width=12)
-    table.add_column("Output", style=BLUE, justify="right", width=12)
-    table.add_column("Cache Write", style="magenta", justify="right", width=14)
-    table.add_column("Cache Read", style="magenta", justify="right", width=14)
+    table.add_column("Date", style="white", justify="left", width=12)
+    table.add_column("", justify="left", width=10)  # Bar column (no header)
+    table.add_column("Tokens(I/O)", style=ORANGE, justify="right", width=20)
+    table.add_column("Cache(W/R)", style="magenta", justify="right", width=20)
     table.add_column("Messages", style="white", justify="right", width=10)
+    table.add_column("Cost", style="green", justify="right", width=10)
 
     for date, data in sorted_dates:
+        # Calculate total tokens for bar
+        total_tokens = data["input_tokens"] + data["output_tokens"]
+
+        # Create bar (use total_tokens for scaling)
+        if total_tokens == 0:
+            bar = Text("▬" * 10, style=DIM)
+        else:
+            bar = _create_bar(total_tokens, max_total_tokens, width=10)
+
+        # Format Tokens(I/O) as "Input / Output"
+        tokens_io = f"{_format_number(data['input_tokens'])} / {_format_number(data['output_tokens'])}"
+
+        # Format Cache(W/R) as "Write / Read"
+        cache_wr = f"{_format_number(data['cache_creation'])} / {_format_number(data['cache_read'])}"
+
         table.add_row(
             date,
-            format_cost(data["cost"]),
-            _format_number(data["input_tokens"]),
-            _format_number(data["output_tokens"]),
-            _format_number(data["cache_creation"]),
-            _format_number(data["cache_read"]),
+            bar,
+            tokens_io,
+            cache_wr,
             str(data["messages"]),
+            format_cost(data["cost"]),
         )
 
     return Panel(
         table,
         title="[bold]Daily Usage",
+        border_style="white",
+        expand=True,
+    )
+
+
+def _create_daily_breakdown_calendar_week(records: list[UsageRecord]) -> Panel:
+    """
+    Create daily usage breakdown for weekly mode using calendar week (Mon-Sun).
+    Shows 7 days of current ISO calendar week.
+
+    Args:
+        records: List of usage records (should cover current calendar week)
+
+    Returns:
+        Panel with daily breakdown in graph format
+    """
+    from src.models.pricing import calculate_cost, format_cost
+    from datetime import datetime, timedelta
+
+    # Get current ISO calendar week
+    now = datetime.now()
+    iso_cal = now.isocalendar()
+    current_year = iso_cal[0]
+    current_week = iso_cal[1]
+
+    # Get Monday of current week
+    monday = datetime.fromisocalendar(current_year, current_week, 1)
+    week_start_date = monday.date()
+    week_end_date = (monday + timedelta(days=6)).date()
+
+    # Aggregate by date (format: "YYYY-MM-DD")
+    daily_data: dict[str, dict] = defaultdict(lambda: {
+        "total_tokens": 0,
+        "cost": 0.0
+    })
+
+    for record in records:
+        if record.token_usage:
+            # Extract date from timestamp
+            date = record.timestamp.strftime("%Y-%m-%d")
+            record_date = record.timestamp.date()
+
+            # Only include records within calendar week
+            if week_start_date <= record_date <= week_end_date:
+                daily_data[date]["total_tokens"] += (
+                    record.token_usage.input_tokens + record.token_usage.output_tokens
+                )
+
+                if record.model and record.model != "<synthetic>":
+                    cost = calculate_cost(
+                        record.token_usage.input_tokens,
+                        record.token_usage.output_tokens,
+                        record.model,
+                        record.token_usage.cache_creation_tokens,
+                        record.token_usage.cache_read_tokens,
+                    )
+                    daily_data[date]["cost"] += cost
+
+    # Generate all dates in the calendar week (Mon-Sun)
+    all_dates = []
+    current_date = week_start_date
+    while current_date <= week_end_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+        if date_str in daily_data:
+            all_dates.append((date_str, daily_data[date_str]))
+        else:
+            # Day with no data
+            all_dates.append((date_str, {
+                "total_tokens": 0,
+                "cost": 0.0
+            }))
+        current_date += timedelta(days=1)
+
+    # Calculate totals and max for scaling
+    total_tokens = sum(data["total_tokens"] for _, data in all_dates)
+    max_tokens = max((data["total_tokens"] for _, data in all_dates), default=0)
+
+    # Sort by date in ascending order (Monday first)
+    sorted_dates = sorted(all_dates, reverse=False)
+
+    # Create table with bars
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("Date", style="white", justify="left", width=30)
+    table.add_column("", justify="left", width=20)  # Bar column
+    table.add_column("Tokens", style=ORANGE, justify="right", width=12)
+    table.add_column("%", style=CYAN, justify="right", width=8)
+    table.add_column("Cost", style="green", justify="right", width=10)
+
+    for idx, (date, data) in enumerate(sorted_dates, start=1):
+        tokens = data["total_tokens"]
+        percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
+
+        # Parse date and get day of week
+        date_obj = datetime.strptime(date, "%Y-%m-%d")
+        day_name = date_obj.strftime("%a")  # Mon, Tue, Wed, etc.
+
+        # Format: [1] 2025-10-15, Mon
+        date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name}"
+
+        # If no data for this day, show "-" for tokens/cost and empty bar
+        if tokens == 0:
+            bar = Text("▬" * 20, style=DIM)
+            tokens_display = "[dim]-[/dim]"
+            percentage_display = "[dim]-[/dim]"
+            cost_display = "[dim]-[/dim]"
+        else:
+            bar = _create_bar(tokens, max_tokens, width=20)
+            tokens_display = _format_number(tokens)
+            percentage_display = f"[cyan]{percentage:.1f}%[/cyan]"
+            cost_display = format_cost(data["cost"])
+
+        table.add_row(
+            date_with_shortcut,
+            bar,
+            tokens_display,
+            percentage_display,
+            cost_display,
+        )
+
+    # Create dynamic subtitle based on actual number of dates
+    num_dates = len(sorted_dates)
+    if num_dates > 0:
+        subtitle_text = f"[dim]Press number keys (1-{num_dates}) to view detailed hourly breakdown[/dim]"
+    else:
+        subtitle_text = None
+
+    return Panel(
+        table,
+        title="[bold]Daily Usage (Calendar Week)",
+        subtitle=subtitle_text,
         border_style="white",
         expand=True,
     )
@@ -1256,8 +1439,8 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
     total_tokens = sum(data["total_tokens"] for _, data in all_dates)
     max_tokens = max((data["total_tokens"] for _, data in all_dates), default=0)
 
-    # Sort by date in descending order (most recent first)
-    sorted_dates = sorted(all_dates, reverse=True)
+    # Sort by date in ascending order (oldest first)
+    sorted_dates = sorted(all_dates, reverse=False)
 
     # Create table with bars
     table = Table(show_header=True, box=None, padding=(0, 2))
@@ -1314,7 +1497,7 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
 
     return Panel(
         table,
-        title="[bold]Daily Usage",
+        title="[bold]Daily Usage (Weekly Limit Period)",
         subtitle=subtitle_text,
         border_style="white",
         expand=True,
@@ -1453,33 +1636,271 @@ def _create_monthly_breakdown(records: list[UsageRecord]) -> Panel:
             border_style="white",
         )
 
-    # Sort by month in descending order (most recent first)
-    sorted_months = sorted(monthly_data.items(), reverse=True)
+    # Sort by month in ascending order (oldest first)
+    sorted_months = sorted(monthly_data.items(), reverse=False)
 
-    # Create table with English column names
+    # Calculate max total tokens for bar scaling
+    max_total_tokens = max((data["input_tokens"] + data["output_tokens"] for _, data in sorted_months), default=0)
+
+    # Create table with bar graph (same structure as Daily Usage in monthly mode)
     table = Table(show_header=True, box=None, padding=(0, 2))
-    table.add_column("Month", style="purple", justify="left", width=10)
-    table.add_column("Cost", style="green", justify="right", width=10)
-    table.add_column("Input", style=BLUE, justify="right", width=12)
-    table.add_column("Output", style=BLUE, justify="right", width=12)
-    table.add_column("Cache Write", style="magenta", justify="right", width=14)
-    table.add_column("Cache Read", style="magenta", justify="right", width=14)
+    table.add_column("Month", style="white", justify="left", width=10)
+    table.add_column("", justify="left", width=10)  # Bar column (no header)
+    table.add_column("Tokens(I/O)", style=ORANGE, justify="right", width=20)
+    table.add_column("Cache(W/R)", style="magenta", justify="right", width=20)
     table.add_column("Messages", style="white", justify="right", width=10)
+    table.add_column("Cost", style="green", justify="right", width=10)
 
     for month, data in sorted_months:
+        # Calculate total tokens for bar
+        total_tokens = data["input_tokens"] + data["output_tokens"]
+
+        # Create bar (use total_tokens for scaling)
+        if total_tokens == 0:
+            bar = Text("▬" * 10, style=DIM)
+        else:
+            bar = _create_bar(total_tokens, max_total_tokens, width=10)
+
+        # Format Tokens(I/O) as "Input / Output"
+        tokens_io = f"{_format_number(data['input_tokens'])} / {_format_number(data['output_tokens'])}"
+
+        # Format Cache(W/R) as "Write / Read"
+        cache_wr = f"{_format_number(data['cache_creation'])} / {_format_number(data['cache_read'])}"
+
         table.add_row(
             month,
-            format_cost(data["cost"]),
-            _format_number(data["input_tokens"]),
-            _format_number(data["output_tokens"]),
-            _format_number(data["cache_creation"]),
-            _format_number(data["cache_read"]),
+            bar,
+            tokens_io,
+            cache_wr,
             str(data["messages"]),
+            format_cost(data["cost"]),
         )
 
     return Panel(
         table,
         title="[bold]Monthly Usage",
+        border_style="white",
+        expand=True,
+    )
+
+
+def _create_weekly_breakdown_for_month(records: list[UsageRecord], year: int, month: int) -> Panel:
+    """
+    Create weekly usage breakdown for monthly mode (calendar weeks in a specific month).
+    Uses ISO 8601 week definition: Monday start, week 1 contains Jan 4th.
+
+    Args:
+        records: List of usage records
+        year: Year to display (e.g., 2025)
+        month: Month to display (1-12)
+
+    Returns:
+        Panel with weekly breakdown table
+    """
+    from src.models.pricing import calculate_cost, format_cost
+    from datetime import datetime, timedelta
+
+    # Aggregate by ISO week
+    weekly_data: dict[int, dict] = defaultdict(lambda: {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation": 0,
+        "cache_read": 0,
+        "messages": 0,
+        "cost": 0.0
+    })
+
+    for record in records:
+        if record.token_usage and record.timestamp:
+            # Get ISO week number
+            iso_cal = record.timestamp.isocalendar()
+            iso_year = iso_cal[0]
+            iso_week = iso_cal[1]
+
+            # Only include weeks from the target year and month
+            # Check if the record's date is in the target month
+            if record.timestamp.year == year and record.timestamp.month == month:
+                weekly_data[iso_week]["input_tokens"] += record.token_usage.input_tokens
+                weekly_data[iso_week]["output_tokens"] += record.token_usage.output_tokens
+                weekly_data[iso_week]["cache_creation"] += record.token_usage.cache_creation_tokens
+                weekly_data[iso_week]["cache_read"] += record.token_usage.cache_read_tokens
+                weekly_data[iso_week]["messages"] += 1
+
+                if record.model and record.model != "<synthetic>":
+                    cost = calculate_cost(
+                        record.token_usage.input_tokens,
+                        record.token_usage.output_tokens,
+                        record.model,
+                        record.token_usage.cache_creation_tokens,
+                        record.token_usage.cache_read_tokens,
+                    )
+                    weekly_data[iso_week]["cost"] += cost
+
+    if not weekly_data:
+        return Panel(
+            Text("No weekly data available", style=DIM),
+            title="[bold]Weekly Usage (Calendar)",
+            border_style="white",
+        )
+
+    # Sort by week number (ascending - oldest first)
+    sorted_weeks = sorted(weekly_data.items())
+
+    # Calculate max for bar scaling
+    max_total_tokens = max((data["input_tokens"] + data["output_tokens"] for _, data in sorted_weeks), default=0)
+
+    # Create table (same structure as Daily Usage)
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("Week", style="white", justify="left", width=15)
+    table.add_column("", justify="left", width=10)  # Bar
+    table.add_column("Tokens(I/O)", style=ORANGE, justify="right", width=20)
+    table.add_column("Cache(W/R)", style="magenta", justify="right", width=20)
+    table.add_column("Messages", style="white", justify="right", width=10)
+    table.add_column("Cost", style="green", justify="right", width=10)
+
+    for week_num, data in sorted_weeks:
+        # Get the Monday of this week to determine the display format
+        from datetime import datetime
+        monday = datetime.fromisocalendar(year, week_num, 1)
+
+        # Format week as "2025-09-W40" (year-month-week)
+        week_label = f"{year}-{month:02d}-W{week_num:02d}"
+
+        # Calculate total tokens for bar
+        total_tokens = data["input_tokens"] + data["output_tokens"]
+
+        # Create bar
+        if total_tokens == 0:
+            bar = Text("▬" * 10, style=DIM)
+        else:
+            bar = _create_bar(total_tokens, max_total_tokens, width=10)
+
+        # Format data
+        tokens_io = f"{_format_number(data['input_tokens'])} / {_format_number(data['output_tokens'])}"
+        cache_wr = f"{_format_number(data['cache_creation'])} / {_format_number(data['cache_read'])}"
+
+        table.add_row(
+            week_label,
+            bar,
+            tokens_io,
+            cache_wr,
+            str(data["messages"]),
+            format_cost(data["cost"]),
+        )
+
+    return Panel(
+        table,
+        title="[bold]Weekly Usage (Calendar)",
+        border_style="white",
+        expand=True,
+    )
+
+
+def _create_weekly_breakdown_calendar(records: list[UsageRecord], year: int) -> Panel:
+    """
+    Create weekly usage breakdown for yearly mode (calendar weeks).
+    Uses ISO 8601 week definition: Monday start, week 1 contains Jan 4th.
+
+    Args:
+        records: List of usage records
+        year: Year to display (e.g., 2025)
+
+    Returns:
+        Panel with weekly breakdown table
+    """
+    from src.models.pricing import calculate_cost, format_cost
+
+    # Aggregate by ISO week
+    weekly_data: dict[int, dict] = defaultdict(lambda: {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation": 0,
+        "cache_read": 0,
+        "messages": 0,
+        "cost": 0.0
+    })
+
+    for record in records:
+        if record.token_usage and record.timestamp:
+            # Get ISO week number
+            iso_cal = record.timestamp.isocalendar()
+            iso_year = iso_cal[0]
+            iso_week = iso_cal[1]
+
+            # Only include weeks from the target year
+            if iso_year == year:
+                weekly_data[iso_week]["input_tokens"] += record.token_usage.input_tokens
+                weekly_data[iso_week]["output_tokens"] += record.token_usage.output_tokens
+                weekly_data[iso_week]["cache_creation"] += record.token_usage.cache_creation_tokens
+                weekly_data[iso_week]["cache_read"] += record.token_usage.cache_read_tokens
+                weekly_data[iso_week]["messages"] += 1
+
+                if record.model and record.model != "<synthetic>":
+                    cost = calculate_cost(
+                        record.token_usage.input_tokens,
+                        record.token_usage.output_tokens,
+                        record.model,
+                        record.token_usage.cache_creation_tokens,
+                        record.token_usage.cache_read_tokens,
+                    )
+                    weekly_data[iso_week]["cost"] += cost
+
+    if not weekly_data:
+        return Panel(
+            Text("No weekly data available", style=DIM),
+            title="[bold]Weekly Usage (Calendar)",
+            border_style="white",
+        )
+
+    # Sort by week number (ascending - oldest first)
+    sorted_weeks = sorted(weekly_data.items())
+
+    # Calculate max for bar scaling
+    max_total_tokens = max((data["input_tokens"] + data["output_tokens"] for _, data in sorted_weeks), default=0)
+
+    # Create table (same structure as Monthly Usage)
+    table = Table(show_header=True, box=None, padding=(0, 2))
+    table.add_column("Week", style="white", justify="left", width=15)
+    table.add_column("", justify="left", width=10)  # Bar
+    table.add_column("Tokens(I/O)", style=ORANGE, justify="right", width=20)
+    table.add_column("Cache(W/R)", style="magenta", justify="right", width=20)
+    table.add_column("Messages", style="white", justify="right", width=10)
+    table.add_column("Cost", style="green", justify="right", width=10)
+
+    for week_num, data in sorted_weeks:
+        # Get the Monday of this week to determine the month
+        from datetime import datetime
+        monday = datetime.fromisocalendar(year, week_num, 1)
+        month = monday.month
+
+        # Format week as "2025-09-W40" (year-month-week)
+        week_label = f"{year}-{month:02d}-W{week_num:02d}"
+
+        # Calculate total tokens for bar
+        total_tokens = data["input_tokens"] + data["output_tokens"]
+
+        # Create bar
+        if total_tokens == 0:
+            bar = Text("▬" * 10, style=DIM)
+        else:
+            bar = _create_bar(total_tokens, max_total_tokens, width=10)
+
+        # Format data
+        tokens_io = f"{_format_number(data['input_tokens'])} / {_format_number(data['output_tokens'])}"
+        cache_wr = f"{_format_number(data['cache_creation'])} / {_format_number(data['cache_read'])}"
+
+        table.add_row(
+            week_label,
+            bar,
+            tokens_io,
+            cache_wr,
+            str(data["messages"]),
+            format_cost(data["cost"]),
+        )
+
+    return Panel(
+        table,
+        title="[bold]Weekly Usage (Calendar)",
         border_style="white",
         expand=True,
     )
@@ -1953,7 +2374,9 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             # Simplified format for usage mode (only show usage and weekly)
             footer.append("[u]sage", style=f"black on {YELLOW}")
             footer.append(" ", style="")
-            footer.append("[w]eekly", style=DIM)
+            footer.append("[", style=DIM)
+            footer.append("w", style="white")
+            footer.append("]eekly", style=DIM)
         elif in_message_detail:
             # Message detail mode - show date and hour
             daily_date = view_mode_ref.get("daily_detail_date")
@@ -1982,46 +2405,68 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             if view_mode == "usage":
                 footer.append("[u]sage", style=f"black on {YELLOW}")
             else:
-                footer.append("[u]sage", style=DIM)
+                footer.append("[", style=DIM)
+                footer.append("u", style="white")
+                footer.append("]sage", style=DIM)
             footer.append(" ", style="")
 
             # Weekly
             if view_mode == "weekly":
-                footer.append("[w]eekly", style=f"black on {YELLOW}")
+                # Check which weekly mode is active
+                weekly_display_mode = view_mode_ref.get('weekly_display_mode', 'limits') if view_mode_ref else 'limits'
+
+                if weekly_display_mode == 'calendar':
+                    # Calendar mode - use yellow (standard selection color)
+                    footer.append("[w]eekly", style=f"black on {YELLOW}")
+                else:
+                    # Limit Period mode - use bright red (same as Usage Limits bar color)
+                    footer.append("[w]eekly", style="black on bright_red")
             else:
-                footer.append("[w]eekly", style=DIM)
+                footer.append("[", style=DIM)
+                footer.append("w", style="white")
+                footer.append("]eekly", style=DIM)
             footer.append(" ", style="")
 
             # Monthly
             if view_mode == "monthly":
                 footer.append("[m]onthly", style=f"black on {YELLOW}")
             else:
-                footer.append("[m]onthly", style=DIM)
+                footer.append("[", style=DIM)
+                footer.append("m", style="white")
+                footer.append("]onthly", style=DIM)
             footer.append(" ", style="")
 
             # Yearly
             if view_mode == "yearly":
                 footer.append("[y]early", style=f"black on {YELLOW}")
             else:
-                footer.append("[y]early", style=DIM)
+                footer.append("[", style=DIM)
+                footer.append("y", style="white")
+                footer.append("]early", style=DIM)
             footer.append(" ", style="")
 
             # Heatmap
             if view_mode == "heatmap":
                 footer.append("[h]eatmap", style=f"black on {YELLOW}")
             else:
-                footer.append("[h]eatmap", style=DIM)
+                footer.append("[", style=DIM)
+                footer.append("h", style="white")
+                footer.append("]eatmap", style=DIM)
             footer.append(" ", style="")
 
             # Devices
             if view_mode == "devices":
                 footer.append("[d]evices", style=f"black on {YELLOW}")
             else:
-                footer.append("[d]evices", style=DIM)
+                footer.append("[", style=DIM)
+                footer.append("d", style="white")
+                footer.append("]evices", style=DIM)
             footer.append(" ", style="")
 
             # Settings
-            footer.append("[s]ettings", style=DIM)
+            footer.append("[", style=DIM)
+            footer.append("s", style="white")
+            footer.append("]ettings", style=DIM)
 
         # Add date range if provided (on same line), but not for usage mode, daily detail, or message detail mode
         if date_range and view_mode != "usage" and not in_daily_detail and not in_message_detail:
@@ -2082,6 +2527,12 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
                 else:
                     period_label = "year"
                 footer.append(f" to navigate {period_label}s, ", style=DIM)
+
+                # Add tab to switch mode hint for weekly, monthly, and yearly modes
+                if view_mode in ["weekly", "monthly", "yearly"]:
+                    footer.append("tab", style=f"bold {YELLOW}")
+                    footer.append(" to switch mode, ", style=DIM)
+
                 footer.append("esc", style=f"bold {YELLOW}")
                 footer.append(" key to quit.", style=DIM)
                 footer.append("\n")
@@ -2094,11 +2545,15 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
         # Add auto update time or updating status (last line, so cursor appears on right)
         if is_updating:
-            footer.append("Auto [r]efresh: ", style=DIM)
+            footer.append("Auto [", style=DIM)
+            footer.append("r", style="white")
+            footer.append("]efresh: ", style=DIM)
             footer.append("Updating... ", style="bold yellow")
             footer.append("◼", style="bold yellow blink")
         elif last_update_time:
-            footer.append("Auto [r]efresh: ", style=DIM)
+            footer.append("Auto [", style=DIM)
+            footer.append("r", style="white")
+            footer.append("]efresh: ", style=DIM)
             footer.append(f"{last_update_time} ", style="bold cyan")
 
     else:
