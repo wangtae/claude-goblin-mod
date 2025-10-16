@@ -410,8 +410,9 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         # Message detail mode - show messages for specific hour
         from src.storage.snapshot_db import load_all_devices_messages_by_hour
         hourly_messages = load_all_devices_messages_by_hour(daily_detail_date, hourly_detail_hour)
-        show_full_content = view_mode_ref.get('show_full_content', False) if view_mode_ref else False
-        message_detail = _create_message_detail_view(hourly_messages, daily_detail_date, hourly_detail_hour, show_full_content, view_mode_ref)
+        # Get content mode: "brief" (default), "detail", or "hide"
+        content_mode = view_mode_ref.get('message_content_mode', 'brief') if view_mode_ref else 'brief'
+        message_detail = _create_message_detail_view(hourly_messages, daily_detail_date, hourly_detail_hour, content_mode, view_mode_ref)
         sections_to_render.append(("message_detail", message_detail))
     elif daily_detail_date:
         # Daily detail mode - show only the detail view without KPI section
@@ -2213,7 +2214,7 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     return Group(hourly_panel, spacing, model_panel, spacing, project_panel)
 
 
-def _create_message_detail_view(records: list[UsageRecord], target_date: str, target_hour: int, show_full_content: bool = False, view_mode_ref: dict | None = None) -> Group:
+def _create_message_detail_view(records: list[UsageRecord], target_date: str, target_hour: int, content_mode: str = "brief", view_mode_ref: dict | None = None) -> Group:
     """
     Create detailed view for messages in a specific hour.
 
@@ -2221,7 +2222,7 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
         records: List of usage records for the target hour
         target_date: Target date in YYYY-MM-DD format (e.g., "2025-10-15")
         target_hour: Target hour in 24-hour format (0-23)
-        show_full_content: If True, show full message content; if False, show brief preview
+        content_mode: Content display mode - "brief" (63 chars), "detail" (full content), or "hide" (no content)
         view_mode_ref: Reference dict to track last viewed message ID
 
     Returns:
@@ -2366,8 +2367,9 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
             message_items.append(msg_table)
 
             # Add content preview immediately below all messages (both User and Asst)
-            if record.content:
-                if show_full_content:
+            # Modes: "brief" (63 chars), "detail" (full content), "hide" (no content)
+            if record.content and content_mode != "hide":
+                if content_mode == "detail":
                     # Show full content with line breaks preserved
                     content_lines = record.content.strip().split("\n")
                     for line_idx, line in enumerate(content_lines):
@@ -2381,7 +2383,7 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
                             content_text.append("                  ", style=DIM)
                         content_text.append(line, style=DIM)
                         message_items.append(content_text)
-                else:
+                elif content_mode == "brief":
                     # Show truncated preview
                     preview = record.content.strip().replace("\n", " ")
                     # Truncate to 63 chars (42 * 1.5, increased by 50%)
@@ -2411,10 +2413,9 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
     all_items = [header_table] + message_items
 
     # Create panel with dynamic subtitle based on content mode
-    if show_full_content:
-        subtitle_text = "[dim]Press [bold yellow]tab[/bold yellow] to switch mode([bright_green]Detail[/bright_green]), [bold]esc[/bold] to return to daily view[/dim]"
-    else:
-        subtitle_text = "[dim]Press [bold yellow]tab[/bold yellow] to switch mode([bright_green]Brief[/bright_green]), [bold]esc[/bold] to return to daily view[/dim]"
+    # Mode display: capitalize first letter for display
+    mode_display = content_mode.capitalize()  # "brief" -> "Brief", "detail" -> "Detail", "hide" -> "Hide"
+    subtitle_text = f"[dim]Press [bold yellow]tab[/bold yellow] to switch mode([bright_green]{mode_display}[/bright_green]), [bold]esc[/bold] to return to daily view[/dim]"
 
     panel = Panel(
         Group(*all_items),
@@ -2636,9 +2637,9 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
             if in_message_detail:
                 # Message detail mode - show tab to switch mode and esc to return
-                # Get current content mode
-                show_full = view_mode_ref.get('show_full_content', False)
-                current_mode = "Detail" if show_full else "Brief"
+                # Get current content mode ("brief", "detail", or "hide")
+                content_mode = view_mode_ref.get('message_content_mode', 'brief')
+                current_mode = content_mode.capitalize()  # "Brief", "Detail", or "Hide"
 
                 footer.append("Press ", style=DIM)
                 footer.append("tab", style=f"bold {YELLOW}")

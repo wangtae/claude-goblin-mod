@@ -387,11 +387,19 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                     view_mode_ref['offset'] = 0  # Reset offset when changing mode
                     view_mode_ref['changed'] = True
                 elif key == '\t':  # Tab key
-                    # Check if in message detail mode (show full content toggle)
+                    # Check if in message detail mode (content mode rotation: brief -> detail -> hide -> brief)
                     if view_mode_ref.get('hourly_detail_hour') is not None:
-                        # Toggle show_full_content in message detail view
-                        current_show_full = view_mode_ref.get('show_full_content', False)
-                        view_mode_ref['show_full_content'] = not current_show_full
+                        # Get current mode (default: "brief")
+                        current_mode = view_mode_ref.get('message_content_mode', 'brief')
+
+                        # Rotate: brief -> detail -> hide -> brief
+                        if current_mode == 'brief':
+                            view_mode_ref['message_content_mode'] = 'detail'
+                        elif current_mode == 'detail':
+                            view_mode_ref['message_content_mode'] = 'hide'
+                        else:  # hide
+                            view_mode_ref['message_content_mode'] = 'brief'
+
                         view_mode_ref['changed'] = True
                     elif view_mode_ref['mode'] == "usage":
                         # Cycle through 8 modes: S1 -> S2 -> S3 -> S4 -> G1 -> G2 -> G3 -> G4 -> S1
