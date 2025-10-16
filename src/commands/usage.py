@@ -1014,6 +1014,10 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     # Get time offset from view_mode_ref
     time_offset = view_mode_ref.get('offset', 0) if view_mode_ref else 0
 
+    # Debug: Time measurement for performance analysis
+    import time as time_module
+    t_start = time_module.time()
+
     # Apply view mode filter
     display_records = all_records
     if view_mode == VIEW_MODE_WEEKLY and limits_from_db and limits_from_db.get("week_reset"):
@@ -1133,12 +1137,22 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     if anonymize:
         display_records = _anonymize_projects(display_records)
 
+    t_filter = time_module.time()
+    print(f"[DEBUG] Filter time: {(t_filter - t_start)*1000:.1f}ms", file=sys.stderr)
+
     # Aggregate statistics with caching
     stats = _aggregate_with_cache(display_records, view_mode, time_offset)
+
+    t_aggregate = time_module.time()
+    print(f"[DEBUG] Aggregate time: {(t_aggregate - t_filter)*1000:.1f}ms", file=sys.stderr)
 
     # Render dashboard with limits from DB (no live fetch needed)
     # Note: fast_mode is always False to avoid showing warning message
     render_dashboard(stats, display_records, console, skip_limits=True, clear_screen=True, date_range=date_range, limits_from_db=limits_from_db, fast_mode=False, view_mode=view_mode, view_mode_ref=view_mode_ref)
+
+    t_render = time_module.time()
+    print(f"[DEBUG] Render time: {(t_render - t_aggregate)*1000:.1f}ms", file=sys.stderr)
+    print(f"[DEBUG] TOTAL time: {(t_render - t_start)*1000:.1f}ms", file=sys.stderr)
 
 
 def _aggregate_with_cache(display_records: list, view_mode: str, time_offset: int):
