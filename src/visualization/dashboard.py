@@ -2123,10 +2123,12 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
             shortcut = chr(ord('a') + idx - 10)  # 10->a, 11->b, ..., 24->o
 
         # Include shortcut in Time column like Weekly page
-        hour_with_shortcut = f"[yellow][{shortcut}][/yellow] {hour}"
+        shortcut_label = Text()
+        shortcut_label.append(f"[{shortcut}]", style="yellow")
+        shortcut_label.append(f" {hour}")
 
         hourly_table.add_row(
-            hour_with_shortcut,
+            shortcut_label,
             format_cost(data["cost"]),
             _format_number(data["input_tokens"]),
             _format_number(data["output_tokens"]),
