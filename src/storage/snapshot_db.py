@@ -4,11 +4,18 @@ import platform
 import re
 import sqlite3
 import pickle
-from datetime import datetime, timezone
+from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 from src.models.usage_record import UsageRecord, TokenUsage
+from src.aggregation.summary import (
+    DailyTotal,
+    ModelTotal,
+    ProjectTotal,
+    UsageSummary,
+)
 #endregion
 
 
@@ -34,6 +41,8 @@ _DEVICE_CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 hours
 _CACHE_FILENAME_SANITIZER = re.compile(r"[^A-Za-z0-9_.-]+")
 _CACHE_EXTENSION = ".pkl"
 _CACHE_LEGACY_EXTENSION = ".json"
+_RECENT_USAGE_DEFAULT_EXTRA_DAYS = 0
+
 
 
 def _get_device_cache_dir() -> Optional[Path]:
@@ -232,6 +241,620 @@ def _save_device_cache(
             legacy_path.unlink()
         except OSError:
             pass
+
+
+#endregion
+
+
+#region Aggregated Usage Summary
+
+
+def update_global_usage_summaries(
+    dates: set[str] | None = None,
+    base_db_path: Path | None = None,
+) -> None:
+    """Recompute global daily, weekly, and monthly summaries across all devices."""
+    if base_db_path is None:
+        base_db_path = DEFAULT_DB_PATH
+
+    machine_db_paths = get_all_machine_db_paths()
+
+    if not machine_db_paths:
+        return
+
+    init_database(base_db_path)
+
+    daily_totals: dict[str, DailyTotal] = {}
+    daily_machine_sets: dict[str, set[str]] = defaultdict(set)
+
+    weekly_totals: dict[tuple[int, int], dict] = {}
+    weekly_machine_sets: dict[tuple[int, int], set[str]] = defaultdict(set)
+
+    monthly_totals: dict[str, DailyTotal] = {}
+    monthly_machine_sets: dict[str, set[str]] = defaultdict(set)
+
+    model_totals: dict[str, ModelTotal] = {}
+    project_totals: dict[str, ProjectTotal] = {}
+
+    date_to_week: dict[str, tuple[int, int]] = {}
+    date_to_month: dict[str, str] = {}
+
+    for machine_name, machine_db in machine_db_paths:
+        if not machine_db.exists():
+            continue
+
+        try:
+            update_monthly_device_stats(machine_db)
+        except Exception:
+            pass
+
+        conn = sqlite3.connect(machine_db, timeout=30.0)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA query_only = ON")
+
+            cursor.execute(
+                """
+                SELECT
+                    date,
+                    total_prompts,
+                    total_responses,
+                    total_sessions,
+                    total_tokens,
+                    input_tokens,
+                    output_tokens,
+                    cache_creation_tokens,
+                    cache_read_tokens
+                FROM daily_snapshots
+                """
+            )
+            daily_rows = cursor.fetchall()
+
+            cursor.execute(
+                """
+                SELECT
+                    date,
+                    SUM(COALESCE(cost, 0.0))
+                FROM usage_records
+                GROUP BY date
+                """
+            )
+            cost_rows = cursor.fetchall()
+
+            cursor.execute(
+                """
+                SELECT
+                    model,
+                    SUM(total_tokens),
+                    SUM(input_tokens),
+                    SUM(output_tokens),
+                    SUM(cache_creation_tokens),
+                    SUM(cache_read_tokens),
+                    SUM(COALESCE(cost, 0.0))
+                FROM usage_records
+                WHERE model IS NOT NULL
+                GROUP BY model
+                """
+            )
+            model_rows = cursor.fetchall()
+
+            cursor.execute(
+                """
+                SELECT
+                    folder,
+                    SUM(total_tokens),
+                    SUM(COALESCE(cost, 0.0))
+                FROM usage_records
+                WHERE folder IS NOT NULL
+                GROUP BY folder
+                """
+            )
+            project_rows = cursor.fetchall()
+        finally:
+            conn.close()
+
+        for row in daily_rows:
+            date = row[0]
+            totals = daily_totals.setdefault(date, DailyTotal(date=date))
+
+            prompts = row[1] or 0
+            responses = row[2] or 0
+            sessions = row[3] or 0
+            total_tokens = row[4] or 0
+            input_tokens = row[5] or 0
+            output_tokens = row[6] or 0
+            cache_creation = row[7] or 0
+            cache_read = row[8] or 0
+
+            totals.total_prompts += prompts
+            totals.total_responses += responses
+            totals.total_sessions += sessions
+            totals.total_tokens += total_tokens
+            totals.input_tokens += input_tokens
+            totals.output_tokens += output_tokens
+            totals.cache_creation_tokens += cache_creation
+            totals.cache_read_tokens += cache_read
+
+            daily_machine_sets[date].add(machine_name)
+
+            date_obj = datetime.strptime(date, "%Y-%m-%d")
+            iso_year, iso_week, _ = date_obj.isocalendar()
+            week_key = (iso_year, iso_week)
+
+            if week_key not in weekly_totals:
+                week_start = date_obj - timedelta(days=date_obj.weekday())
+                week_end = week_start + timedelta(days=6)
+                weekly_totals[week_key] = {
+                    "week_start": week_start.strftime("%Y-%m-%d"),
+                    "week_end": week_end.strftime("%Y-%m-%d"),
+                    "total_prompts": 0,
+                    "total_responses": 0,
+                    "total_sessions": 0,
+                    "total_tokens": 0,
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "cache_creation_tokens": 0,
+                    "cache_read_tokens": 0,
+                    "total_cost": 0.0,
+                }
+
+            week_entry = weekly_totals[week_key]
+            week_entry["total_prompts"] += prompts
+            week_entry["total_responses"] += responses
+            week_entry["total_sessions"] += sessions
+            week_entry["total_tokens"] += total_tokens
+            week_entry["input_tokens"] += input_tokens
+            week_entry["output_tokens"] += output_tokens
+            week_entry["cache_creation_tokens"] += cache_creation
+            week_entry["cache_read_tokens"] += cache_read
+            weekly_machine_sets[week_key].add(machine_name)
+            date_to_week[date] = week_key
+
+            month_key = date[:7]
+            month_totals = monthly_totals.setdefault(month_key, DailyTotal(date=month_key))
+            month_totals.total_prompts += prompts
+            month_totals.total_responses += responses
+            month_totals.total_sessions += sessions
+            month_totals.total_tokens += total_tokens
+            month_totals.input_tokens += input_tokens
+            month_totals.output_tokens += output_tokens
+            month_totals.cache_creation_tokens += cache_creation
+            month_totals.cache_read_tokens += cache_read
+            monthly_machine_sets[month_key].add(machine_name)
+            date_to_month[date] = month_key
+
+        for date, cost in cost_rows:
+            value = float(cost or 0.0)
+            totals = daily_totals.setdefault(date, DailyTotal(date=date))
+            totals.total_cost += value
+            daily_machine_sets[date].add(machine_name)
+
+            month_key = date_to_month.get(date)
+            if month_key is None:
+                month_key = date[:7]
+                monthly_totals.setdefault(month_key, DailyTotal(date=month_key))
+                date_to_month[date] = month_key
+            monthly_totals[month_key].total_cost += value
+            monthly_machine_sets[month_key].add(machine_name)
+
+            week_key = date_to_week.get(date)
+            if week_key is None:
+                date_obj = datetime.strptime(date, "%Y-%m-%d")
+                iso_year, iso_week, _ = date_obj.isocalendar()
+                week_key = (iso_year, iso_week)
+                if week_key not in weekly_totals:
+                    week_start = date_obj - timedelta(days=date_obj.weekday())
+                    week_end = week_start + timedelta(days=6)
+                    weekly_totals[week_key] = {
+                        "week_start": week_start.strftime("%Y-%m-%d"),
+                        "week_end": week_end.strftime("%Y-%m-%d"),
+                        "total_prompts": 0,
+                        "total_responses": 0,
+                        "total_sessions": 0,
+                        "total_tokens": 0,
+                        "input_tokens": 0,
+                        "output_tokens": 0,
+                        "cache_creation_tokens": 0,
+                        "cache_read_tokens": 0,
+                        "total_cost": 0.0,
+                    }
+                date_to_week[date] = week_key
+
+            weekly_totals[week_key]["total_cost"] += value
+            weekly_machine_sets[week_key].add(machine_name)
+
+        for row in model_rows:
+            model = row[0]
+            if not model:
+                continue
+
+            model_summary = model_totals.setdefault(model, ModelTotal(model=model))
+            model_summary.total_tokens += row[1] or 0
+            model_summary.input_tokens += row[2] or 0
+            model_summary.output_tokens += row[3] or 0
+            model_summary.cache_creation_tokens += row[4] or 0
+            model_summary.cache_read_tokens += row[5] or 0
+            model_summary.total_cost += float(row[6] or 0.0)
+
+        for row in project_rows:
+            folder = row[0]
+            if not folder:
+                continue
+
+            project_summary = project_totals.setdefault(folder, ProjectTotal(folder=folder))
+            project_summary.total_tokens += row[1] or 0
+            project_summary.total_cost += float(row[2] or 0.0)
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    base_conn = sqlite3.connect(base_db_path, timeout=30.0)
+    try:
+        cursor = base_conn.cursor()
+        cursor.execute("PRAGMA busy_timeout = 30000")
+        cursor.execute("BEGIN")
+
+        cursor.execute("DELETE FROM global_daily_summary")
+        daily_rows = [
+            (
+                date,
+                totals.total_prompts,
+                totals.total_responses,
+                totals.total_sessions,
+                totals.total_tokens,
+                totals.input_tokens,
+                totals.output_tokens,
+                totals.cache_creation_tokens,
+                totals.cache_read_tokens,
+                totals.total_cost,
+                len(daily_machine_sets.get(date, set())),
+                timestamp,
+            )
+            for date, totals in sorted(daily_totals.items())
+        ]
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO global_daily_summary (
+                date,
+                total_prompts,
+                total_responses,
+                total_sessions,
+                total_tokens,
+                input_tokens,
+                output_tokens,
+                cache_creation_tokens,
+                cache_read_tokens,
+                total_cost,
+                machine_count,
+                last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            daily_rows,
+        )
+
+        cursor.execute("DELETE FROM global_weekly_summary")
+        weekly_rows = [
+            (
+                key[0],
+                key[1],
+                data["week_start"],
+                data["week_end"],
+                data["total_prompts"],
+                data["total_responses"],
+                data["total_sessions"],
+                data["total_tokens"],
+                data["input_tokens"],
+                data["output_tokens"],
+                data["cache_creation_tokens"],
+                data["cache_read_tokens"],
+                data["total_cost"],
+                len(weekly_machine_sets.get(key, set())),
+                timestamp,
+            )
+            for key, data in sorted(weekly_totals.items())
+        ]
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO global_weekly_summary (
+                iso_year,
+                iso_week,
+                week_start,
+                week_end,
+                total_prompts,
+                total_responses,
+                total_sessions,
+                total_tokens,
+                input_tokens,
+                output_tokens,
+                cache_creation_tokens,
+                cache_read_tokens,
+                total_cost,
+                machine_count,
+                last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            weekly_rows,
+        )
+
+        cursor.execute("DELETE FROM global_monthly_summary")
+        monthly_rows = [
+            (
+                month,
+                totals.total_prompts,
+                totals.total_responses,
+                totals.total_sessions,
+                totals.total_tokens,
+                totals.input_tokens,
+                totals.output_tokens,
+                totals.cache_creation_tokens,
+                totals.cache_read_tokens,
+                totals.total_cost,
+                len(monthly_machine_sets.get(month, set())),
+                timestamp,
+            )
+            for month, totals in sorted(monthly_totals.items())
+        ]
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO global_monthly_summary (
+                year_month,
+                total_prompts,
+                total_responses,
+                total_sessions,
+                total_tokens,
+                input_tokens,
+                output_tokens,
+                cache_creation_tokens,
+                cache_read_tokens,
+                total_cost,
+                machine_count,
+                last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            monthly_rows,
+        )
+
+        cursor.execute("DELETE FROM global_model_summary")
+        model_rows_out = [
+            (
+                model,
+                totals.total_tokens,
+                totals.input_tokens,
+                totals.output_tokens,
+                totals.cache_creation_tokens,
+                totals.cache_read_tokens,
+                totals.total_cost,
+                timestamp,
+            )
+            for model, totals in sorted(model_totals.items())
+        ]
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO global_model_summary (
+                model,
+                total_tokens,
+                input_tokens,
+                output_tokens,
+                cache_creation_tokens,
+                cache_read_tokens,
+                total_cost,
+                last_updated
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            model_rows_out,
+        )
+
+        cursor.execute("DELETE FROM global_project_summary")
+        project_rows_out = [
+            (
+                folder,
+                totals.total_tokens,
+                totals.total_cost,
+                timestamp,
+            )
+            for folder, totals in sorted(project_totals.items())
+        ]
+        cursor.executemany(
+            """
+            INSERT OR REPLACE INTO global_project_summary (
+                folder,
+                total_tokens,
+                total_cost,
+                last_updated
+            ) VALUES (?, ?, ?, ?)
+            """,
+            project_rows_out,
+        )
+
+        cursor.execute("COMMIT")
+    except Exception:
+        cursor.execute("ROLLBACK")
+        raise
+    finally:
+        base_conn.close()
+
+
+def load_usage_summary(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> UsageSummary:
+    init_database(DEFAULT_DB_PATH)
+
+    def _ensure_summary_data() -> None:
+        conn_check = sqlite3.connect(DEFAULT_DB_PATH, timeout=30.0)
+        try:
+            cursor_check = conn_check.cursor()
+            tables_to_check = [
+                "global_daily_summary",
+                "global_weekly_summary",
+                "global_monthly_summary",
+                "global_model_summary",
+                "global_project_summary",
+            ]
+
+            needs_update = False
+            for table in tables_to_check:
+                cursor_check.execute(f"SELECT COUNT(*) FROM {table}")
+                if cursor_check.fetchone()[0] == 0:
+                    needs_update = True
+                    break
+        finally:
+            conn_check.close()
+
+        if needs_update:
+            update_global_usage_summaries()
+
+    _ensure_summary_data()
+
+    conn = sqlite3.connect(DEFAULT_DB_PATH, timeout=30.0)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA query_only = ON")
+
+        daily_filters: list[str] = []
+        params: list[str] = []
+        if start_date:
+            daily_filters.append("date >= ?")
+            params.append(start_date)
+        if end_date:
+            daily_filters.append("date <= ?")
+            params.append(end_date)
+
+        daily_where = f"WHERE {' AND '.join(daily_filters)}" if daily_filters else ""
+
+        cursor.execute(
+            f"""
+            SELECT
+                date,
+                total_prompts,
+                total_responses,
+                total_sessions,
+                total_tokens,
+                input_tokens,
+                output_tokens,
+                cache_creation_tokens,
+                cache_read_tokens,
+                total_cost
+            FROM global_daily_summary
+            {daily_where}
+            ORDER BY date
+            """,
+            params,
+        )
+        daily_rows = cursor.fetchall()
+
+        daily_totals = {
+            row[0]: DailyTotal(
+                date=row[0],
+                total_prompts=row[1] or 0,
+                total_responses=row[2] or 0,
+                total_sessions=row[3] or 0,
+                total_tokens=row[4] or 0,
+                input_tokens=row[5] or 0,
+                output_tokens=row[6] or 0,
+                cache_creation_tokens=row[7] or 0,
+                cache_read_tokens=row[8] or 0,
+                total_cost=float(row[9] or 0.0),
+            )
+            for row in daily_rows
+        }
+
+        overall = DailyTotal(date="all")
+        for totals in daily_totals.values():
+            overall.total_prompts += totals.total_prompts
+            overall.total_responses += totals.total_responses
+            overall.total_sessions += totals.total_sessions
+            overall.total_tokens += totals.total_tokens
+            overall.input_tokens += totals.input_tokens
+            overall.output_tokens += totals.output_tokens
+            overall.cache_creation_tokens += totals.cache_creation_tokens
+            overall.cache_read_tokens += totals.cache_read_tokens
+            overall.total_cost += totals.total_cost
+
+        cursor.execute(
+            """
+            SELECT
+                model,
+                total_tokens,
+                input_tokens,
+                output_tokens,
+                cache_creation_tokens,
+                cache_read_tokens,
+                total_cost
+            FROM global_model_summary
+            ORDER BY total_tokens DESC
+            """
+        )
+        model_totals = {
+            row[0]: ModelTotal(
+                model=row[0],
+                total_tokens=row[1] or 0,
+                input_tokens=row[2] or 0,
+                output_tokens=row[3] or 0,
+                cache_creation_tokens=row[4] or 0,
+                cache_read_tokens=row[5] or 0,
+                total_cost=float(row[6] or 0.0),
+            )
+            for row in cursor.fetchall()
+            if row[0]
+        }
+
+        cursor.execute(
+            """
+            SELECT
+                folder,
+                total_tokens,
+                total_cost
+            FROM global_project_summary
+            ORDER BY total_tokens DESC
+            """
+        )
+        project_totals = {
+            row[0]: ProjectTotal(
+                folder=row[0],
+                total_tokens=row[1] or 0,
+                total_cost=float(row[2] or 0.0),
+            )
+            for row in cursor.fetchall()
+            if row[0]
+        }
+    finally:
+        conn.close()
+
+    return UsageSummary(
+        totals=overall,
+        daily=daily_totals,
+        models=model_totals,
+        projects=project_totals,
+    )
+
+
+def load_recent_usage_records(
+    include_previous_days: int = _RECENT_USAGE_DEFAULT_EXTRA_DAYS,
+) -> list[UsageRecord]:
+    """
+    Load recent usage records across all devices.
+
+    Only records from the current month are returned by default. Set
+    ``include_previous_days`` to pull additional days immediately preceding the
+    current month (e.g., last week).
+
+    Args:
+        include_previous_days: Number of days before the first day of the
+            current month to include (default: 0).
+
+    Returns:
+        List of UsageRecord objects sorted chronologically.
+    """
+    today = datetime.now(timezone.utc).date()
+    first_of_month = today.replace(day=1)
+    cutoff_date = (first_of_month - timedelta(days=max(include_previous_days, 0))).strftime("%Y-%m-%d")
+
+    return load_all_devices_historical_records(start_date=cutoff_date, end_date=None)
+
+
+#endregion
+
+
 def _try_create_folder(path: Path) -> bool:
     """
     Try to create folder. Return True if successful or already exists.
@@ -401,6 +1024,8 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(db_path, timeout=30.0)  # 30 second timeout for OneDrive sync
+    should_update_global = False
+
     try:
         cursor = conn.cursor()
 
@@ -604,6 +1229,84 @@ def init_database(db_path: Path = DEFAULT_DB_PATH) -> None:
             ON device_monthly_stats(machine_name)
         """)
 
+        # Global monthly summary (aggregated across all devices)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS global_monthly_summary (
+                year_month TEXT PRIMARY KEY,
+                total_prompts INTEGER NOT NULL,
+                total_responses INTEGER NOT NULL,
+                total_sessions INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                total_cost REAL NOT NULL,
+                machine_count INTEGER NOT NULL,
+                last_updated TEXT NOT NULL
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS global_weekly_summary (
+                iso_year INTEGER NOT NULL,
+                iso_week INTEGER NOT NULL,
+                week_start TEXT NOT NULL,
+                week_end TEXT NOT NULL,
+                total_prompts INTEGER NOT NULL,
+                total_responses INTEGER NOT NULL,
+                total_sessions INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                total_cost REAL NOT NULL,
+                machine_count INTEGER NOT NULL,
+                last_updated TEXT NOT NULL,
+                PRIMARY KEY (iso_year, iso_week)
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS global_daily_summary (
+                date TEXT PRIMARY KEY,
+                total_prompts INTEGER NOT NULL,
+                total_responses INTEGER NOT NULL,
+                total_sessions INTEGER NOT NULL,
+                total_tokens INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                total_cost REAL NOT NULL,
+                machine_count INTEGER NOT NULL,
+                last_updated TEXT NOT NULL
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS global_model_summary (
+                model TEXT PRIMARY KEY,
+                total_tokens INTEGER NOT NULL,
+                input_tokens INTEGER NOT NULL,
+                output_tokens INTEGER NOT NULL,
+                cache_creation_tokens INTEGER NOT NULL,
+                cache_read_tokens INTEGER NOT NULL,
+                total_cost REAL NOT NULL,
+                last_updated TEXT NOT NULL
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS global_project_summary (
+                folder TEXT PRIMARY KEY,
+                total_tokens INTEGER NOT NULL,
+                total_cost REAL NOT NULL,
+                last_updated TEXT NOT NULL
+            )
+        """)
+
         # Populate pricing data from defaults.py
         from src.config.defaults import DEFAULT_MODEL_PRICING
 
@@ -653,6 +1356,8 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
         sqlite3.Error: If database operation fails
     """
     global _device_stats_cache, _device_stats_cache_time, _device_records_cache, _merged_records_cache
+
+    should_update_global = False
 
     if not records:
         return 0
@@ -810,9 +1515,16 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
             except Exception:
                 # Non-fatal if monthly update fails
                 pass
+            should_update_global = True
 
     finally:
         conn.close()
+
+    if should_update_global:
+        try:
+            update_global_usage_summaries(dates_to_update, base_db_path=db_path)
+        except Exception:
+            pass
 
     return saved_count
 

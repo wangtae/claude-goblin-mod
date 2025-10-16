@@ -11,6 +11,7 @@ from rich.progress import Progress, BarColumn, TextColumn
 from rich.spinner import Spinner
 
 from src.aggregation.daily_stats import AggregatedStats
+from src.aggregation.summary import DailyTotal, UsageSummary
 from src.models.usage_record import UsageRecord
 from src.storage.snapshot_db import get_limits_data
 #endregion
@@ -143,12 +144,13 @@ def _create_usage_bar_with_percent(percentage: int, width: int = 50, color_mode:
     return bar_text
 
 
-def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None, fast_mode: bool = False, view_mode: str = "usage", is_updating: bool = False, view_mode_ref: dict | None = None) -> None:
+def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: list[UsageRecord], console: Console, skip_limits: bool = False, clear_screen: bool = True, date_range: str = None, limits_from_db: dict | None = None, fast_mode: bool = False, view_mode: str = "usage", is_updating: bool = False, view_mode_ref: dict | None = None) -> None:
     """
     Render a concise, modern dashboard with KPI cards and breakdowns.
 
     Args:
-        stats: Aggregated statistics
+        summary: Aggregated usage summary (precomputed statistics)
+        stats: Aggregated statistics derived from summary
         records: Raw usage records for detailed breakdowns
         console: Rich console for rendering
         skip_limits: If True, skip fetching current limits for faster display
@@ -463,20 +465,20 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
                 view_mode_ref['hourly_hours'] = hourly_hours_int
     else:
         # Normal mode - show KPI section and breakdowns
-        kpi_section = _create_kpi_section(stats.overall_totals, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db, view_mode_ref=view_mode_ref)
+        kpi_section = _create_kpi_section(summary, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db, view_mode_ref=view_mode_ref)
 
         # Render Summary (and Usage Limits in weekly mode)
         console.print(kpi_section, end="")
         console.print()  # Blank line between sections
 
         # Model breakdown is always important
-        model_breakdown = _create_model_breakdown(records)
+        model_breakdown = _create_model_breakdown(summary)
         sections_to_render.append(("model", model_breakdown))
 
         # Add mode-specific breakdown
         if view_mode == "weekly":
             # Show normal weekly breakdown
-            project_breakdown = _create_project_breakdown(records)
+            project_breakdown = _create_project_breakdown(summary)
             sections_to_render.append(("project", project_breakdown))
 
             # Check weekly display mode (limits or calendar)
@@ -497,11 +499,23 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
                 daily_breakdown_weekly = _create_daily_breakdown_weekly(records, week_start, week_end, reset_time, reset_day)
                 sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
         elif view_mode == "monthly":
-            project_breakdown = _create_project_breakdown(records)
+            project_breakdown = _create_project_breakdown(summary)
             sections_to_render.append(("project", project_breakdown))
 
             # Check monthly display mode (daily or weekly)
             monthly_display_mode = view_mode_ref.get('monthly_display_mode', 'daily') if view_mode_ref else 'daily'
+
+            monthly_daily_summary = None
+            if view_mode_ref:
+                target_year = view_mode_ref.get('target_year')
+                target_month = view_mode_ref.get('target_month')
+                if isinstance(target_year, int) and isinstance(target_month, int):
+                    prefix = f"{target_year:04d}-{target_month:02d}"
+                    monthly_daily_summary = {
+                        date: totals
+                        for date, totals in summary.daily.items()
+                        if date.startswith(prefix)
+                    }
 
             if monthly_display_mode == 'weekly':
                 # Show weekly breakdown (calendar weeks for this month)
@@ -513,10 +527,10 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
                 sections_to_render.append(("weekly_month", weekly_breakdown))
             else:
                 # Show daily breakdown (default)
-                daily_breakdown = _create_daily_breakdown(records)
+                daily_breakdown = _create_daily_breakdown(records, monthly_daily_summary)
                 sections_to_render.append(("daily", daily_breakdown))
         elif view_mode == "yearly":
-            project_breakdown = _create_project_breakdown(records)
+            project_breakdown = _create_project_breakdown(summary)
             sections_to_render.append(("project", project_breakdown))
 
             # Check yearly display mode (monthly or weekly)
@@ -644,12 +658,12 @@ def _calculate_weekly_opus_cost(records: list[UsageRecord]) -> float:
     return weekly_cost
 
 
-def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "monthly", skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None, view_mode_ref: dict | None = None) -> Group:
+def _create_kpi_section(summary: UsageSummary, records: list[UsageRecord], view_mode: str = "monthly", skip_limits: bool = False, console: Console = None, limits_from_db: dict | None = None, view_mode_ref: dict | None = None) -> Group:
     """
     Create KPI cards with individual limit boxes beneath each (only for weekly mode).
 
     Args:
-        overall: Overall statistics
+        summary: Aggregated usage summary for entire history
         records: List of usage records (for cost calculation)
         view_mode: Current view mode - "monthly", "weekly", or "yearly"
         skip_limits: If True, skip fetching current limits (faster)
@@ -660,30 +674,14 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
     Returns:
         Group containing KPI cards and limit boxes (if weekly mode)
     """
-    from src.models.pricing import calculate_cost, format_cost
+    from src.models.pricing import format_cost
 
-    # Calculate total cost and token breakdown from records
-    total_cost = 0.0
-    total_input_tokens = 0
-    total_output_tokens = 0
-    total_cache_creation = 0
-    total_cache_read = 0
-
-    for record in records:
-        if record.model and record.token_usage and record.model != "<synthetic>":
-            total_input_tokens += record.token_usage.input_tokens
-            total_output_tokens += record.token_usage.output_tokens
-            total_cache_creation += record.token_usage.cache_creation_tokens
-            total_cache_read += record.token_usage.cache_read_tokens
-
-            cost = calculate_cost(
-                record.token_usage.input_tokens,
-                record.token_usage.output_tokens,
-                record.model,
-                record.token_usage.cache_creation_tokens,
-                record.token_usage.cache_read_tokens,
-            )
-            total_cost += cost
+    # Use summary totals for all-time metrics
+    total_cost = summary.totals.total_cost
+    total_input_tokens = summary.totals.input_tokens
+    total_output_tokens = summary.totals.output_tokens
+    total_cache_creation = summary.totals.cache_creation_tokens
+    total_cache_read = summary.totals.cache_read_tokens
 
     # Create KPI cards in 2 rows of 3 cards each
     kpi_grid = Table.grid(padding=(0, 2), expand=False)
@@ -700,7 +698,7 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
     )
 
     messages_card = Panel(
-        Text(_format_number(overall.total_prompts), style="bold white"),
+        Text(_format_number(summary.totals.total_prompts), style="bold white"),
         title="Messages",
         border_style="white",
         width=36,
@@ -813,113 +811,7 @@ def _create_kpi_section(overall, records: list[UsageRecord], view_mode: str = "m
     return Group(kpi_grid)
 
 
-def _create_kpi_cards(overall) -> Table:
-    """
-    Create 3 KPI cards showing key metrics.
-
-    Args:
-        overall: Overall statistics
-
-    Returns:
-        Table grid with KPI cards
-    """
-    grid = Table.grid(padding=(0, 2), expand=False)
-    grid.add_column(justify="center")
-    grid.add_column(justify="center")
-    grid.add_column(justify="center")
-
-    # Total Tokens card
-    tokens_card = Panel(
-        Text.assemble(
-            (_format_number(overall.total_tokens), f"bold {ORANGE}"),
-            "\n",
-            ("Total Tokens", DIM),
-        ),
-        border_style="white",
-        width=28,
-    )
-
-    # Total Prompts card
-    prompts_card = Panel(
-        Text.assemble(
-            (_format_number(overall.total_prompts), f"bold {ORANGE}"),
-            "\n",
-            ("Prompts Sent", DIM),
-        ),
-        border_style="white",
-        width=28,
-    )
-
-    # Total Sessions card
-    sessions_card = Panel(
-        Text.assemble(
-            (_format_number(overall.total_sessions), f"bold {ORANGE}"),
-            "\n",
-            ("Active Sessions", DIM),
-        ),
-        border_style="white",
-        width=28,
-    )
-
-    grid.add_row(tokens_card, prompts_card, sessions_card)
-    return grid
-
-
-def _create_limits_bars() -> Panel | None:
-    """
-    Create progress bars showing current usage limits.
-
-    Returns:
-        Panel with limit progress bars, or None if no limits data
-    """
-    # Try to capture current limits
-    from src.commands.limits import capture_limits
-
-    limits = capture_limits()
-    if not limits or "error" in limits:
-        return None
-
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("Label", style="white", justify="left")
-    table.add_column("Bar", justify="left")
-    table.add_column("Percent", style=ORANGE, justify="right")
-    table.add_column("Reset", style=CYAN, justify="left")
-
-    # Session limit
-    session_bar = _create_bar(limits["session_pct"], 100, width=30)
-    table.add_row(
-        "[bold]Session",
-        session_bar,
-        f"{limits['session_pct']}%",
-        f"resets {limits['session_reset']}",
-    )
-
-    # Week limit
-    week_bar = _create_bar(limits["week_pct"], 100, width=30)
-    table.add_row(
-        "[bold]Week",
-        week_bar,
-        f"{limits['week_pct']}%",
-        f"resets {limits['week_reset']}",
-    )
-
-    # Opus limit
-    opus_bar = _create_bar(limits["opus_pct"], 100, width=30)
-    table.add_row(
-        "[bold]Opus",
-        opus_bar,
-        f"{limits['opus_pct']}%",
-        f"resets {limits['opus_reset']}",
-    )
-
-    return Panel(
-        table,
-        title="[bold]Usage Limits",
-        border_style="white",
-    )
-
-
-def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
+def _create_model_breakdown(summary: UsageSummary) -> Panel:
     """
     Create table showing token usage and cost per model.
 
@@ -931,29 +823,8 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
     """
     from src.models.pricing import calculate_cost, format_cost
 
-    # Aggregate tokens and costs by model
-    model_data: dict[str, dict] = defaultdict(lambda: {
-        "total_tokens": 0,
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "cost": 0.0
-    })
-
-    for record in records:
-        if record.model and record.token_usage and record.model != "<synthetic>":
-            model_data[record.model]["total_tokens"] += record.token_usage.total_tokens
-            model_data[record.model]["input_tokens"] += record.token_usage.input_tokens
-            model_data[record.model]["output_tokens"] += record.token_usage.output_tokens
-
-            # Calculate cost for this record (including cache tokens)
-            cost = calculate_cost(
-                record.token_usage.input_tokens,
-                record.token_usage.output_tokens,
-                record.model,
-                record.token_usage.cache_creation_tokens,
-                record.token_usage.cache_read_tokens,
-            )
-            model_data[record.model]["cost"] += cost
+    # Use aggregated model totals from summary
+    model_data = summary.models
 
     if not model_data:
         return Panel(
@@ -963,12 +834,12 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
         )
 
     # Calculate totals
-    total_tokens = sum(data["total_tokens"] for data in model_data.values())
-    total_cost = sum(data["cost"] for data in model_data.values())
-    max_tokens = max(data["total_tokens"] for data in model_data.values())
+    total_tokens = sum(data.total_tokens for data in model_data.values())
+    total_cost = sum(data.total_cost for data in model_data.values())
+    max_tokens = max(data.total_tokens for data in model_data.values())
 
     # Sort by usage
-    sorted_models = sorted(model_data.items(), key=lambda x: x[1]["total_tokens"], reverse=True)
+    sorted_models = sorted(model_data.items(), key=lambda x: x[1].total_tokens, reverse=True)
 
     # Create table
     table = Table(show_header=True, box=None, padding=(0, 2))
@@ -984,7 +855,7 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
         if "claude" in display_name.lower():
             display_name = display_name.replace("claude-", "")
 
-        tokens = data["total_tokens"]
+        tokens = data.total_tokens
         percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
 
         # Create bar
@@ -995,7 +866,7 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
             bar,
             _format_number(tokens),
             f"[cyan]{percentage:.1f}%[/cyan]",
-            format_cost(data["cost"]),
+            format_cost(data.total_cost),
         )
 
     # Add separator line before total
@@ -1018,7 +889,7 @@ def _create_model_breakdown(records: list[UsageRecord]) -> Panel:
     )
 
 
-def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
+def _create_project_breakdown(summary: UsageSummary) -> Panel:
     """
     Create table showing token usage and cost per project.
 
@@ -1028,27 +899,9 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     Returns:
         Panel with project breakdown table
     """
-    from src.models.pricing import calculate_cost, format_cost
+    from src.models.pricing import format_cost
 
-    # Aggregate tokens and costs by folder
-    folder_data: dict[str, dict] = defaultdict(lambda: {
-        "total_tokens": 0,
-        "cost": 0.0
-    })
-
-    for record in records:
-        if record.token_usage:
-            folder_data[record.folder]["total_tokens"] += record.token_usage.total_tokens
-
-            if record.model and record.model != "<synthetic>":
-                cost = calculate_cost(
-                    record.token_usage.input_tokens,
-                    record.token_usage.output_tokens,
-                    record.model,
-                    record.token_usage.cache_creation_tokens,
-                    record.token_usage.cache_read_tokens,
-                )
-                folder_data[record.folder]["cost"] += cost
+    folder_data = summary.projects
 
     if not folder_data:
         return Panel(
@@ -1058,14 +911,14 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
         )
 
     # Calculate total
-    total_tokens = sum(data["total_tokens"] for data in folder_data.values())
+    total_tokens = sum(data.total_tokens for data in folder_data.values())
 
     # Sort by usage
-    sorted_folders = sorted(folder_data.items(), key=lambda x: x[1]["total_tokens"], reverse=True)
+    sorted_folders = sorted(folder_data.items(), key=lambda x: x[1].total_tokens, reverse=True)
 
     # Limit to top 10 projects
     sorted_folders = sorted_folders[:10]
-    max_tokens = max(data["total_tokens"] for _, data in sorted_folders)
+    max_tokens = max(data.total_tokens for _, data in sorted_folders)
 
     # Create table
     table = Table(show_header=True, box=None, padding=(0, 2))
@@ -1087,7 +940,7 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
         if len(display_name) > 35:
             display_name = display_name[:35]
 
-        tokens = data["total_tokens"]
+        tokens = data.total_tokens
         percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
 
         # Create bar
@@ -1098,7 +951,7 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
             bar,
             _format_number(tokens),
             f"[cyan]{percentage:.1f}%[/cyan]",
-            format_cost(data["cost"]),
+            format_cost(data.total_cost),
         )
 
     return Panel(
@@ -1109,7 +962,7 @@ def _create_project_breakdown(records: list[UsageRecord]) -> Panel:
     )
 
 
-def _create_daily_breakdown(records: list[UsageRecord]) -> Panel:
+def _create_daily_breakdown(records: list[UsageRecord], daily_summary: dict[str, DailyTotal] | None = None) -> Panel:
     """
     Create table showing daily usage breakdown for monthly mode.
     Shows all dates in the range, including days with no usage.
@@ -1137,33 +990,50 @@ def _create_daily_breakdown(records: list[UsageRecord]) -> Panel:
     min_date = None
     max_date = None
 
-    for record in records:
-        if record.token_usage:
-            # Extract date from timestamp
-            date = record.timestamp.strftime("%Y-%m-%d")
-            record_date = record.timestamp.date()
+    if records:
+        for record in records:
+            if record.token_usage:
+                # Extract date from timestamp
+                date = record.timestamp.strftime("%Y-%m-%d")
+                record_date = record.timestamp.date()
 
-            # Update min/max dates
-            if min_date is None or record_date < min_date:
-                min_date = record_date
-            if max_date is None or record_date > max_date:
-                max_date = record_date
+                # Update min/max dates
+                if min_date is None or record_date < min_date:
+                    min_date = record_date
+                if max_date is None or record_date > max_date:
+                    max_date = record_date
 
-            daily_data[date]["input_tokens"] += record.token_usage.input_tokens
-            daily_data[date]["output_tokens"] += record.token_usage.output_tokens
-            daily_data[date]["cache_creation"] += record.token_usage.cache_creation_tokens
-            daily_data[date]["cache_read"] += record.token_usage.cache_read_tokens
-            daily_data[date]["messages"] += 1
+                daily_data[date]["input_tokens"] += record.token_usage.input_tokens
+                daily_data[date]["output_tokens"] += record.token_usage.output_tokens
+                daily_data[date]["cache_creation"] += record.token_usage.cache_creation_tokens
+                daily_data[date]["cache_read"] += record.token_usage.cache_read_tokens
+                daily_data[date]["messages"] += 1
 
-            if record.model and record.model != "<synthetic>":
-                cost = calculate_cost(
-                    record.token_usage.input_tokens,
-                    record.token_usage.output_tokens,
-                    record.model,
-                    record.token_usage.cache_creation_tokens,
-                    record.token_usage.cache_read_tokens,
-                )
-                daily_data[date]["cost"] += cost
+                if record.model and record.model != "<synthetic>":
+                    cost = calculate_cost(
+                        record.token_usage.input_tokens,
+                        record.token_usage.output_tokens,
+                        record.model,
+                        record.token_usage.cache_creation_tokens,
+                        record.token_usage.cache_read_tokens,
+                    )
+                    daily_data[date]["cost"] += cost
+
+    if not records and daily_summary:
+        for date, totals in daily_summary.items():
+            daily_data[date]["input_tokens"] += totals.input_tokens
+            daily_data[date]["output_tokens"] += totals.output_tokens
+            daily_data[date]["cache_creation"] += totals.cache_creation_tokens
+            daily_data[date]["cache_read"] += totals.cache_read_tokens
+            daily_data[date]["messages"] += totals.total_prompts + totals.total_responses
+            daily_data[date]["cost"] += totals.total_cost
+
+        if daily_summary:
+            from datetime import datetime as dt
+            dates = sorted(daily_summary.keys())
+            if dates:
+                min_date = dt.strptime(dates[0], "%Y-%m-%d").date()
+                max_date = dt.strptime(dates[-1], "%Y-%m-%d").date()
 
     if not daily_data or min_date is None or max_date is None:
         return Panel(

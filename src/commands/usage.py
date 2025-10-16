@@ -8,7 +8,6 @@ import re
 
 from rich.console import Console
 
-from src.aggregation.daily_stats import aggregate_all
 from src.commands.limits import capture_limits
 from src.config.settings import (
     DEFAULT_REFRESH_INTERVAL,
@@ -18,9 +17,8 @@ from src.config.user_config import get_tracking_mode
 from src.data.jsonl_parser import parse_all_jsonl_files
 from src.storage.snapshot_db import (
     get_database_stats,
-    load_historical_records,
-    load_all_devices_historical_records,
-    load_all_devices_historical_records_cached,
+    load_usage_summary,
+    load_recent_usage_records,
     save_limits_snapshot,
     save_snapshot,
 )
@@ -36,10 +34,6 @@ VIEW_MODE_YEARLY = "yearly"
 VIEW_MODE_HEATMAP = "heatmap"
 VIEW_MODE_DEVICES = "devices"
 
-# Aggregation cache - stores computed stats for filtered record sets
-# Key: tuple of (mode, offset, record count, first timestamp, last timestamp)
-# Value: AggregatedStats object
-_aggregation_cache: dict[tuple, any] = {}
 #endregion
 
 
@@ -970,16 +964,15 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     # Step 3: Prepare dashboard from database (using cached version for performance)
     if show_status:
         with console.status("[bold #ff8800]Preparing dashboard...", spinner="dots", spinner_style="#ff8800"):
-            all_records = load_all_devices_historical_records_cached()
-
-            # Get latest limits from DB (if we saved them above or if they exist)
+            usage_summary = load_usage_summary()
+            all_records = load_recent_usage_records()
             limits_from_db = get_latest_limits()
     else:
-        # Fast mode: no status messages
-        all_records = load_all_devices_historical_records_cached()
+        usage_summary = load_usage_summary()
+        all_records = load_recent_usage_records()
         limits_from_db = get_latest_limits()
 
-    if not all_records:
+    if not all_records and not usage_summary.daily:
         console.clear()
         console.print(
             "[yellow]No Claude Code usage data found.[/yellow]\n"
@@ -993,7 +986,7 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     time_offset = view_mode_ref.get('offset', 0) if view_mode_ref else 0
 
     # Apply view mode filter
-    display_records = all_records
+    display_records = list(all_records)
     if view_mode == VIEW_MODE_WEEKLY and limits_from_db and limits_from_db.get("week_reset"):
         # Parse week reset date and filter records for weekly mode only
         week_reset_date = _parse_week_reset_date(limits_from_db["week_reset"])
@@ -1061,6 +1054,10 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
             target_month -= 12
             target_year += 1
 
+        if view_mode_ref is not None:
+            view_mode_ref['target_year'] = target_year
+            view_mode_ref['target_month'] = target_month
+
         # Filter records for target month
         filtered = []
         for record in all_records:
@@ -1075,6 +1072,9 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
     elif view_mode == VIEW_MODE_YEARLY:
         # Filter by year with offset
         target_year = datetime.now().year + time_offset
+
+        if view_mode_ref is not None:
+            view_mode_ref['target_year'] = target_year
 
         # Filter records for target year
         filtered = []
@@ -1112,57 +1112,11 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
         display_records = _anonymize_projects(display_records)
 
     # Aggregate statistics with caching
-    stats = _aggregate_with_cache(display_records, view_mode, time_offset)
+    stats = usage_summary.to_aggregated_stats()
 
     # Render dashboard with limits from DB (no live fetch needed)
     # Note: fast_mode is always False to avoid showing warning message
-    render_dashboard(stats, display_records, console, skip_limits=True, clear_screen=True, date_range=date_range, limits_from_db=limits_from_db, fast_mode=False, view_mode=view_mode, view_mode_ref=view_mode_ref)
-
-
-def _aggregate_with_cache(display_records: list, view_mode: str, time_offset: int):
-    """
-    Aggregate records with caching to avoid recomputing stats for same data.
-
-    Cache key includes view mode and offset to cache each view separately.
-    This dramatically speeds up page transitions (Weekly -> Monthly -> Yearly).
-
-    Args:
-        display_records: Filtered list of records to aggregate
-        view_mode: Current view mode (usage, weekly, monthly, yearly)
-        time_offset: Time offset for navigation (0 = current period)
-
-    Returns:
-        AggregatedStats object
-    """
-    global _aggregation_cache
-
-    # Create cache key from view mode, offset, and record fingerprint
-    # Record fingerprint: (count, first timestamp, last timestamp)
-    if display_records:
-        first_ts = min(r.timestamp for r in display_records if hasattr(r, 'timestamp'))
-        last_ts = max(r.timestamp for r in display_records if hasattr(r, 'timestamp'))
-        cache_key = (view_mode, time_offset, len(display_records), first_ts, last_ts)
-    else:
-        cache_key = (view_mode, time_offset, 0, None, None)
-
-    # Check cache
-    if cache_key in _aggregation_cache:
-        return _aggregation_cache[cache_key]
-
-    # Cache miss - compute aggregation
-    stats = aggregate_all(display_records)
-
-    # Store in cache
-    _aggregation_cache[cache_key] = stats
-
-    # Limit cache size to prevent memory bloat (keep last 20 entries)
-    if len(_aggregation_cache) > 20:
-        # Remove oldest entries (first 10)
-        keys_to_remove = list(_aggregation_cache.keys())[:10]
-        for key in keys_to_remove:
-            del _aggregation_cache[key]
-
-    return stats
+    render_dashboard(usage_summary, stats, display_records, console, skip_limits=True, clear_screen=True, date_range=date_range, limits_from_db=limits_from_db, fast_mode=False, view_mode=view_mode, view_mode_ref=view_mode_ref)
 
 
 def _anonymize_projects(records: list) -> list:
