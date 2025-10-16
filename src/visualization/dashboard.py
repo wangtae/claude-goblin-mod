@@ -160,11 +160,13 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         is_updating: If True, show updating spinner in footer
         view_mode_ref: Reference dict for view mode state (includes usage_display_mode)
     """
-    # Optionally clear screen and reset cursor to top
+    # Clear screen and move cursor to home in one atomic operation
+    # This minimizes flicker by doing both operations together
     if clear_screen:
-        # Use ANSI escape codes for faster clearing (especially in VSCode terminal)
         import sys
-        sys.stdout.write('\033[2J\033[H')  # Clear screen + move cursor to home
+        # Use alternate method: clear from cursor to end of screen, then move to home
+        # This is faster than full screen clear
+        sys.stdout.write('\033[H\033[J')  # Move to home + clear from cursor to end
         sys.stdout.flush()
 
     # For heatmap mode, show heatmap instead of dashboard
