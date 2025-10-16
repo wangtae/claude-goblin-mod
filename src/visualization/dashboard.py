@@ -2004,8 +2004,7 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
 
     # Create hourly table
     hourly_table = Table(show_header=True, box=None, padding=(0, 2))
-    hourly_table.add_column("", style="yellow", justify="left", width=5)  # Shortcut column
-    hourly_table.add_column("Time", style="purple", justify="left", width=8)
+    hourly_table.add_column("Time", style="purple", justify="left", width=14)
     hourly_table.add_column("Cost", style="green", justify="right", width=10)
     hourly_table.add_column("Input", style=BLUE, justify="right", width=12)
     hourly_table.add_column("Output", style=BLUE, justify="right", width=12)
@@ -2023,9 +2022,11 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
         else:
             shortcut = chr(ord('a') + idx - 10)  # 10->a, 11->b, ..., 24->o
 
+        # Include shortcut in Time column like Weekly page
+        hour_with_shortcut = f"[yellow][{shortcut}][/yellow] {hour}"
+
         hourly_table.add_row(
-            f"[{shortcut}]",  # Shortcut key
-            hour,
+            hour_with_shortcut,
             format_cost(data["cost"]),
             _format_number(data["input_tokens"]),
             _format_number(data["output_tokens"]),
