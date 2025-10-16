@@ -44,57 +44,138 @@ def _parse_week_reset_date(week_reset_str: str) -> datetime | None:
     """
     Parse week reset string to datetime object.
 
+    Supports two formats:
+    1. "Oct 17, 10am (Asia/Seoul)" - with date
+    2. "10am (Asia/Seoul)" - time only (calculates next occurrence)
+
     Args:
-        week_reset_str: Reset string like "Oct 17, 10am (Asia/Seoul)"
+        week_reset_str: Reset string from limits data
 
     Returns:
         datetime object or None if parsing fails
     """
     try:
-        # Remove timezone part
-        reset_no_tz = week_reset_str.split(' (')[0]
+        from datetime import datetime, timezone as dt_timezone
+        from zoneinfo import ZoneInfo
 
-        # Parse "Oct 17, 10am" format
-        match = re.search(r'([A-Za-z]+)\s+(\d+)', reset_no_tz)
-        if not match:
-            return None
+        # Remove timezone part and extract timezone name
+        tz_match = re.search(r'\((.*?)\)', week_reset_str)
+        tz_name = tz_match.group(1) if tz_match else 'UTC'
+        reset_no_tz = week_reset_str.split(' (')[0].strip()
 
-        month_name = match.group(1)
-        day = int(match.group(2))
+        # Get timezone
+        try:
+            tz = ZoneInfo(tz_name)
+        except Exception:
+            tz = dt_timezone.utc
 
-        # Use current year
-        year = datetime.now().year
+        # Try to parse "Oct 17, 10am" format (with date)
+        date_match = re.search(r'([A-Za-z]+)\s+(\d+),\s+(\d+)(am|pm)', reset_no_tz)
+        if date_match:
+            month_name = date_match.group(1)
+            day = int(date_match.group(2))
+            hour = int(date_match.group(3))
+            meridiem = date_match.group(4)
 
-        # Parse month
-        month_num = datetime.strptime(month_name, '%b').month
+            # Convert to 24-hour format
+            if meridiem == 'pm' and hour != 12:
+                hour += 12
+            elif meridiem == 'am' and hour == 12:
+                hour = 0
 
-        return datetime(year, month_num, day)
-    except Exception:
+            # Use current year
+            year = datetime.now(tz).year
+
+            # Parse month
+            month_num = datetime.strptime(month_name, '%b').month
+
+            # Create timezone-aware datetime and convert to UTC
+            local_dt = datetime(year, month_num, day, hour, 0, 0, tzinfo=tz)
+            utc_dt = local_dt.astimezone(dt_timezone.utc)
+            return utc_dt.replace(tzinfo=None)
+
+        # Try to parse "10am" or "10:59am" format (time only)
+        time_match = re.search(r'(\d+):?(\d*)(am|pm)', reset_no_tz)
+        if time_match:
+            hour = int(time_match.group(1))
+            minute = int(time_match.group(2)) if time_match.group(2) else 0
+            meridiem = time_match.group(3)
+
+            # Convert to 24-hour format
+            if meridiem == 'pm' and hour != 12:
+                hour += 12
+            elif meridiem == 'am' and hour == 12:
+                hour = 0
+
+            # Calculate next occurrence of this time in the specified timezone
+            now = datetime.now(tz)
+            reset_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+            # If reset time is in the past today, it's tomorrow
+            if reset_time <= now:
+                reset_time += timedelta(days=1)
+
+            # Convert to UTC and remove timezone info
+            utc_dt = reset_time.astimezone(dt_timezone.utc)
+            return utc_dt.replace(tzinfo=None)
+
+        return None
+    except Exception as e:
+        import sys
+        print(f"[DEBUG] _parse_week_reset_date failed: {e}, input: {week_reset_str}", file=sys.stderr)
         return None
 
 
 def _filter_records_by_week(records: list, week_reset_date: datetime) -> list:
     """
-    Filter records to current week limit period (7 days before reset).
+    Filter records to a specific week limit period with exact time boundaries.
+
+    Claude's weekly limits reset at a specific time (e.g., 9:59am on Friday).
+    The week period is exactly 7 days with precise time boundaries.
+
+    For example, if week_reset_date is 2025-10-17 09:59am (Friday):
+    - Week starts: 2025-10-10 09:59am (last Friday reset)
+    - Week ends: 2025-10-17 09:58:59am (just before next Friday reset)
+    - Reset day (Friday) appears in BOTH weeks:
+      - Previous week: 00:00 ~ 09:58
+      - Current week: 09:59 ~ 23:59
 
     Args:
         records: List of UsageRecord objects
-        week_reset_date: Week reset datetime
+        week_reset_date: Next week reset datetime with time (the END boundary)
 
     Returns:
         Filtered list of records within the week period
     """
-    week_start = week_reset_date - timedelta(days=7)
-    week_start_date = week_start.date()
-    week_end_date = week_reset_date.date()
+    from datetime import timezone as dt_timezone
+
+    # Calculate the START of the week period (last reset time)
+    last_reset_datetime = week_reset_date - timedelta(days=7)
+
+    # Week period: from last_reset (inclusive) to week_reset (exclusive)
+    week_start = last_reset_datetime
+    week_end = week_reset_date
 
     filtered = []
     for record in records:
-        # Parse date_key (format: "YYYY-MM-DD")
         try:
-            record_date = datetime.strptime(record.date_key, "%Y-%m-%d").date()
-            if week_start_date <= record_date <= week_end_date:
-                filtered.append(record)
+            # Get record timestamp
+            if hasattr(record, 'timestamp') and record.timestamp:
+                record_dt = record.timestamp
+
+                # Ensure timezone-aware comparison (convert to UTC if needed)
+                if record_dt.tzinfo is None:
+                    record_dt = record_dt.replace(tzinfo=dt_timezone.utc)
+
+                # Make sure week boundaries are also timezone-aware
+                start_dt = week_start if week_start.tzinfo else week_start.replace(tzinfo=dt_timezone.utc)
+                end_dt = week_end if week_end.tzinfo else week_end.replace(tzinfo=dt_timezone.utc)
+
+                # Filter: last_reset <= record < next_reset
+                if start_dt <= record_dt < end_dt:
+                    filtered.append(record)
+            else:
+                continue
         except Exception:
             continue
 
@@ -889,13 +970,34 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
 
     # Apply view mode filter
     display_records = all_records
-    if view_mode in [VIEW_MODE_WEEKLY, "usage"] and limits_from_db and limits_from_db.get("week_reset"):
-        # Parse week reset date and filter records
+    if view_mode == VIEW_MODE_WEEKLY and limits_from_db and limits_from_db.get("week_reset"):
+        # Parse week reset date and filter records for weekly mode only
         week_reset_date = _parse_week_reset_date(limits_from_db["week_reset"])
         if week_reset_date:
             # Apply offset for week navigation
             adjusted_week_reset_date = week_reset_date - timedelta(weeks=-time_offset)
             display_records = _filter_records_by_week(all_records, adjusted_week_reset_date)
+
+            # Calculate week range for display (with time boundaries)
+            week_start_datetime = adjusted_week_reset_date - timedelta(days=7)
+            week_end_datetime = adjusted_week_reset_date
+
+            # Extract reset time (HH:MM format)
+            reset_time_str = adjusted_week_reset_date.strftime("%H:%M")
+
+            # Get reset day of week (e.g., "Fri" for Friday)
+            from zoneinfo import ZoneInfo
+            from datetime import timezone
+            # Convert to local timezone for display
+            tz_name = limits_from_db.get("week_reset", "").split("(")[-1].rstrip(")") if "(" in limits_from_db.get("week_reset", "") else "UTC"
+            try:
+                tz = ZoneInfo(tz_name)
+                local_reset_time = adjusted_week_reset_date.replace(tzinfo=timezone.utc).astimezone(tz)
+                reset_day_name = local_reset_time.strftime("%a")  # Mon, Tue, Wed, etc.
+                reset_time_str = local_reset_time.strftime("%H:%M")
+            except Exception:
+                reset_day_name = adjusted_week_reset_date.strftime("%a")
+
             if not display_records:
                 # Fall back to monthly if no data in weekly range
                 display_records = all_records
@@ -913,9 +1015,13 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
                 # Sort by date in descending order (most recent first)
                 sorted_dates = sorted(daily_data.keys(), reverse=True)
 
-                # Store in view_mode_ref for keyboard listener
+                # Store in view_mode_ref for keyboard listener and dashboard rendering
                 if view_mode_ref:
                     view_mode_ref['weekly_dates'] = sorted_dates
+                    view_mode_ref['week_start_date'] = week_start_datetime.date()
+                    view_mode_ref['week_end_date'] = (week_end_datetime - timedelta(seconds=1)).date()
+                    view_mode_ref['week_reset_time'] = reset_time_str  # HH:MM format
+                    view_mode_ref['week_reset_day'] = reset_day_name   # Day of week (Mon, Tue, etc.)
     elif view_mode == VIEW_MODE_MONTHLY:
         # Filter by month with offset
         now = datetime.now()

@@ -469,7 +469,14 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
             # Show normal weekly breakdown
             project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
-            daily_breakdown_weekly = _create_daily_breakdown_weekly(records)
+
+            # Get week range from view_mode_ref if available
+            week_start = view_mode_ref.get('week_start_date') if view_mode_ref else None
+            week_end = view_mode_ref.get('week_end_date') if view_mode_ref else None
+            reset_time = view_mode_ref.get('week_reset_time') if view_mode_ref else None
+            reset_day = view_mode_ref.get('week_reset_day') if view_mode_ref else None
+
+            daily_breakdown_weekly = _create_daily_breakdown_weekly(records, week_start, week_end, reset_time, reset_day)
             sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
         elif view_mode == "monthly":
             project_breakdown = _create_project_breakdown(records)
@@ -1171,18 +1178,24 @@ def _create_daily_breakdown(records: list[UsageRecord]) -> Panel:
     )
 
 
-def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
+def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=None, week_end_date=None, reset_time=None, reset_day=None) -> Panel:
     """
     Create graph-style daily usage breakdown for weekly mode.
-    Shows cyan bar graphs with token amounts, percentages, and costs.
+    Shows all 7 days of the week period, including days with no usage.
+    Days without data show "-" for tokens/cost and 0% for percentage.
 
     Args:
-        records: List of usage records
+        records: List of usage records (already filtered to week period)
+        week_start_date: Start date of the week period (date object)
+        week_end_date: End date of the week period (date object)
+        reset_time: Reset time in HH:MM format (e.g., "09:59")
+        reset_day: Reset day of week (e.g., "Fri", "Mon")
 
     Returns:
         Panel with daily breakdown in graph format
     """
     from src.models.pricing import calculate_cost, format_cost
+    from datetime import timedelta
 
     # Aggregate by date (format: "YYYY-MM-DD")
     daily_data: dict[str, dict] = defaultdict(lambda: {
@@ -1205,19 +1218,46 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
                 )
                 daily_data[date]["cost"] += cost
 
-    if not daily_data:
-        return Panel(
-            Text("No daily data available", style=DIM),
-            title="[bold]Daily Usage",
-            border_style="white",
-        )
+    # If week range not provided, try to infer from records
+    if week_start_date is None or week_end_date is None:
+        # Try to find min/max from records
+        dates_with_data = []
+        for record in records:
+            if record.token_usage:
+                dates_with_data.append(record.timestamp.date())
 
-    # Calculate totals and max for scaling
-    total_tokens = sum(data["total_tokens"] for data in daily_data.values())
-    max_tokens = max(data["total_tokens"] for data in daily_data.values())
+        if dates_with_data:
+            week_start_date = min(dates_with_data)
+            week_end_date = max(dates_with_data)
+        else:
+            # No data at all
+            return Panel(
+                Text("No daily data available", style=DIM),
+                title="[bold]Daily Usage",
+                border_style="white",
+            )
+
+    # Generate all dates in the week range (should be exactly 7 days)
+    all_dates = []
+    current_date = week_start_date
+    while current_date <= week_end_date:
+        date_str = current_date.strftime("%Y-%m-%d")
+        if date_str in daily_data:
+            all_dates.append((date_str, daily_data[date_str]))
+        else:
+            # Day with no data - use zeros
+            all_dates.append((date_str, {
+                "total_tokens": 0,
+                "cost": 0.0
+            }))
+        current_date += timedelta(days=1)
+
+    # Calculate totals and max for scaling (only from days with data)
+    total_tokens = sum(data["total_tokens"] for _, data in all_dates)
+    max_tokens = max((data["total_tokens"] for _, data in all_dates), default=0)
 
     # Sort by date in descending order (most recent first)
-    sorted_dates = sorted(daily_data.items(), reverse=True)
+    sorted_dates = sorted(all_dates, reverse=True)
 
     # Create table with bars
     table = Table(show_header=True, box=None, padding=(0, 2))
@@ -1236,18 +1276,33 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord]) -> Panel:
         date_obj = datetime.strptime(date, "%Y-%m-%d")
         day_name = date_obj.strftime("%a")  # Mon, Tue, Wed, etc.
 
-        # Combine shortcut and date with single space: [1] 2025-10-15 (Mon)
-        date_with_shortcut = f"[yellow][{idx}][/yellow] {date} ({day_name})"
+        # Check if this is the reset day and add time annotation
+        # Combine shortcut and date with single space: [1] 2025-10-15 (Mon) [09:59]
+        if reset_day and reset_time and day_name == reset_day:
+            date_with_shortcut = f"[yellow][{idx}][/yellow] {date} ({day_name}) [purple][{reset_time}][/purple]"
+        else:
+            date_with_shortcut = f"[yellow][{idx}][/yellow] {date} ({day_name})"
 
-        # Create bar (same style as Tokens by Model)
-        bar = _create_bar(tokens, max_tokens, width=20)
+        # If no data for this day, show "-" for tokens/cost and empty bar
+        if tokens == 0:
+            # Empty bar (all dim)
+            bar = Text("▬" * 20, style=DIM)
+            tokens_display = "[dim]-[/dim]"
+            percentage_display = "[dim]-[/dim]"
+            cost_display = "[dim]-[/dim]"
+        else:
+            # Normal display with bar
+            bar = _create_bar(tokens, max_tokens, width=20)
+            tokens_display = _format_number(tokens)
+            percentage_display = f"[cyan]{percentage:.1f}%[/cyan]"
+            cost_display = format_cost(data["cost"])
 
         table.add_row(
             date_with_shortcut,
             bar,
-            _format_number(tokens),
-            f"[cyan]{percentage:.1f}%[/cyan]",
-            format_cost(data["cost"]),
+            tokens_display,
+            percentage_display,
+            cost_display,
         )
 
     return Panel(
@@ -1889,7 +1944,8 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
         # Show simplified format for usage mode, full names for others
         if view_mode == "usage":
             # Simplified format for usage mode (only show usage and weekly)
-            footer.append("[u]sage ", style=f"bold {YELLOW}")
+            footer.append("[u]sage", style=f"black on {YELLOW}")
+            footer.append(" ", style="")
             footer.append("[w]eekly", style=DIM)
         elif in_message_detail:
             # Message detail mode - show date and hour
@@ -1900,9 +1956,9 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
                 date_obj = datetime.strptime(daily_date, "%Y-%m-%d")
                 day_name = date_obj.strftime("%a")
                 hour_str = f"{hourly_hour:02d}:00"
-                footer.append(f"Message Detail - {daily_date} ({day_name}) {hour_str}", style=f"bold {YELLOW}")
+                footer.append(f"Message Detail - {daily_date} ({day_name}) {hour_str}", style=f"black on {YELLOW}")
             except:
-                footer.append(f"Message Detail - {daily_date} {hourly_hour:02d}:00", style=f"bold {YELLOW}")
+                footer.append(f"Message Detail - {daily_date} {hourly_hour:02d}:00", style=f"black on {YELLOW}")
         elif in_daily_detail:
             # Daily detail mode - show date
             daily_date = view_mode_ref.get("daily_detail_date")
@@ -1910,46 +1966,52 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             try:
                 date_obj = datetime.strptime(daily_date, "%Y-%m-%d")
                 day_name = date_obj.strftime("%a")
-                footer.append(f"Daily Detail - {daily_date} ({day_name})", style=f"bold {YELLOW}")
+                footer.append(f"Daily Detail - {daily_date} ({day_name})", style=f"black on {YELLOW}")
             except:
-                footer.append(f"Daily Detail - {daily_date}", style=f"bold {YELLOW}")
+                footer.append(f"Daily Detail - {daily_date}", style=f"black on {YELLOW}")
         else:
             # Full names for other modes
             # Usage
             if view_mode == "usage":
-                footer.append("[u]sage ", style=f"bold {YELLOW}")
+                footer.append("[u]sage", style=f"black on {YELLOW}")
             else:
-                footer.append("[u]sage ", style=DIM)
+                footer.append("[u]sage", style=DIM)
+            footer.append(" ", style="")
 
             # Weekly
             if view_mode == "weekly":
-                footer.append("[w]eekly ", style=f"bold {YELLOW}")
+                footer.append("[w]eekly", style=f"black on {YELLOW}")
             else:
-                footer.append("[w]eekly ", style=DIM)
+                footer.append("[w]eekly", style=DIM)
+            footer.append(" ", style="")
 
             # Monthly
             if view_mode == "monthly":
-                footer.append("[m]onthly ", style=f"bold {YELLOW}")
+                footer.append("[m]onthly", style=f"black on {YELLOW}")
             else:
-                footer.append("[m]onthly ", style=DIM)
+                footer.append("[m]onthly", style=DIM)
+            footer.append(" ", style="")
 
             # Yearly
             if view_mode == "yearly":
-                footer.append("[y]early ", style=f"bold {YELLOW}")
+                footer.append("[y]early", style=f"black on {YELLOW}")
             else:
-                footer.append("[y]early ", style=DIM)
+                footer.append("[y]early", style=DIM)
+            footer.append(" ", style="")
 
             # Heatmap
             if view_mode == "heatmap":
-                footer.append("[h]eatmap ", style=f"bold {YELLOW}")
+                footer.append("[h]eatmap", style=f"black on {YELLOW}")
             else:
-                footer.append("[h]eatmap ", style=DIM)
+                footer.append("[h]eatmap", style=DIM)
+            footer.append(" ", style="")
 
             # Devices
             if view_mode == "devices":
-                footer.append("[d]evices ", style=f"bold {YELLOW}")
+                footer.append("[d]evices", style=f"black on {YELLOW}")
             else:
-                footer.append("[d]evices ", style=DIM)
+                footer.append("[d]evices", style=DIM)
+            footer.append(" ", style="")
 
             # Settings
             footer.append("[s]ettings", style=DIM)
