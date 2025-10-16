@@ -150,13 +150,13 @@ def _select_database_location(console: Console) -> Path | str | None:
 
     # Display options
     for opt in options:
-        console.print(f"  [{opt['color']}][{opt['key']}][/{opt['color']}] {opt['name']}")
-        console.print(f"      [dim]{opt['desc']}[/dim]")
+        console.print(f"  [bold]({opt['key']})[/bold] [cyan]{opt['name']}[/cyan]")
+        console.print(f"      {opt['desc']}")
         if opt['path']:
-            console.print(f"      [dim]{opt['path']}[/dim]")
+            console.print(f"      {opt['path']}")
         console.print()
 
-    console.print(f"  [dim][ESC] Cancel setup[/dim]")
+    console.print(f"  [bold](ESC)[/bold] Cancel setup")
     console.print()
 
     # Get user choice
@@ -210,9 +210,9 @@ def _confirm_onedrive_path(console: Console, detected_path: Path) -> Path | None
     console.print(f"  [cyan]{detected_path}[/cyan]")
     console.print()
     console.print("[dim]Is this correct?[/dim]")
-    console.print("  [green][y][/green] Yes, use this path")
-    console.print("  [yellow][n][/yellow] No, enter custom path")
-    console.print("  [dim][ESC] Cancel setup[/dim]")
+    console.print("  [bold](y)[/bold] Yes, use this path")
+    console.print("  [bold](n)[/bold] No, enter custom path")
+    console.print("  [bold](ESC)[/bold] Cancel setup")
     console.print()
 
     while True:
@@ -221,12 +221,12 @@ def _confirm_onedrive_path(console: Console, detected_path: Path) -> Path | None
             key = _read_key()
 
             if key == '\x1b':  # ESC
-                console.print("[yellow]Cancelled[/yellow]")
+                console.print("Cancelled")
                 return None
 
             if key.lower() == 'y':
                 console.print(key)
-                console.print(f"[green]✓ Using detected path[/green]")
+                console.print("[green]✓ Using detected path[/green]")
                 return detected_path
 
             if key.lower() == 'n':
@@ -248,9 +248,9 @@ def _get_custom_onedrive_path(console: Console) -> Path | None:
         Custom Path or None if cancelled
     """
     console.print()
-    console.print("[bold]Custom OneDrive Path[/bold]")
-    console.print("[dim]Enter the correct OneDrive directory path (not including .claude-goblin):[/dim]")
-    console.print("[dim]Example: /mnt/d/OneDrive[/dim]")
+    console.print("Custom OneDrive Path")
+    console.print("Enter the correct OneDrive directory path (not including .claude-goblin):")
+    console.print("Example: /mnt/d/OneDrive")
     console.print()
 
     try:
@@ -259,19 +259,19 @@ def _get_custom_onedrive_path(console: Console) -> Path | None:
         path_str = input().strip()
 
         if not path_str:
-            console.print("[yellow]Cancelled[/yellow]")
+            console.print("Cancelled")
             return None
 
         onedrive_root = Path(path_str)
 
         # Validate that it's a directory
         if not onedrive_root.exists():
-            console.print(f"[red]✗ Directory does not exist: {onedrive_root}[/red]")
-            console.print("[yellow]Please check the path and try running setup wizard again.[/yellow]")
+            console.print(f"✗ Directory does not exist: {onedrive_root}")
+            console.print("Please check the path and try running setup wizard again.")
             return None
 
         if not onedrive_root.is_dir():
-            console.print(f"[red]✗ Path is not a directory: {onedrive_root}[/red]")
+            console.print(f"✗ Path is not a directory: {onedrive_root}")
             return None
 
         # Construct full DB path
@@ -280,15 +280,15 @@ def _get_custom_onedrive_path(console: Console) -> Path | None:
         # Try to create the directory
         try:
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            console.print(f"[green]✓ Using custom OneDrive path: {db_path}[/green]")
+            console.print(f"✓ Using custom OneDrive path: {db_path}")
             return db_path
         except (PermissionError, OSError) as e:
-            console.print(f"[red]✗ Cannot create directory: {e}[/red]")
-            console.print("[yellow]Please check permissions and try again.[/yellow]")
+            console.print(f"✗ Cannot create directory: {e}")
+            console.print("Please check permissions and try again.")
             return None
 
     except (EOFError, KeyboardInterrupt):
-        console.print("\n[yellow]Cancelled[/yellow]")
+        console.print("\nCancelled")
         return None
 
 
@@ -300,9 +300,9 @@ def _get_custom_path(console: Console) -> Path | None:
         Path object or None if cancelled
     """
     console.print()
-    console.print("[bold]Custom Database Path[/bold]")
-    console.print("[dim]Enter full path to database file (or press Enter to cancel):[/dim]")
-    console.print("[dim]Example: /mnt/d/MyFolder/.claude-goblin/usage_history.db[/dim]")
+    console.print("Custom Database Path")
+    console.print("Enter full path to database file (or press Enter to cancel):")
+    console.print("Example: /mnt/d/MyFolder/.claude-goblin/usage_history.db")
 
     try:
         sys.stdout.write("> ")
@@ -310,7 +310,7 @@ def _get_custom_path(console: Console) -> Path | None:
         path_str = input().strip()
 
         if not path_str:
-            console.print("[yellow]Cancelled[/yellow]")
+            console.print("Cancelled")
             return None
 
         db_path = Path(path_str)
@@ -318,15 +318,15 @@ def _get_custom_path(console: Console) -> Path | None:
         # Validate path
         try:
             db_path.parent.mkdir(parents=True, exist_ok=True)
-            console.print(f"[green]✓ Using custom path: {db_path}[/green]")
+            console.print(f"✓ Using custom path: {db_path}")
             return db_path
         except (PermissionError, OSError) as e:
-            console.print(f"[red]✗ Cannot create directory: {e}[/red]")
-            console.print("[yellow]Falling back to local storage...[/yellow]")
+            console.print(f"✗ Cannot create directory: {e}")
+            console.print("Falling back to local storage...")
             return Path.home() / ".claude" / "usage" / "usage_history.db"
 
     except (EOFError, KeyboardInterrupt):
-        console.print("\n[yellow]Cancelled[/yellow]")
+        console.print("\nCancelled")
         return None
 
 
@@ -340,16 +340,16 @@ def _configure_machine_name(console: Console) -> str | None:
     import socket
 
     console.print()
-    console.print("[bold]Step 2: Machine Name (Optional)[/bold]")
+    console.print("Step 2: Machine Name (Optional)")
     console.print()
-    console.print("[dim]Give this device a friendly name for multi-device tracking.[/dim]")
-    console.print("[dim]Leave empty to use hostname.[/dim]")
+    console.print("Give this device a friendly name for multi-device tracking.")
+    console.print("Leave empty to use hostname.")
     console.print()
 
     hostname = socket.gethostname()
-    console.print(f"[dim]Current hostname: {hostname}[/dim]")
+    console.print(f"Current hostname: {hostname}")
     console.print()
-    console.print("[dim]Examples: Home-Desktop, Work-Laptop, Gaming-PC[/dim]")
+    console.print("Examples: Home-Desktop, Work-Laptop, Gaming-PC")
 
     try:
         sys.stdout.write("> ")
@@ -357,14 +357,14 @@ def _configure_machine_name(console: Console) -> str | None:
         name = input().strip()
 
         if name:
-            console.print(f"[green]✓ Machine name: {name}[/green]")
+            console.print(f"✓ Machine name: {name}")
             return name
         else:
-            console.print(f"[green]✓ Using hostname: {hostname}[/green]")
+            console.print(f"✓ Using hostname: {hostname}")
             return ""
 
     except (EOFError, KeyboardInterrupt):
-        console.print("\n[yellow]Cancelled[/yellow]")
+        console.print("\nCancelled")
         return None
 
 
@@ -382,6 +382,7 @@ def _show_setup_summary(console: Console, db_path: Path | str, machine_name: str
     ))
     console.print()
 
+    # Show configuration
     # Show configuration
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Setting", style="cyan")
@@ -405,6 +406,7 @@ def _show_setup_summary(console: Console, db_path: Path | str, machine_name: str
     console.print(table)
     console.print()
 
+    console.print()
     console.print("[dim]You can change these settings anytime:[/dim]")
     console.print("[dim]  • Press 's' in the dashboard to open Settings[/dim]")
     console.print("[dim]  • Run 'ccu config show' to view current settings[/dim]")
