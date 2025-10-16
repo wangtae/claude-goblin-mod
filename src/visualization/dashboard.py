@@ -2460,18 +2460,25 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
         Text with export instructions, date range, and view mode info
     """
     footer = Text()
+    db_stats: dict | None = None
+
+    def _ensure_db_stats() -> dict | None:
+        nonlocal db_stats
+        if db_stats is None:
+            from src.storage.snapshot_db import get_database_stats as _get_database_stats
+            db_stats = _get_database_stats()
+        return db_stats
 
     # Get last update time from database (only if not currently updating)
     last_update_time = None
     if not is_updating:
         try:
-            from src.storage.snapshot_db import get_database_stats
             from src.utils.timezone import format_local_time, get_user_timezone
             # Get timezone once for performance
             user_tz = get_user_timezone()
-            db_stats = get_database_stats()
-            if db_stats.get("newest_timestamp"):
-                timestamp_str = db_stats["newest_timestamp"]
+            stats = _ensure_db_stats()
+            if stats and stats.get("newest_timestamp"):
+                timestamp_str = stats["newest_timestamp"]
                 try:
                     dt = datetime.fromisoformat(timestamp_str)
                     last_update_time = format_local_time(dt, "%H:%M:%S", user_tz)
@@ -2482,11 +2489,13 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
     # Add fast mode warning if enabled
     if fast_mode:
-        from src.storage.snapshot_db import get_database_stats
-        db_stats = get_database_stats()
-        if db_stats.get("newest_timestamp"):
+        try:
+            stats = _ensure_db_stats()
+        except Exception:
+            stats = None
+        if stats and stats.get("newest_timestamp"):
             # Format ISO timestamp to be more readable
-            timestamp_str = db_stats["newest_timestamp"]
+            timestamp_str = stats["newest_timestamp"]
             try:
                 dt = datetime.fromisoformat(timestamp_str)
                 formatted_time = dt.strftime("%Y-%m-%d %H:%M:%S")

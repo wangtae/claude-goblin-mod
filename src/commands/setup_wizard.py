@@ -450,15 +450,14 @@ def should_run_setup_wizard() -> bool:
     Returns:
         True if this is first-time setup, False otherwise
     """
-    from src.config.user_config import CONFIG_PATH
+    from src.config.user_config import CONFIG_PATH, LEGACY_CONFIG_PATHS, load_config
 
     # Run wizard if config file doesn't exist
-    if not CONFIG_PATH.exists():
+    if not CONFIG_PATH.exists() and not any(path.exists() for path in LEGACY_CONFIG_PATHS):
         return True
 
     # Check if setup_completed flag exists
     try:
-        from src.config.user_config import load_config
         config = load_config()
         return not config.get("setup_completed", False)
     except:

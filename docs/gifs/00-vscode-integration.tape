@@ -4,12 +4,12 @@
 Output ../images/00-vscode-integration.gif
 
 # Terminal settings
-Set FontSize 13
-Set Width 400
-Set Height 600
+Set FontSize 14
+Set Width 1200
+Set Height 700
 Set Theme "Dracula"
 Set TypingSpeed 0.05s
-Set Padding 20 
+Set Padding 10 
 
 # Simulate VSCode terminal
 Type "# VSCode: Monitor Claude Code usage in real-time"
@@ -27,11 +27,11 @@ Show
 
 # Switch views
 Tab
-Sleep 2s
+Sleep 3s
 
 # Switch views
 Tab
-Sleep 2s
+Sleep 3s
 
 # Switch views
 Tab

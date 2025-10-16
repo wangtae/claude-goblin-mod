@@ -1,12 +1,68 @@
 #region Imports
 import json
+import shutil
 from pathlib import Path
 from typing import Optional
 #endregion
 
 
 #region Constants
-CONFIG_PATH = Path.home() / ".claude" / "goblin_config.json"
+_BASE_DIR = Path.home() / ".claude"
+APP_DATA_DIR = _BASE_DIR / "claude-goblin-mod"
+_CONFIG_FILENAME = "claude-goblin.json"
+LEGACY_CONFIG_FILENAMES = [
+    "claude-goblin.json",
+    "goblin_config.json",  # Original filename
+]
+LEGACY_CONFIG_PATHS = [_BASE_DIR / name for name in LEGACY_CONFIG_FILENAMES]
+CONFIG_PATH = APP_DATA_DIR / _CONFIG_FILENAME
+#endregion
+
+
+#region Helpers
+
+def _ensure_app_dir() -> bool:
+    """Ensure the application data directory exists. Returns True if available."""
+    try:
+        APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        return True
+    except (PermissionError, OSError):
+        return False
+
+
+def _migrate_legacy_config() -> None:
+    """
+    Move legacy config file from ~/.claude/claude-goblin.json to the new location.
+
+    If migration fails (e.g., cross-device move issues), falls back to copying.
+    """
+    if CONFIG_PATH.exists():
+        return
+
+    if not _ensure_app_dir():
+        return
+
+    for legacy_path in LEGACY_CONFIG_PATHS:
+        if not legacy_path.exists():
+            continue
+
+        try:
+            shutil.move(str(legacy_path), str(CONFIG_PATH))
+            return
+        except (OSError, shutil.Error):
+            # Try copy + cleanup as fallback
+            try:
+                shutil.copy2(str(legacy_path), str(CONFIG_PATH))
+            except (OSError, shutil.Error):
+                continue
+
+            try:
+                legacy_path.unlink()
+            except OSError:
+                pass
+            return
+
+
 #endregion
 
 
@@ -20,14 +76,25 @@ def load_config() -> dict:
     Returns:
         Configuration dictionary with user preferences
     """
-    if not CONFIG_PATH.exists():
-        return get_default_config()
+    _migrate_legacy_config()
 
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
-        return get_default_config()
+    if CONFIG_PATH.exists():
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return get_default_config()
+
+    for legacy_path in LEGACY_CONFIG_PATHS:
+        if not legacy_path.exists():
+            continue
+        try:
+            with open(legacy_path, "r") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError):
+            return get_default_config()
+
+    return get_default_config()
 
 
 def save_config(config: dict) -> None:
@@ -40,9 +107,12 @@ def save_config(config: dict) -> None:
     Raises:
         IOError: If config cannot be written
     """
-    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    target_path = CONFIG_PATH if _ensure_app_dir() else None
+    if target_path is None:
+        existing = next((p for p in LEGACY_CONFIG_PATHS if p.exists()), None)
+        target_path = existing or LEGACY_CONFIG_PATHS[-1]
 
-    with open(CONFIG_PATH, "w") as f:
+    with open(target_path, "w") as f:
         json.dump(config, f, indent=2)
 
 
@@ -324,6 +394,19 @@ def set_last_backup_date(date_str: str) -> None:
     config = load_config()
     config["last_backup_date"] = date_str
     save_config(config)
+
+
+#region Public helpers
+
+def get_app_data_dir() -> Path:
+    """
+    Return the base directory for claude-goblin-mod data (~/.claude/claude-goblin-mod).
+    """
+    _ensure_app_dir()
+    return APP_DATA_DIR
+
+
+#endregion
 
 
 #endregion

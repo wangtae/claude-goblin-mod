@@ -1,12 +1,14 @@
 #region Imports
 import os
 import platform
+import re
 import sqlite3
+import pickle
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from src.models.usage_record import UsageRecord
+from src.models.usage_record import UsageRecord, TokenUsage
 #endregion
 
 
@@ -18,7 +20,7 @@ _device_stats_cache_time: float = 0
 _CACHE_EXPIRY_SECONDS = 60
 
 # Multi-device records cache
-# Structure: {device_name: {"records": [...], "last_timestamp": datetime}}
+# Structure: {device_name: {"records": [...], "last_timestamp": datetime, "last_updated": datetime}}
 _device_records_cache: dict[str, dict] = {}
 _merged_records_cache: list[UsageRecord] | None = None
 
@@ -26,6 +28,210 @@ _merged_records_cache: list[UsageRecord] | None = None
 _database_stats_cache: dict | None = None
 _database_stats_cache_time: float = 0
 
+# Persistent device cache settings
+_DEVICE_CACHE_VERSION = 2
+_DEVICE_CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 hours
+_CACHE_FILENAME_SANITIZER = re.compile(r"[^A-Za-z0-9_.-]+")
+_CACHE_EXTENSION = ".pkl"
+_CACHE_LEGACY_EXTENSION = ".json"
+
+
+def _get_device_cache_dir() -> Optional[Path]:
+    """
+    Return the directory for device cache files, creating it if possible.
+
+    Returns None if the directory cannot be created (e.g., permission issues).
+    """
+    try:
+        from src.config.user_config import get_app_data_dir
+
+        base_dir = get_app_data_dir()
+    except (ImportError, AttributeError):
+        return None
+
+    cache_dir = base_dir / "device_cache"
+
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except (PermissionError, OSError):
+        return None
+
+    return cache_dir
+
+
+def _get_device_cache_path(machine_name: str, *, extension: str | None = None) -> Optional[Path]:
+    """Get the cache file path for a given machine name."""
+    cache_dir = _get_device_cache_dir()
+    if cache_dir is None:
+        return None
+
+    safe_name = _CACHE_FILENAME_SANITIZER.sub("_", machine_name).strip("._")
+    if not safe_name:
+        safe_name = "device"
+
+    cache_extension = extension if extension is not None else _CACHE_EXTENSION
+    return cache_dir / f"{safe_name}{cache_extension}"
+
+
+def _get_latest_timestamp(records: list[UsageRecord]) -> Optional[datetime]:
+    """Return the latest timestamp from a list of records."""
+    if not records:
+        return None
+    return max(record.timestamp for record in records)
+
+
+def _device_cache_is_fresh(last_updated: Optional[datetime]) -> bool:
+    """Check whether cached data is still within freshness window."""
+    if last_updated is None:
+        return False
+
+    age = datetime.now(timezone.utc) - last_updated
+    return age.total_seconds() <= _DEVICE_CACHE_TTL_SECONDS
+
+
+def _load_device_cache(
+    machine_name: str,
+) -> tuple[list[UsageRecord], Optional[datetime], Optional[datetime]] | None:
+    """
+    Load cached records for a device.
+
+    Returns:
+        (records, last_timestamp, last_updated) if successful; otherwise None.
+    """
+    cache_path = _get_device_cache_path(machine_name)
+    if cache_path is None:
+        return None
+
+    def _load_pickle(path: Path):
+        with path.open("rb") as f:
+            return pickle.load(f)
+
+    data = None
+    if cache_path.exists():
+        try:
+            data = _load_pickle(cache_path)
+        except (OSError, pickle.PickleError):
+            data = None
+    else:
+        # Legacy JSON cache support
+        legacy_path = _get_device_cache_path(machine_name, extension=_CACHE_LEGACY_EXTENSION)
+        if legacy_path and legacy_path.exists():
+            try:
+                import json
+
+                with legacy_path.open("r") as f:
+                    legacy_data = json.load(f)
+                records = []
+                for item in legacy_data.get("records", []):
+                    records.append(
+                        UsageRecord(
+                            timestamp=datetime.fromisoformat(item["timestamp"]),
+                            session_id=item.get("session_id", ""),
+                            message_uuid=item.get("message_uuid", ""),
+                            message_type=item.get("message_type", ""),
+                            model=item.get("model"),
+                            folder=item.get("folder", ""),
+                            git_branch=item.get("git_branch"),
+                            version=item.get("version", ""),
+                            token_usage=TokenUsage(
+                                input_tokens=item.get("token_usage", {}).get("input_tokens", 0),
+                                output_tokens=item.get("token_usage", {}).get("output_tokens", 0),
+                                cache_creation_tokens=item.get("token_usage", {}).get("cache_creation_tokens", 0),
+                                cache_read_tokens=item.get("token_usage", {}).get("cache_read_tokens", 0),
+                            ) if item.get("token_usage") else None,
+                            content=item.get("content"),
+                            char_count=int(item.get("char_count", 0) or 0),
+                        )
+                    )
+
+                last_updated = None
+                if legacy_data.get("last_updated"):
+                    last_updated = datetime.fromisoformat(legacy_data["last_updated"])
+                last_timestamp = None
+                if legacy_data.get("last_timestamp"):
+                    last_timestamp = datetime.fromisoformat(legacy_data["last_timestamp"])
+
+                if last_updated is None:
+                    last_updated = datetime.now(timezone.utc)
+
+                data = {
+                    "version": _DEVICE_CACHE_VERSION,
+                    "machine_name": machine_name,
+                    "last_updated": last_updated,
+                    "last_timestamp": last_timestamp,
+                    "records": records,
+                }
+                # Promote to pickle format for future runs
+                _save_device_cache(machine_name, records, last_timestamp, last_updated=last_updated)
+                try:
+                    legacy_path.unlink()
+                except OSError:
+                    pass
+            except Exception:
+                data = None
+
+    if not data or data.get("version") != _DEVICE_CACHE_VERSION:
+        return None
+
+    records = data.get("records") or []
+    last_timestamp = data.get("last_timestamp")
+    last_updated = data.get("last_updated")
+
+    if last_timestamp and not isinstance(last_timestamp, datetime):
+        try:
+            last_timestamp = datetime.fromisoformat(last_timestamp)
+        except Exception:
+            last_timestamp = None
+
+    if last_updated and not isinstance(last_updated, datetime):
+        try:
+            last_updated = datetime.fromisoformat(last_updated)
+        except Exception:
+            last_updated = None
+
+    return records, last_timestamp, last_updated
+
+
+def _save_device_cache(
+    machine_name: str,
+    records: list[UsageRecord],
+    last_timestamp: Optional[datetime],
+    *,
+    last_updated: Optional[datetime] = None,
+) -> None:
+    """Persist device records to cache for faster reloads."""
+    cache_path = _get_device_cache_path(machine_name)
+    if cache_path is None:
+        return
+
+    payload = {
+        "version": _DEVICE_CACHE_VERSION,
+        "machine_name": machine_name,
+        "last_updated": last_updated or datetime.now(timezone.utc),
+        "last_timestamp": last_timestamp,
+        "records": records,
+    }
+
+    tmp_path = cache_path.with_suffix(cache_path.suffix + ".tmp")
+
+    try:
+        with tmp_path.open("wb") as f:
+            pickle.dump(payload, f, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp_path.replace(cache_path)
+    except (OSError, pickle.PickleError):
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+
+    # Remove legacy JSON cache if present
+    legacy_path = _get_device_cache_path(machine_name, extension=_CACHE_LEGACY_EXTENSION)
+    if legacy_path and legacy_path.exists():
+        try:
+            legacy_path.unlink()
+        except OSError:
+            pass
 def _try_create_folder(path: Path) -> bool:
     """
     Try to create folder. Return True if successful or already exists.
@@ -475,6 +681,7 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
         machine_name = get_machine_name() or "Unknown"
 
         # Save individual records (full mode only)
+        dates_to_update: set[str] = set()
         for record in records:
             # Get token values (0 for user messages without token_usage)
             input_tokens = record.token_usage.input_tokens if record.token_usage else 0
@@ -532,58 +739,53 @@ def save_snapshot(records: list[UsageRecord], db_path: Path = DEFAULT_DB_PATH) -
                     cost,  # Save calculated cost
                 ))
                 saved_count += 1
+                dates_to_update.add(record.date_key)
             except sqlite3.IntegrityError:
                 # Record already exists, skip it
                 pass
 
-        # Update daily snapshots (aggregate by date)
-        # In full mode, only update dates that have records in usage_records
-        # IMPORTANT: Never use REPLACE - it would delete old data when JSONL files age out
-        # Instead, recalculate only for dates that currently have records
-        timestamp = datetime.now(timezone.utc).isoformat()
+        # Update daily snapshots only for dates touched by new records
+        if dates_to_update:
+            timestamp = datetime.now(timezone.utc).isoformat()
 
-        # Get all dates that currently have usage_records
-        cursor.execute("SELECT DISTINCT date FROM usage_records")
-        dates_with_records = [row[0] for row in cursor.fetchall()]
+            for date in sorted(dates_to_update):
+                # Calculate totals for this date from usage_records
+                cursor.execute("""
+                    SELECT
+                        SUM(CASE WHEN message_type = 'user' THEN 1 ELSE 0 END) as total_prompts,
+                        SUM(CASE WHEN message_type = 'assistant' THEN 1 ELSE 0 END) as total_responses,
+                        COUNT(DISTINCT session_id) as total_sessions,
+                        SUM(total_tokens) as total_tokens,
+                        SUM(input_tokens) as input_tokens,
+                        SUM(output_tokens) as output_tokens,
+                        SUM(cache_creation_tokens) as cache_creation_tokens,
+                        SUM(cache_read_tokens) as cache_read_tokens
+                    FROM usage_records
+                    WHERE date = ?
+                """, (date,))
 
-        for date in dates_with_records:
-            # Calculate totals for this date from usage_records
-            cursor.execute("""
-                SELECT
-                    SUM(CASE WHEN message_type = 'user' THEN 1 ELSE 0 END) as total_prompts,
-                    SUM(CASE WHEN message_type = 'assistant' THEN 1 ELSE 0 END) as total_responses,
-                    COUNT(DISTINCT session_id) as total_sessions,
-                    SUM(total_tokens) as total_tokens,
-                    SUM(input_tokens) as input_tokens,
-                    SUM(output_tokens) as output_tokens,
-                    SUM(cache_creation_tokens) as cache_creation_tokens,
-                    SUM(cache_read_tokens) as cache_read_tokens
-                FROM usage_records
-                WHERE date = ?
-            """, (date,))
+                row = cursor.fetchone()
 
-            row = cursor.fetchone()
-
-            # Use INSERT OR REPLACE only for dates that currently have data
-            # This preserves historical daily_snapshots for dates no longer in usage_records
-            cursor.execute("""
-                INSERT OR REPLACE INTO daily_snapshots (
-                    date, total_prompts, total_responses, total_sessions, total_tokens,
-                    input_tokens, output_tokens, cache_creation_tokens,
-                    cache_read_tokens, snapshot_timestamp
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                date,
-                row[0] or 0,
-                row[1] or 0,
-                row[2] or 0,
-                row[3] or 0,
-                row[4] or 0,
-                row[5] or 0,
-                row[6] or 0,
-                row[7] or 0,
-                timestamp,
-            ))
+                # Use INSERT OR REPLACE only for dates that currently have data
+                # This preserves historical daily_snapshots for dates no longer in usage_records
+                cursor.execute("""
+                    INSERT OR REPLACE INTO daily_snapshots (
+                        date, total_prompts, total_responses, total_sessions, total_tokens,
+                        input_tokens, output_tokens, cache_creation_tokens,
+                        cache_read_tokens, snapshot_timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    date,
+                    row[0] or 0,
+                    row[1] or 0,
+                    row[2] or 0,
+                    row[3] or 0,
+                    row[4] or 0,
+                    row[5] or 0,
+                    row[6] or 0,
+                    row[7] or 0,
+                    timestamp,
+                ))
 
         conn.commit()
 
@@ -718,8 +920,6 @@ def load_records_after_timestamp(
 
         # Convert rows to UsageRecord objects
         records = []
-        from src.models.usage_record import TokenUsage
-
         for row in rows:
             # Row columns: id, date, timestamp, session_id, message_uuid, message_type,
             #              model, folder, git_branch, version,
@@ -799,23 +999,82 @@ def load_all_devices_historical_records_cached(
 
     # Check if this is the first load (cache is empty)
     is_first_load = len(_device_records_cache) == 0
+    cache_changed = False
 
     if is_first_load:
-        # First load: Load all devices completely
+        # First load: Populate cache for all devices
         for machine_name, machine_db in machine_db_paths:
-            if machine_db.exists():
-                records = load_historical_records(start_date, end_date, machine_db)
+            records: list[UsageRecord] = []
+            latest_timestamp: Optional[datetime] = None
+            cached_last_updated: Optional[datetime] = None
 
-                # Find latest timestamp for this device
-                latest_timestamp = None
-                if records:
-                    latest_timestamp = max(r.timestamp for r in records)
+            if machine_name == current_device:
+                cache_entry = _load_device_cache(machine_name)
+                if cache_entry:
+                    records, latest_timestamp, cached_last_updated = cache_entry
 
-                # Cache this device's records
+                now_utc = datetime.now(timezone.utc)
+                if machine_db.exists():
+                    if latest_timestamp:
+                        new_records = load_records_after_timestamp(latest_timestamp, machine_db)
+                        if new_records:
+                            records = records + new_records
+                            latest_timestamp = _get_latest_timestamp(records)
+                            cache_changed = True
+                    else:
+                        records = load_historical_records(start_date, end_date, machine_db)
+                        latest_timestamp = _get_latest_timestamp(records)
+                        cache_changed = True
+                else:
+                    # No DB file – keep cached data only
+                    cache_changed = True
+
                 _device_records_cache[machine_name] = {
                     "records": records,
-                    "last_timestamp": latest_timestamp
+                    "last_timestamp": latest_timestamp,
+                    "last_updated": now_utc,
                 }
+                _save_device_cache(machine_name, records, latest_timestamp, last_updated=now_utc)
+                continue
+
+            cache_entry = _load_device_cache(machine_name)
+            cached_records = []
+            cached_last_timestamp = None
+            cached_last_updated = None
+            if cache_entry:
+                cached_records, cached_last_timestamp, cached_last_updated = cache_entry
+
+            if cache_entry and (not machine_db.exists() or _device_cache_is_fresh(cached_last_updated)):
+                _device_records_cache[machine_name] = {
+                    "records": cached_records,
+                    "last_timestamp": cached_last_timestamp,
+                    "last_updated": cached_last_updated or datetime.now(timezone.utc),
+                }
+                cache_changed = True
+                continue
+
+            # Cache missing or stale - try loading from database
+            db_load_failed = False
+            if machine_db.exists():
+                try:
+                    records = load_historical_records(start_date, end_date, machine_db)
+                except Exception:
+                    db_load_failed = True
+                    records = cached_records or []
+            else:
+                db_load_failed = True
+                records = cached_records or []
+
+            latest_timestamp = _get_latest_timestamp(records)
+            last_updated = datetime.now(timezone.utc) if not db_load_failed else cached_last_updated or datetime.now(timezone.utc)
+            _device_records_cache[machine_name] = {
+                "records": records,
+                "last_timestamp": latest_timestamp,
+                "last_updated": last_updated,
+            }
+            cache_changed = True
+            if not db_load_failed:
+                _save_device_cache(machine_name, records, latest_timestamp, last_updated=last_updated)
     else:
         # Subsequent loads: Only update current device
         for machine_name, machine_db in machine_db_paths:
@@ -838,35 +1097,88 @@ def load_all_devices_historical_records_cached(
                         all_device_records = cached_data["records"] + new_records
 
                         # Update cache with merged records and new latest timestamp
-                        latest_timestamp = max(r.timestamp for r in all_device_records)
+                        latest_timestamp = _get_latest_timestamp(all_device_records)
+                        now_utc = datetime.now(timezone.utc)
                         _device_records_cache[machine_name] = {
                             "records": all_device_records,
-                            "last_timestamp": latest_timestamp
+                            "last_timestamp": latest_timestamp,
+                            "last_updated": now_utc,
                         }
+                        cache_changed = True
+                        _save_device_cache(machine_name, all_device_records, latest_timestamp, last_updated=now_utc)
                 else:
                     # No cache for current device, do full load
                     records = load_historical_records(start_date, end_date, machine_db)
-                    latest_timestamp = None
-                    if records:
-                        latest_timestamp = max(r.timestamp for r in records)
+                    latest_timestamp = _get_latest_timestamp(records)
 
                     _device_records_cache[machine_name] = {
                         "records": records,
-                        "last_timestamp": latest_timestamp
+                        "last_timestamp": latest_timestamp,
+                        "last_updated": datetime.now(timezone.utc),
                     }
+                    cache_changed = True
+                    _save_device_cache(machine_name, records, latest_timestamp)
             else:
-                # Other devices: Use cached data (no reload)
-                # If not in cache yet, load it once
-                if machine_name not in _device_records_cache:
-                    records = load_historical_records(start_date, end_date, machine_db)
-                    latest_timestamp = None
-                    if records:
-                        latest_timestamp = max(r.timestamp for r in records)
+                cached_data = _device_records_cache.get(machine_name)
+                needs_refresh = cached_data is None
 
+                if not needs_refresh:
+                    last_updated = cached_data.get("last_updated")
+                    if not _device_cache_is_fresh(last_updated):
+                        cache_entry = _load_device_cache(machine_name)
+                        if cache_entry and _device_cache_is_fresh(cache_entry[2]):
+                            records, last_timestamp, updated_at = cache_entry
+                            _device_records_cache[machine_name] = {
+                                "records": records,
+                                "last_timestamp": last_timestamp,
+                                "last_updated": updated_at,
+                            }
+                            cache_changed = True
+                            continue
+                        needs_refresh = True
+
+                if needs_refresh:
+                    current_records = cached_data["records"] if cached_data else []
+                    current_last_timestamp = cached_data.get("last_timestamp") if cached_data else None
+                    current_last_updated = cached_data.get("last_updated") if cached_data else datetime.now(timezone.utc)
+
+                    if machine_db.exists():
+                        try:
+                            records = load_historical_records(start_date, end_date, machine_db)
+                            latest_timestamp = _get_latest_timestamp(records)
+                            now_utc = datetime.now(timezone.utc)
+                            _device_records_cache[machine_name] = {
+                                "records": records,
+                                "last_timestamp": latest_timestamp,
+                                "last_updated": now_utc,
+                            }
+                            cache_changed = True
+                            _save_device_cache(machine_name, records, latest_timestamp, last_updated=now_utc)
+                            continue
+                        except Exception:
+                            pass
+
+                    # Fall back to existing cached data if available
+                    if cached_data:
+                        _device_records_cache[machine_name] = {
+                            "records": current_records,
+                            "last_timestamp": current_last_timestamp,
+                            "last_updated": current_last_updated,
+                        }
+                        # No change in data -> avoid forcing merge rebuild
+                        continue
+
+                    # No cached data anywhere; store empty result
                     _device_records_cache[machine_name] = {
-                        "records": records,
-                        "last_timestamp": latest_timestamp
+                        "records": [],
+                        "last_timestamp": None,
+                        "last_updated": datetime.now(timezone.utc),
                     }
+                    cache_changed = True
+
+    # If nothing changed and we already cached the merged list, reuse it
+    if not cache_changed and _merged_records_cache is not None:
+        return _merged_records_cache
 
     # Merge all cached records
     all_records = []
@@ -975,8 +1287,6 @@ def load_historical_records(
         # If usage_records has data, use it
         if rows:
             records = []
-            from src.models.usage_record import TokenUsage
-
             for row in rows:
                 # Parse the row into a UsageRecord
                 # Row columns: id, date, timestamp, session_id, message_uuid, message_type,
@@ -1036,8 +1346,6 @@ def load_historical_records(
         # Row columns: date, total_prompts, total_responses, total_sessions, total_tokens,
         #              input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, snapshot_timestamp
         records = []
-        from src.models.usage_record import TokenUsage
-
         for row in snapshot_rows:
             date = row[0]
             total_responses = row[2]
@@ -1826,8 +2134,6 @@ def load_messages_by_hour(
 
         # Convert rows to UsageRecord objects
         records = []
-        from src.models.usage_record import TokenUsage
-
         for row in rows:
             # Row columns: id, date, timestamp, session_id, message_uuid, message_type,
             #              model, folder, git_branch, version,
@@ -1916,15 +2222,20 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
     try:
         cursor = conn.cursor()
 
-        # Basic counts
-        cursor.execute("SELECT COUNT(*) FROM usage_records")
-        total_records = cursor.fetchone()[0]
-
-        cursor.execute("SELECT COUNT(DISTINCT date) FROM usage_records")
-        total_days = cursor.fetchone()[0]
-
-        cursor.execute("SELECT MIN(date), MAX(date) FROM usage_records")
-        oldest_date, newest_date = cursor.fetchone()
+        # Basic counts (single scan)
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_records,
+                COUNT(DISTINCT date) as total_days,
+                MIN(date) as oldest_date,
+                MAX(date) as newest_date
+            FROM usage_records
+        """)
+        row = cursor.fetchone()
+        total_records = row[0] or 0
+        total_days = row[1] or 0
+        oldest_date = row[2]
+        newest_date = row[3]
 
         # Get newest snapshot timestamp
         cursor.execute("SELECT MAX(snapshot_timestamp) FROM daily_snapshots")
@@ -1956,49 +2267,25 @@ def get_database_stats(db_path: Path = DEFAULT_DB_PATH) -> dict:
             """)
             tokens_by_model = {row[0]: row[1] for row in cursor.fetchall() if row[0]}
 
-        # Calculate costs by joining with pricing table
+        # Calculate costs using precomputed cost column
         total_cost = 0.0
         cost_by_model = {}
 
         if total_records > 0:
             cursor.execute("""
                 SELECT
-                    ur.model,
-                    SUM(ur.input_tokens) as total_input,
-                    SUM(ur.output_tokens) as total_output,
-                    SUM(ur.cache_creation_tokens) as total_cache_write,
-                    SUM(ur.cache_read_tokens) as total_cache_read,
-                    mp.input_price_per_mtok,
-                    mp.output_price_per_mtok,
-                    mp.cache_write_price_per_mtok,
-                    mp.cache_read_price_per_mtok
-                FROM usage_records ur
-                LEFT JOIN model_pricing mp ON ur.model = mp.model_name
-                WHERE ur.model IS NOT NULL
-                GROUP BY ur.model
+                    model,
+                    COALESCE(SUM(cost), 0.0) as model_cost
+                FROM usage_records
+                WHERE model IS NOT NULL
+                GROUP BY model
             """)
 
-            for row in cursor.fetchall():
-                model = row[0]
-                input_tokens = row[1] or 0
-                output_tokens = row[2] or 0
-                cache_write_tokens = row[3] or 0
-                cache_read_tokens = row[4] or 0
-
-                # Pricing per million tokens
-                input_price = row[5] or 0.0
-                output_price = row[6] or 0.0
-                cache_write_price = row[7] or 0.0
-                cache_read_price = row[8] or 0.0
-
-                # Calculate cost in dollars
-                model_cost = (
-                    (input_tokens / 1_000_000) * input_price +
-                    (output_tokens / 1_000_000) * output_price +
-                    (cache_write_tokens / 1_000_000) * cache_write_price +
-                    (cache_read_tokens / 1_000_000) * cache_read_price
-                )
-
+            for model_row in cursor.fetchall():
+                model = model_row[0]
+                if not model:
+                    continue
+                model_cost = float(model_row[1] or 0.0)
                 cost_by_model[model] = model_cost
                 total_cost += model_cost
 
