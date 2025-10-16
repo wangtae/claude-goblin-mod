@@ -169,20 +169,6 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         sys.stdout.write('\033[H\033[J')  # Move to home + clear from cursor to end
         sys.stdout.flush()
 
-    # Debug: Time measurement for render performance with cumulative tracking
-    import time as time_module
-    import sys
-    t_render_start = time_module.time()
-    t_last = t_render_start
-
-    def log_elapsed(label):
-        nonlocal t_last
-        t_now = time_module.time()
-        elapsed = (t_now - t_last) * 1000
-        total_elapsed = (t_now - t_render_start) * 1000
-        print(f"[DEBUG] {label}: +{elapsed:.1f}ms (total: {total_elapsed:.1f}ms)", file=sys.stderr)
-        t_last = t_now
-
     # For heatmap mode, show heatmap instead of dashboard
     if view_mode == "heatmap":
         from src.commands.heatmap import _display_heatmap, _load_limits_data
@@ -422,9 +408,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         hourly_detail_hour = view_mode_ref.get("hourly_detail_hour")
 
     # Create footer with export info, date range, and view mode
-    log_elapsed("Before footer create")
     footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
-    log_elapsed("Footer create")
 
     # Create breakdowns for each view mode
     sections_to_render = []
@@ -479,26 +463,21 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
                 view_mode_ref['hourly_hours'] = hourly_hours_int
     else:
         # Normal mode - show KPI section and breakdowns
-        log_elapsed("Before KPI create")
         kpi_section = _create_kpi_section(stats.overall_totals, records, view_mode=view_mode, skip_limits=skip_limits, console=console, limits_from_db=limits_from_db, view_mode_ref=view_mode_ref)
-        log_elapsed("KPI create")
 
         # Render Summary (and Usage Limits in weekly mode)
         console.print(kpi_section, end="")
         console.print()  # Blank line between sections
-        log_elapsed("KPI print")
 
         # Model breakdown is always important
         model_breakdown = _create_model_breakdown(records)
         sections_to_render.append(("model", model_breakdown))
-        log_elapsed("Model breakdown")
 
         # Add mode-specific breakdown
         if view_mode == "weekly":
             # Show normal weekly breakdown
             project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
-            log_elapsed("Project breakdown")
 
             # Check weekly display mode (limits or calendar)
             weekly_display_mode = view_mode_ref.get('weekly_display_mode', 'limits') if view_mode_ref else 'limits'
@@ -507,7 +486,6 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
                 # Show calendar week (Mon-Sun, current ISO week)
                 daily_breakdown_calendar = _create_daily_breakdown_calendar_week(records)
                 sections_to_render.append(("daily_calendar", daily_breakdown_calendar))
-                log_elapsed("Daily calendar breakdown")
             else:
                 # Show Usage Limits week (default)
                 # Get week range from view_mode_ref if available
@@ -518,7 +496,6 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
 
                 daily_breakdown_weekly = _create_daily_breakdown_weekly(records, week_start, week_end, reset_time, reset_day)
                 sections_to_render.append(("daily_weekly", daily_breakdown_weekly))
-                log_elapsed("Daily weekly breakdown")
         elif view_mode == "monthly":
             project_breakdown = _create_project_breakdown(records)
             sections_to_render.append(("project", project_breakdown))
@@ -562,11 +539,9 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     for section_type, section in sections_to_render:
         console.print(section, end="")
         console.print()  # Blank line between sections
-    log_elapsed("Sections print")
 
     # Always render footer
     console.print(footer, end="")
-    log_elapsed("Footer print")
 
 
 def _calculate_session_cost(records: list[UsageRecord]) -> float:
@@ -2492,14 +2467,9 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
         try:
             from src.storage.snapshot_db import get_database_stats
             from src.utils.timezone import format_local_time, get_user_timezone
-            import time as time_module
-            import sys
             # Get timezone once for performance
             user_tz = get_user_timezone()
-            t_db_stats_start = time_module.time()
             db_stats = get_database_stats()
-            t_db_stats_end = time_module.time()
-            print(f"[DEBUG] get_database_stats() in footer: {(t_db_stats_end - t_db_stats_start)*1000:.1f}ms", file=sys.stderr)
             if db_stats.get("newest_timestamp"):
                 timestamp_str = db_stats["newest_timestamp"]
                 try:
