@@ -20,6 +20,7 @@ from src.storage.snapshot_db import (
     get_database_stats,
     load_historical_records,
     load_all_devices_historical_records,
+    load_all_devices_historical_records_cached,
     save_limits_snapshot,
     save_snapshot,
 )
@@ -983,16 +984,16 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
                             opus_reset=limits["opus_reset"],
                         )
 
-    # Step 3: Prepare dashboard from database
+    # Step 3: Prepare dashboard from database (using cached version for performance)
     if show_status:
         with console.status("[bold #ff8800]Preparing dashboard...", spinner="dots", spinner_style="#ff8800"):
-            all_records = load_all_devices_historical_records()
+            all_records = load_all_devices_historical_records_cached()
 
             # Get latest limits from DB (if we saved them above or if they exist)
             limits_from_db = get_latest_limits()
     else:
         # Fast mode: no status messages
-        all_records = load_all_devices_historical_records()
+        all_records = load_all_devices_historical_records_cached()
         limits_from_db = get_latest_limits()
 
     if not all_records:
