@@ -189,9 +189,7 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     # For usage mode, show only Usage Limits
     if view_mode == "usage":
         from src.models.pricing import format_cost
-
-        # Add blank line at top
-        console.print()
+        from rich.console import Group as RichGroup
 
         # Get usage display mode from view_mode_ref
         usage_display_mode = view_mode_ref.get('usage_display_mode', 0) if view_mode_ref else 0
@@ -278,8 +276,8 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
                 limits_table.add_row(opus_bar)
                 limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
-                # Display table without panel wrapper
-                console.print(limits_table)
+                # Store table for later grouped output
+                usage_content = limits_table
 
             elif is_m2_mode:
                 # M2 mode: M1 style (no border) with M4 bars (percentage separated)
@@ -312,8 +310,8 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
                 limits_table.add_row(bar_text)
                 limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
-                # Display table without panel wrapper (like M1)
-                console.print(limits_table)
+                # Store table for later grouped output
+                usage_content = limits_table
 
             elif is_m3_mode:
                 # M3 mode: dashboard style with bar+percentage combined (like M1) and panel wrapper
@@ -338,13 +336,12 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
                 limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
                 # Wrap in outer "Usage Limits" panel
-                limits_outer_panel = Panel(
+                usage_content = Panel(
                     limits_table,
                     title="[bold]Usage Limits",
                     border_style="white",
                     expand=True,
                 )
-                console.print(limits_outer_panel)
 
             elif is_m4_mode:
                 # M4 mode: dashboard style with percentage separated and panel wrapper
@@ -378,18 +375,24 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
                 limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
                 # Wrap in outer "Usage Limits" panel
-                limits_outer_panel = Panel(
+                usage_content = Panel(
                     limits_table,
                     title="[bold]Usage Limits",
                     border_style="white",
                     expand=True,
                 )
-                console.print(limits_outer_panel)
 
-        # Show footer at bottom for usage mode
-        console.print()
+        # Create footer
         footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
-        console.print(footer, end="")
+
+        # Group everything together and print once
+        final_output = RichGroup(
+            Text(""),  # Top blank line
+            usage_content,
+            Text(""),  # Blank line before footer
+            footer
+        )
+        console.print(final_output, end="")
 
         return
 
