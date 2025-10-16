@@ -410,7 +410,8 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         # Message detail mode - show messages for specific hour
         from src.storage.snapshot_db import load_all_devices_messages_by_hour
         hourly_messages = load_all_devices_messages_by_hour(daily_detail_date, hourly_detail_hour)
-        message_detail = _create_message_detail_view(hourly_messages, daily_detail_date, hourly_detail_hour)
+        show_full_content = view_mode_ref.get('show_full_content', False) if view_mode_ref else False
+        message_detail = _create_message_detail_view(hourly_messages, daily_detail_date, hourly_detail_hour, show_full_content)
         sections_to_render.append(("message_detail", message_detail))
     elif daily_detail_date:
         # Daily detail mode - show only the detail view without KPI section
@@ -1462,9 +1463,11 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
         # Check if date is in the future (show shortcut in gray for future dates)
         today = datetime.now().date()
         is_future = date_obj.date() > today
+        is_today = date_obj.date() == today
 
         # Check if this is the reset day and add time annotation
         # Combine shortcut and date with comma: [1] 2025-10-15, Mon [09:59]
+        # Add [T] for today in bright cyan
         if is_future:
             # Future date - show shortcut in gray (inactive)
             if reset_day and reset_time and day_name == reset_day:
@@ -1477,6 +1480,10 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
                 date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name} [purple][{reset_time}][/purple]"
             else:
                 date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name}"
+
+            # Add Today marker for today
+            if is_today:
+                date_with_shortcut += " [bright_cyan]Today[/bright_cyan]"
 
         # If no data for this day, show "-" for tokens/cost and empty bar
         if tokens == 0:
@@ -2029,7 +2036,7 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     hourly_panel = Panel(
         hourly_table,
         title=f"[bold]Hourly Usage - {title_date}",
-        subtitle="[dim]Press keys [1]-[9], [a]-[o] to view message details for that hour[/dim]",
+        subtitle="[dim]Press keys [1]-[9], [a]-[o] to view message details. In message view, press [bold yellow]tab[/bold yellow] to expand/collapse content[/dim]",
         border_style="white",
         expand=True,
     )
@@ -2039,6 +2046,9 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
         "total_tokens": 0,
         "input_tokens": 0,
         "output_tokens": 0,
+        "cache_creation": 0,
+        "cache_read": 0,
+        "messages": 0,
         "cost": 0.0
     })
 
@@ -2047,6 +2057,9 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
             model_data[record.model]["total_tokens"] += record.token_usage.total_tokens
             model_data[record.model]["input_tokens"] += record.token_usage.input_tokens
             model_data[record.model]["output_tokens"] += record.token_usage.output_tokens
+            model_data[record.model]["cache_creation"] += record.token_usage.cache_creation_tokens
+            model_data[record.model]["cache_read"] += record.token_usage.cache_read_tokens
+            model_data[record.model]["messages"] += 1
 
             cost = calculate_cost(
                 record.token_usage.input_tokens,
@@ -2062,11 +2075,12 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     max_tokens = max(data["total_tokens"] for data in model_data.values()) if model_data else 0
     sorted_models = sorted(model_data.items(), key=lambda x: x[1]["total_tokens"], reverse=True)
 
-    model_table = Table(show_header=False, box=None, padding=(0, 2))
-    model_table.add_column("Model", style="white", justify="left", width=25)
-    model_table.add_column("Bar", justify="left")
-    model_table.add_column("Tokens", style=ORANGE, justify="right")
-    model_table.add_column("Percentage", style=CYAN, justify="right")
+    model_table = Table(show_header=True, box=None, padding=(0, 2))
+    model_table.add_column("Model", style="white", justify="left", width=20)
+    model_table.add_column("", justify="left", width=10)  # Bar
+    model_table.add_column("Tokens(I/O)", style=ORANGE, justify="right", width=20)
+    model_table.add_column("Cache(W/R)", style="magenta", justify="right", width=20)
+    model_table.add_column("Messages", style="white", justify="right", width=10)
     model_table.add_column("Cost", style="green", justify="right", width=10)
 
     for model, data in sorted_models:
@@ -2075,24 +2089,37 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
             display_name = display_name.replace("claude-", "")
 
         tokens = data["total_tokens"]
-        percentage = (tokens / total_tokens * 100) if total_tokens > 0 else 0
-        bar = _create_bar(tokens, max_tokens, width=20)
+        bar = _create_bar(tokens, max_tokens, width=10)
+
+        # Format tokens as "Input / Output"
+        tokens_io = f"{_format_number(data['input_tokens'])} / {_format_number(data['output_tokens'])}"
+
+        # Format cache as "Write / Read"
+        cache_wr = f"{_format_number(data['cache_creation'])} / {_format_number(data['cache_read'])}"
 
         model_table.add_row(
             display_name,
             bar,
-            _format_number(tokens),
-            f"[cyan]{percentage:.1f}%[/cyan]",
+            tokens_io,
+            cache_wr,
+            str(data["messages"]),
             format_cost(data["cost"]),
         )
 
     # Add total row
-    model_table.add_row("", "", "", "", "")
+    total_input = sum(data["input_tokens"] for data in model_data.values())
+    total_output = sum(data["output_tokens"] for data in model_data.values())
+    total_cache_w = sum(data["cache_creation"] for data in model_data.values())
+    total_cache_r = sum(data["cache_read"] for data in model_data.values())
+    total_messages = sum(data["messages"] for data in model_data.values())
+
+    model_table.add_row("", "", "", "", "", "")
     model_table.add_row(
         "[bold]Total",
         Text(""),
-        f"[bold]{_format_number(total_tokens)}",
-        "[bold cyan]100.0%",
+        f"[bold]{_format_number(total_input)} / {_format_number(total_output)}",
+        f"[bold]{_format_number(total_cache_w)} / {_format_number(total_cache_r)}",
+        f"[bold]{total_messages}",
         f"[bold green]{format_cost(total_cost)}",
     )
 
@@ -2106,12 +2133,22 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     # Create project breakdown
     folder_data: dict[str, dict] = defaultdict(lambda: {
         "total_tokens": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "cache_creation": 0,
+        "cache_read": 0,
+        "messages": 0,
         "cost": 0.0
     })
 
     for record in filtered_records:
         if record.token_usage:
             folder_data[record.folder]["total_tokens"] += record.token_usage.total_tokens
+            folder_data[record.folder]["input_tokens"] += record.token_usage.input_tokens
+            folder_data[record.folder]["output_tokens"] += record.token_usage.output_tokens
+            folder_data[record.folder]["cache_creation"] += record.token_usage.cache_creation_tokens
+            folder_data[record.folder]["cache_read"] += record.token_usage.cache_read_tokens
+            folder_data[record.folder]["messages"] += 1
 
             if record.model and record.model != "<synthetic>":
                 cost = calculate_cost(
@@ -2128,11 +2165,12 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     sorted_folders = sorted_folders[:10]  # Limit to top 10
     max_tokens_proj = max(data["total_tokens"] for _, data in sorted_folders) if sorted_folders else 0
 
-    project_table = Table(show_header=False, box=None, padding=(0, 2))
-    project_table.add_column("Project", style="white", justify="left", overflow="crop")
-    project_table.add_column("Bar", justify="left", overflow="crop")
-    project_table.add_column("Tokens", style=ORANGE, justify="right")
-    project_table.add_column("Percentage", style=CYAN, justify="right")
+    project_table = Table(show_header=True, box=None, padding=(0, 2))
+    project_table.add_column("Project", style="white", justify="left", width=30, overflow="crop")
+    project_table.add_column("", justify="left", width=10)  # Bar
+    project_table.add_column("Tokens(I/O)", style=ORANGE, justify="right", width=20)
+    project_table.add_column("Cache(W/R)", style="magenta", justify="right", width=20)
+    project_table.add_column("Messages", style="white", justify="right", width=10)
     project_table.add_column("Cost", style="green", justify="right", width=10)
 
     for folder, data in sorted_folders:
@@ -2146,14 +2184,20 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
             display_name = display_name[:35]
 
         tokens = data["total_tokens"]
-        percentage = (tokens / total_tokens_proj * 100) if total_tokens_proj > 0 else 0
-        bar = _create_bar(tokens, max_tokens_proj, width=20)
+        bar = _create_bar(tokens, max_tokens_proj, width=10)
+
+        # Format tokens as "Input / Output"
+        tokens_io = f"{_format_number(data['input_tokens'])} / {_format_number(data['output_tokens'])}"
+
+        # Format cache as "Write / Read"
+        cache_wr = f"{_format_number(data['cache_creation'])} / {_format_number(data['cache_read'])}"
 
         project_table.add_row(
             display_name,
             bar,
-            _format_number(tokens),
-            f"[cyan]{percentage:.1f}%[/cyan]",
+            tokens_io,
+            cache_wr,
+            str(data["messages"]),
             format_cost(data["cost"]),
         )
 
@@ -2169,7 +2213,7 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     return Group(hourly_panel, spacing, model_panel, spacing, project_panel)
 
 
-def _create_message_detail_view(records: list[UsageRecord], target_date: str, target_hour: int) -> Group:
+def _create_message_detail_view(records: list[UsageRecord], target_date: str, target_hour: int, show_full_content: bool = False) -> Group:
     """
     Create detailed view for messages in a specific hour.
 
@@ -2249,7 +2293,7 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
                         record.token_usage.cache_creation_tokens,
                         record.token_usage.cache_read_tokens,
                     )
-                    cost_str = format_cost(cost)
+                    cost_str = format_cost(cost, precision=4)
                 else:
                     cost_str = "-"
             else:
@@ -2285,18 +2329,34 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
 
             # Add content preview immediately below all messages (both User and Asst)
             if record.content:
-                preview = record.content.strip().replace("\n", " ")
-                # Truncate to 63 chars (42 * 1.5, increased by 50%)
-                if len(preview) > 63:
-                    preview = preview[:63] + "..."
+                if show_full_content:
+                    # Show full content with line breaks preserved
+                    content_lines = record.content.strip().split("\n")
+                    for line_idx, line in enumerate(content_lines):
+                        content_text = Text()
+                        if line_idx == 0:
+                            # First line with branch indicator
+                            content_text.append("                ", style=DIM)  # Indent
+                            content_text.append("ㄴ ", style=DIM)
+                        else:
+                            # Subsequent lines with extra indent
+                            content_text.append("                  ", style=DIM)
+                        content_text.append(line, style=DIM)
+                        message_items.append(content_text)
+                else:
+                    # Show truncated preview
+                    preview = record.content.strip().replace("\n", " ")
+                    # Truncate to 63 chars (42 * 1.5, increased by 50%)
+                    if len(preview) > 63:
+                        preview = preview[:63] + "..."
 
-                # Create content text with indent to align with "Asst" column + 2 spaces
-                # Time column (10) + padding (4) + 2 extra spaces = 16
-                content_text = Text()
-                content_text.append("                ", style=DIM)  # Indent to Asst position + 2
-                content_text.append("ㄴ ", style=DIM)
-                content_text.append(preview, style=DIM)
-                message_items.append(content_text)
+                    # Create content text with indent to align with "Asst" column + 2 spaces
+                    # Time column (10) + padding (4) + 2 extra spaces = 16
+                    content_text = Text()
+                    content_text.append("                ", style=DIM)  # Indent to Asst position + 2
+                    content_text.append("ㄴ ", style=DIM)
+                    content_text.append(preview, style=DIM)
+                    message_items.append(content_text)
 
     # Create header table
     header_table = Table(show_header=True, box=None, padding=(0, 2))
@@ -2312,11 +2372,16 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
     # Combine header and messages
     all_items = [header_table] + message_items
 
-    # Create panel
+    # Create panel with dynamic subtitle based on content mode
+    if show_full_content:
+        subtitle_text = "[dim]Press [bold yellow]tab[/bold yellow] to switch mode([bright_green]Detail[/bright_green]), [bold]esc[/bold] to return to daily view[/dim]"
+    else:
+        subtitle_text = "[dim]Press [bold yellow]tab[/bold yellow] to switch mode([bright_green]Brief[/bright_green]), [bold]esc[/bold] to return to daily view[/dim]"
+
     panel = Panel(
         Group(*all_items),
         title=f"[bold]Message Detail - {title_text}",
-        subtitle="[dim]Press esc to return to daily view[/dim]",
+        subtitle=subtitle_text,
         border_style="white",
         expand=True,
     )
@@ -2513,7 +2578,7 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             footer.append("Use ", style=DIM)
             footer.append("tab", style=f"bold {YELLOW}")
             footer.append(" to change mode(", style=DIM)
-            footer.append(current_mode_name, style="white")
+            footer.append(current_mode_name, style="bright_green")
             footer.append(")", style=DIM)
             footer.append("\n")
 
@@ -2524,16 +2589,28 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             in_daily_detail = view_mode == "weekly" and view_mode_ref and view_mode_ref.get("daily_detail_date")
 
             if in_message_detail:
-                # Message detail mode - show return instruction
+                # Message detail mode - show tab to switch mode and esc to return
+                # Get current content mode
+                show_full = view_mode_ref.get('show_full_content', False)
+                current_mode = "Detail" if show_full else "Brief"
+
                 footer.append("Press ", style=DIM)
+                footer.append("tab", style=f"bold {YELLOW}")
+                footer.append(" to switch mode(", style=DIM)
+                footer.append(current_mode, style="bright_green")
+                footer.append("), ", style=DIM)
                 footer.append("esc", style=f"bold {YELLOW}")
-                footer.append(" to return to daily view.", style=DIM)
+                footer.append(" to return to ", style=DIM)
+                footer.append("daily view", style="white")
+                footer.append(".", style=DIM)
                 footer.append("\n")
             elif in_daily_detail:
                 # Daily detail mode - show return instruction
                 footer.append("Press ", style=DIM)
                 footer.append("esc", style=f"bold {YELLOW}")
-                footer.append(" to return to weekly view.", style=DIM)
+                footer.append(" to return to ", style=DIM)
+                footer.append("weekly view", style="white")
+                footer.append(".", style=DIM)
                 footer.append("\n")
             else:
                 # Navigation for weekly/monthly/yearly modes
@@ -2552,7 +2629,21 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
                 # Add tab to switch mode hint for weekly, monthly, and yearly modes
                 if view_mode in ["weekly", "monthly", "yearly"]:
                     footer.append("tab", style=f"bold {YELLOW}")
-                    footer.append(" to switch mode, ", style=DIM)
+                    footer.append(" to switch mode(", style=DIM)
+
+                    # Show current mode name
+                    if view_mode == "weekly":
+                        current_mode = view_mode_ref.get('weekly_display_mode', 'limits')
+                        mode_name = "Weekly Limit Period" if current_mode == "limits" else "Calendar Week"
+                    elif view_mode == "monthly":
+                        current_mode = view_mode_ref.get('monthly_display_mode', 'daily')
+                        mode_name = "Daily" if current_mode == "daily" else "Weekly"
+                    else:  # yearly
+                        current_mode = view_mode_ref.get('yearly_display_mode', 'monthly')
+                        mode_name = "Monthly" if current_mode == "monthly" else "Weekly"
+
+                    footer.append(mode_name, style="bright_green")
+                    footer.append("), ", style=DIM)
 
                 footer.append("esc", style=f"bold {YELLOW}")
                 footer.append(" key to quit.", style=DIM)

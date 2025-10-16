@@ -387,7 +387,13 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                     view_mode_ref['offset'] = 0  # Reset offset when changing mode
                     view_mode_ref['changed'] = True
                 elif key == '\t':  # Tab key
-                    if view_mode_ref['mode'] == "usage":
+                    # Check if in message detail mode (show full content toggle)
+                    if view_mode_ref.get('hourly_detail_hour') is not None:
+                        # Toggle show_full_content in message detail view
+                        current_show_full = view_mode_ref.get('show_full_content', False)
+                        view_mode_ref['show_full_content'] = not current_show_full
+                        view_mode_ref['changed'] = True
+                    elif view_mode_ref['mode'] == "usage":
                         # Cycle through 8 modes: S1 -> S2 -> S3 -> S4 -> G1 -> G2 -> G3 -> G4 -> S1
                         # Current state: usage_display_mode (0-3) and color_mode ('solid' or 'gradient')
                         current_display = view_mode_ref.get('usage_display_mode', 0)
@@ -1035,7 +1041,6 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
                 # Store weekly dates for keyboard navigation
                 # Extract unique dates and sort them (oldest first, matching daily breakdown display)
                 from collections import defaultdict
-                from datetime import datetime
                 daily_data = defaultdict(int)
 
                 for record in display_records:

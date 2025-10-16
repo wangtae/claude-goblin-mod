@@ -210,17 +210,18 @@ def calculate_cost(
     return input_cost + output_cost + cache_write_cost + cache_read_cost
 
 
-def format_cost(cost: float) -> str:
+def format_cost(cost: float, precision: int = 2) -> str:
     """
     Format cost value for display.
 
     Args:
         cost: Cost in USD
+        precision: Number of decimal places (default: 2)
 
     Returns:
-        Formatted string with 2 decimal places (e.g., "$0.00", "$1.23", "$123.45")
+        Formatted string with specified decimal places (e.g., "$0.00", "$1.23")
     """
-    return f"${cost:.2f}"
+    return f"${cost:.{precision}f}"
 
 
 #endregion
