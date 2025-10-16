@@ -162,8 +162,10 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
     """
     # Optionally clear screen and reset cursor to top
     if clear_screen:
-        # Use console.clear() for better compatibility with VSCode terminal
-        console.clear()
+        # Use ANSI escape codes for faster clearing (especially in VSCode terminal)
+        import sys
+        sys.stdout.write('\033[2J\033[H')  # Clear screen + move cursor to home
+        sys.stdout.flush()
 
     # For heatmap mode, show heatmap instead of dashboard
     if view_mode == "heatmap":
