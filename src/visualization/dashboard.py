@@ -1459,12 +1459,24 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
         date_obj = datetime.strptime(date, "%Y-%m-%d")
         day_name = date_obj.strftime("%a")  # Mon, Tue, Wed, etc.
 
+        # Check if date is in the future (show shortcut in gray for future dates)
+        today = datetime.now().date()
+        is_future = date_obj.date() > today
+
         # Check if this is the reset day and add time annotation
         # Combine shortcut and date with comma: [1] 2025-10-15, Mon [09:59]
-        if reset_day and reset_time and day_name == reset_day:
-            date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name} [purple][{reset_time}][/purple]"
+        if is_future:
+            # Future date - show shortcut in gray (inactive)
+            if reset_day and reset_time and day_name == reset_day:
+                date_with_shortcut = f"[dim][{idx}][/dim] {date}, {day_name} [purple][{reset_time}][/purple]"
+            else:
+                date_with_shortcut = f"[dim][{idx}][/dim] {date}, {day_name}"
         else:
-            date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name}"
+            # Past or today - show shortcut in yellow (active)
+            if reset_day and reset_time and day_name == reset_day:
+                date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name} [purple][{reset_time}][/purple]"
+            else:
+                date_with_shortcut = f"[yellow][{idx}][/yellow] {date}, {day_name}"
 
         # If no data for this day, show "-" for tokens/cost and empty bar
         if tokens == 0:
@@ -1559,7 +1571,7 @@ def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
 
     # Create table with English column names
     table = Table(show_header=True, box=None, padding=(0, 2))
-    table.add_column("Time", style="purple", justify="left", width=8)
+    table.add_column("Time", style="purple", justify="left", width=14)
     table.add_column("Cost", style="green", justify="right", width=10)
     table.add_column("Input", style=BLUE, justify="right", width=12)
     table.add_column("Output", style=BLUE, justify="right", width=12)
@@ -1567,9 +1579,18 @@ def _create_hourly_breakdown(records: list[UsageRecord]) -> Panel:
     table.add_column("Cache Read", style="magenta", justify="right", width=14)
     table.add_column("Messages", style="white", justify="right", width=10)
 
-    for hour, data in sorted_hours:
+    for idx, (hour, data) in enumerate(sorted_hours, start=1):
+        # Generate shortcut key: 1-9 for first 9 hours, a-o for hours 10-24
+        if idx <= 9:
+            shortcut = str(idx)
+        else:
+            # idx=10 -> 'a', idx=11 -> 'b', ..., idx=24 -> 'o'
+            shortcut = chr(ord('a') + idx - 10)
+
+        hour_with_shortcut = f"[yellow][{shortcut}][/yellow] {hour}"
+
         table.add_row(
-            hour,
+            hour_with_shortcut,
             format_cost(data["cost"]),
             _format_number(data["input_tokens"]),
             _format_number(data["output_tokens"]),
@@ -2265,9 +2286,9 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
             # Add content preview immediately below all messages (both User and Asst)
             if record.content:
                 preview = record.content.strip().replace("\n", " ")
-                # Truncate to 70% of original length (60 * 0.7 = 42 chars)
-                if len(preview) > 42:
-                    preview = preview[:42] + "..."
+                # Truncate to 63 chars (42 * 1.5, increased by 50%)
+                if len(preview) > 63:
+                    preview = preview[:63] + "..."
 
                 # Create content text with indent to align with "Asst" column + 2 spaces
                 # Time column (10) + padding (4) + 2 extra spaces = 16

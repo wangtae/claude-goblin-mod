@@ -515,9 +515,17 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                         weekly_dates = view_mode_ref.get('weekly_dates', [])
 
                         if day_index < len(weekly_dates):
-                            # Set the daily detail date
-                            view_mode_ref['daily_detail_date'] = weekly_dates[day_index]
-                            view_mode_ref['changed'] = True
+                            # Check if the date is not in the future
+                            from datetime import datetime
+                            target_date = weekly_dates[day_index]
+                            target_date_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
+                            today = datetime.now().date()
+
+                            # Only navigate if date is not in the future
+                            if target_date_obj <= today:
+                                # Set the daily detail date
+                                view_mode_ref['daily_detail_date'] = target_date
+                                view_mode_ref['changed'] = True
                 elif key == '\x1b':  # ESC key pressed again (not arrow key)
                     # If in daily detail mode, exit to normal weekly view
                     if view_mode_ref.get('daily_detail_date'):
@@ -1025,16 +1033,18 @@ def _display_dashboard(jsonl_files: list[Path], console: Console, skip_limits: b
                 view_mode = VIEW_MODE_MONTHLY
             else:
                 # Store weekly dates for keyboard navigation
-                # Extract unique dates and sort them (most recent first, matching daily breakdown display)
+                # Extract unique dates and sort them (oldest first, matching daily breakdown display)
                 from collections import defaultdict
+                from datetime import datetime
                 daily_data = defaultdict(int)
+
                 for record in display_records:
                     if record.token_usage:
                         date = record.timestamp.strftime("%Y-%m-%d") if hasattr(record, 'timestamp') else record.date_key
                         daily_data[date] += record.token_usage.total_tokens
 
-                # Sort by date in descending order (most recent first)
-                sorted_dates = sorted(daily_data.keys(), reverse=True)
+                # Sort by date in ascending order (oldest first) to match display order
+                sorted_dates = sorted(daily_data.keys(), reverse=False)
 
                 # Store in view_mode_ref for keyboard listener and dashboard rendering
                 if view_mode_ref:

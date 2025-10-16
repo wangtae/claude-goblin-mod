@@ -198,6 +198,27 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
             db_display = f"{db_path}\n[dim](auto-detect)[/dim]   [#ff8800]\\[h][/#ff8800]"
     status_table.add_row("Database Path", db_display)
 
+    # Database file size
+    try:
+        from pathlib import Path
+        db_file = Path(db_path)
+        if db_file.exists():
+            size_bytes = db_file.stat().st_size
+            # Format size in human-readable format (KB, MB, GB)
+            if size_bytes < 1024:
+                size_str = f"{size_bytes} B"
+            elif size_bytes < 1024 * 1024:
+                size_str = f"{size_bytes / 1024:.2f} KB"
+            elif size_bytes < 1024 * 1024 * 1024:
+                size_str = f"{size_bytes / (1024 * 1024):.2f} MB"
+            else:
+                size_str = f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+            status_table.add_row("Database Size", size_str)
+        else:
+            status_table.add_row("Database Size", "[dim]Not found[/dim]")
+    except Exception:
+        status_table.add_row("Database Size", "[dim]Unknown[/dim]")
+
     # Backup information
     from src.config.user_config import get_last_backup_date
     from src.utils.backup import list_backups, get_backup_directory
