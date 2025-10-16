@@ -410,8 +410,8 @@ def render_dashboard(stats: AggregatedStats, records: list[UsageRecord], console
         # Message detail mode - show messages for specific hour
         from src.storage.snapshot_db import load_all_devices_messages_by_hour
         hourly_messages = load_all_devices_messages_by_hour(daily_detail_date, hourly_detail_hour)
-        # Get content mode: "brief" (default), "detail", or "hide"
-        content_mode = view_mode_ref.get('message_content_mode', 'brief') if view_mode_ref else 'brief'
+        # Get content mode: "hide" (default), "brief", or "detail"
+        content_mode = view_mode_ref.get('message_content_mode', 'hide') if view_mode_ref else 'hide'
         message_detail = _create_message_detail_view(hourly_messages, daily_detail_date, hourly_detail_hour, content_mode, view_mode_ref)
         sections_to_render.append(("message_detail", message_detail))
     elif daily_detail_date:
@@ -2214,7 +2214,7 @@ def _create_daily_detail_view(records: list[UsageRecord], target_date: str) -> G
     return Group(hourly_panel, spacing, model_panel, spacing, project_panel)
 
 
-def _create_message_detail_view(records: list[UsageRecord], target_date: str, target_hour: int, content_mode: str = "brief", view_mode_ref: dict | None = None) -> Group:
+def _create_message_detail_view(records: list[UsageRecord], target_date: str, target_hour: int, content_mode: str = "hide", view_mode_ref: dict | None = None) -> Group:
     """
     Create detailed view for messages in a specific hour.
 
@@ -2222,7 +2222,7 @@ def _create_message_detail_view(records: list[UsageRecord], target_date: str, ta
         records: List of usage records for the target hour
         target_date: Target date in YYYY-MM-DD format (e.g., "2025-10-15")
         target_hour: Target hour in 24-hour format (0-23)
-        content_mode: Content display mode - "brief" (63 chars), "detail" (full content), or "hide" (no content)
+        content_mode: Content display mode - "hide" (no content, default), "brief" (63 chars), or "detail" (full content)
         view_mode_ref: Reference dict to track last viewed message ID
 
     Returns:
@@ -2637,9 +2637,9 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
 
             if in_message_detail:
                 # Message detail mode - show tab to switch mode and esc to return
-                # Get current content mode ("brief", "detail", or "hide")
-                content_mode = view_mode_ref.get('message_content_mode', 'brief')
-                current_mode = content_mode.capitalize()  # "Brief", "Detail", or "Hide"
+                # Get current content mode ("hide", "brief", or "detail")
+                content_mode = view_mode_ref.get('message_content_mode', 'hide')
+                current_mode = content_mode.capitalize()  # "Hide", "Brief", or "Detail"
 
                 footer.append("Press ", style=DIM)
                 footer.append("tab", style=f"bold {YELLOW}")
