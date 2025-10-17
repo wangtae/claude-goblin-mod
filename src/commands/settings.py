@@ -38,7 +38,7 @@ def run(console: Console) -> None:
             _display_settings_menu(console, prefs, machine_name, db_path)
 
             # Wait for user input
-            console.print("\n[dim]Enter setting key to edit ([#ff8800]1-5, 8-9, a-h[/#ff8800]), [#ff8800]\\[x][/#ff8800] reset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
+            console.print("\n[dim]Enter setting key to edit ([#ff8800]1-5, 8-9, a-i[/#ff8800]), [#ff8800]\\[x][/#ff8800] reset to defaults, or [#ff8800]ESC[/#ff8800] to return...[/dim]", end="")
 
             key = _read_key()
 
@@ -78,6 +78,8 @@ def run(console: Console) -> None:
                 _edit_machine_name(console)
             elif key.lower() == 'h':  # Database Path
                 _edit_database_path(console)
+            elif key.lower() == 'i':  # Check Data Sync
+                _check_and_sync_data(console)
             elif key.lower() == 'x':  # Reset to defaults
                 _reset_to_defaults(console, save_user_preference)
     except KeyboardInterrupt:
@@ -197,6 +199,17 @@ def _display_settings_menu(console: Console, prefs: dict, machine_name: str, db_
         else:
             db_display = f"{db_path}\n[dim](auto-detect)[/dim]   [#ff8800]\\[h][/#ff8800]"
     status_table.add_row("Database Path", db_display)
+
+    # Data sync status
+    from src.storage.snapshot_db import check_data_sync_status
+    sync_status = check_data_sync_status()
+
+    if sync_status['is_synced']:
+        sync_display = f"[green]{sync_status['status_message']}[/green]   [#ff8800]\\[i][/#ff8800]"
+    else:
+        sync_display = f"[yellow]{sync_status['status_message']}[/yellow]   [#ff8800]\\[i][/#ff8800]"
+
+    status_table.add_row("Data Sync Status", sync_display)
 
     # Database file size
     try:
@@ -1045,3 +1058,75 @@ def handle_db_operation(console: Console, operation: str) -> None:
         console.print("[yellow]Creating backup...[/yellow]")
         # TODO: Call database backup
         console.print("[green]Backup created successfully.[/green]")
+
+
+def _check_and_sync_data(console: Console) -> None:
+    """
+    Check data synchronization status and offer to sync if needed.
+
+    Args:
+        console: Rich console for rendering
+    """
+    from src.storage.snapshot_db import check_data_sync_status, save_snapshot
+    from src.config.settings import get_claude_jsonl_files
+    from src.data.jsonl_parser import parse_all_jsonl_files
+
+    console.print("\n[bold]Checking Data Synchronization...[/bold]\n")
+
+    # Show spinner while checking
+    with console.status("[bold white]Analyzing source data and database...", spinner="dots", spinner_style="white"):
+        sync_status = check_data_sync_status()
+
+    # Display detailed status
+    console.print(f"[cyan]Source Data:[/cyan]")
+    console.print(f"  Records: {sync_status['source_count']:,}")
+    if sync_status['source_latest']:
+        console.print(f"  Latest: {sync_status['source_latest']}")
+    console.print()
+
+    console.print(f"[cyan]Database:[/cyan]")
+    console.print(f"  Records: {sync_status['db_count']:,}")
+    if sync_status['db_latest']:
+        console.print(f"  Latest: {sync_status['db_latest']}")
+    console.print()
+
+    # Show sync status
+    if sync_status['is_synced']:
+        console.print(f"[green]✓ {sync_status['status_message']}[/green]")
+    else:
+        console.print(f"[yellow]⚠ {sync_status['status_message']}[/yellow]")
+
+        # Offer to sync
+        console.print("\n[dim]Would you like to sync now? ([#ff8800]y[/#ff8800]/n)[/dim]", end=" ")
+
+        # Get user input
+        key = _read_key()
+
+        if key.lower() == 'y':
+            console.print("\n\n[bold white]Synchronizing data...[/bold white]")
+
+            try:
+                with console.status("[bold white]Reading source files...", spinner="dots", spinner_style="white"):
+                    jsonl_files = get_claude_jsonl_files()
+                    if not jsonl_files:
+                        console.print("[red]Error: No source files found[/red]")
+                        return
+
+                    records = parse_all_jsonl_files(jsonl_files)
+
+                if not records:
+                    console.print("[red]Error: No records to sync[/red]")
+                    return
+
+                with console.status(f"[bold white]Saving {len(records):,} records to database...", spinner="dots", spinner_style="white"):
+                    save_snapshot(records)
+
+                console.print(f"[green]✓ Successfully synced {len(records):,} records to database[/green]")
+
+            except Exception as e:
+                console.print(f"[red]Error during sync: {str(e)}[/red]")
+        else:
+            console.print()
+
+    console.print("\n[dim]Press any key to return to settings...[/dim]", end="")
+    _read_key()

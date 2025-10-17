@@ -3725,4 +3725,119 @@ def get_device_hourly_distribution(machine_name: str, db_path: Path = DEFAULT_DB
         conn.close()
 
 
+def check_data_sync_status() -> dict:
+    """
+    Check if local source data (Claude Code JSONL files) matches database records.
+
+    Compares the most recent timestamp from JSONL files with the latest record in DB
+    to determine if the data is in sync.
+
+    Returns:
+        Dictionary with sync status information:
+        {
+            'is_synced': bool,
+            'source_latest': str or None,  # Latest timestamp from JSONL files
+            'db_latest': str or None,      # Latest timestamp from DB
+            'source_count': int,           # Estimated record count from JSONL
+            'db_count': int,               # Record count in DB
+            'missing_records': int,        # Estimated missing records
+            'status_message': str          # Human-readable status
+        }
+    """
+    from src.config.settings import get_claude_jsonl_files
+    from src.data.jsonl_parser import parse_all_jsonl_files
+    from datetime import datetime
+
+    result = {
+        'is_synced': False,
+        'source_latest': None,
+        'db_latest': None,
+        'source_count': 0,
+        'db_count': 0,
+        'missing_records': 0,
+        'status_message': ''
+    }
+
+    try:
+        # Get JSONL files
+        jsonl_files = get_claude_jsonl_files()
+
+        if not jsonl_files:
+            result['status_message'] = 'No Claude Code source data found'
+            result['is_synced'] = True  # Nothing to sync
+            return result
+
+        # Parse JSONL files to get latest timestamp and count
+        records = parse_all_jsonl_files(jsonl_files)
+
+        if not records:
+            result['status_message'] = 'No records in source data'
+            result['is_synced'] = True
+            return result
+
+        # Get source data stats
+        result['source_count'] = len(records)
+        latest_record = max(records, key=lambda r: r.timestamp)
+        result['source_latest'] = latest_record.timestamp.isoformat()
+
+        # Get DB stats
+        conn = sqlite3.connect(DEFAULT_DB_PATH)
+        cursor = conn.cursor()
+
+        # Get latest timestamp from DB
+        cursor.execute("""
+            SELECT MAX(timestamp) as latest_ts, COUNT(*) as total_count
+            FROM usage_records
+        """)
+        row = cursor.fetchone()
+
+        if row and row[0]:
+            result['db_latest'] = row[0]
+            result['db_count'] = row[1] or 0
+        else:
+            result['db_count'] = 0
+
+        conn.close()
+
+        # Compare timestamps
+        if result['db_latest'] is None:
+            result['is_synced'] = False
+            result['missing_records'] = result['source_count']
+            result['status_message'] = f'Database is empty. {result["source_count"]:,} records need to be synced.'
+        else:
+            # Parse timestamps for comparison
+            source_dt = datetime.fromisoformat(result['source_latest'].replace('Z', '+00:00'))
+            db_dt = datetime.fromisoformat(result['db_latest'].replace('Z', '+00:00'))
+
+            # Allow 1 second tolerance for timestamp comparison
+            time_diff = abs((source_dt - db_dt).total_seconds())
+
+            if time_diff <= 1 and result['source_count'] == result['db_count']:
+                result['is_synced'] = True
+                result['status_message'] = f'✓ Data is synced ({result["db_count"]:,} records)'
+            elif source_dt > db_dt:
+                result['is_synced'] = False
+                result['missing_records'] = result['source_count'] - result['db_count']
+                if result['missing_records'] > 0:
+                    result['status_message'] = f'⚠ Database is outdated. ~{result["missing_records"]:,} records behind.'
+                else:
+                    # Source has fewer records but newer timestamp (records were deleted from source?)
+                    result['is_synced'] = False
+                    result['status_message'] = f'⚠ Source has newer data but fewer records (check integrity)'
+            else:
+                # DB has newer data than source (multi-PC sync issue or time skew)
+                count_diff = result['db_count'] - result['source_count']
+                if count_diff > 0:
+                    result['is_synced'] = False
+                    result['status_message'] = f'⚠ DB has {count_diff:,} more records (another PC may have synced)'
+                else:
+                    result['is_synced'] = True
+                    result['status_message'] = f'✓ Database is up to date (possible time skew)'
+
+    except Exception as e:
+        result['status_message'] = f'Error checking sync status: {str(e)}'
+
+    return result
+
+
 #endregion
