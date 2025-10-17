@@ -2875,6 +2875,116 @@ def get_device_statistics(db_path: Path = DEFAULT_DB_PATH, force_refresh: bool =
     return results
 
 
+def get_device_statistics_for_period(period: str = "all") -> list[dict]:
+    """
+    Get device statistics filtered by time period.
+
+    Args:
+        period: Time period filter - "all", "monthly" (current month), or "weekly" (current week)
+
+    Returns:
+        List of device statistics dictionaries filtered by period
+    """
+    from datetime import datetime, timedelta
+
+    # Get all device statistics (cached)
+    all_stats = get_device_statistics()
+
+    if period == "all":
+        return all_stats
+
+    # Calculate date range based on period
+    today = datetime.now().date()
+
+    if period == "monthly":
+        # Current month: first day to today
+        start_date = today.replace(day=1).strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
+    elif period == "weekly":
+        # Current week: Monday to Sunday
+        days_since_monday = today.weekday()
+        week_start = today - timedelta(days=days_since_monday)
+        week_end = week_start + timedelta(days=6)
+        start_date = week_start.strftime("%Y-%m-%d")
+        end_date = week_end.strftime("%Y-%m-%d")
+    else:
+        return all_stats
+
+    # Get machine DB paths
+    machine_db_paths = get_all_machine_db_paths()
+
+    if not machine_db_paths:
+        return []
+
+    device_stats: dict[str, dict] = {}
+
+    # Query each machine DB for the specific period
+    for machine_name, machine_db in machine_db_paths:
+        if not machine_db.exists():
+            continue
+
+        conn = sqlite3.connect(machine_db, timeout=30.0)
+
+        try:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA query_only = ON")
+
+            # Query only for the specified date range
+            cursor.execute("""
+                SELECT
+                    COUNT(*) as total_records,
+                    COUNT(DISTINCT session_id) as total_sessions,
+                    COUNT(CASE WHEN message_type = 'assistant' THEN 1 END) as total_messages,
+                    COALESCE(SUM(ur.total_tokens), 0) as total_tokens,
+                    COALESCE(SUM(ur.input_tokens), 0) as input_tokens,
+                    COALESCE(SUM(ur.output_tokens), 0) as output_tokens,
+                    COALESCE(SUM(ur.cache_creation_tokens), 0) as cache_creation_tokens,
+                    COALESCE(SUM(ur.cache_read_tokens), 0) as cache_read_tokens,
+                    MIN(ur.date) as oldest_date,
+                    MAX(ur.date) as newest_date,
+                    COALESCE(SUM(
+                        (ur.input_tokens / 1000000.0) * COALESCE(mp.input_price_per_mtok, 0) +
+                        (ur.output_tokens / 1000000.0) * COALESCE(mp.output_price_per_mtok, 0) +
+                        (ur.cache_creation_tokens / 1000000.0) * COALESCE(mp.cache_write_price_per_mtok, 0) +
+                        (ur.cache_read_tokens / 1000000.0) * COALESCE(mp.cache_read_price_per_mtok, 0)
+                    ), 0.0) as total_cost
+                FROM usage_records ur
+                LEFT JOIN model_pricing mp ON ur.model = mp.model_name
+                WHERE ur.date >= ? AND ur.date <= ?
+            """, (start_date, end_date))
+
+            row = cursor.fetchone()
+
+            # Check if device has any data in this period
+            if row and (row[0] or 0) > 0:
+                device_stats[machine_name] = {
+                    "machine_name": machine_name,
+                    "total_records": row[0] or 0,
+                    "total_sessions": row[1] or 0,
+                    "total_messages": row[2] or 0,
+                    "total_tokens": row[3] or 0,
+                    "input_tokens": row[4] or 0,
+                    "output_tokens": row[5] or 0,
+                    "cache_creation_tokens": row[6] or 0,
+                    "cache_read_tokens": row[7] or 0,
+                    "total_cost": round(row[10] or 0.0, 2),
+                    "oldest_date": row[8],
+                    "newest_date": row[9],
+                }
+
+        finally:
+            conn.close()
+
+    if not device_stats:
+        return []
+
+    # Sort by tokens and return
+    results = list(device_stats.values())
+    results.sort(key=lambda x: x["total_tokens"], reverse=True)
+
+    return results
+
+
 def save_user_preference(key: str, value: str, db_path: Path = DEFAULT_DB_PATH) -> None:
     """
     Save a single user preference to database.
@@ -3519,6 +3629,96 @@ def get_model_pricing_for_settings(db_path: Path = DEFAULT_DB_PATH) -> dict:
                     "input_price": 3.0 if 'sonnet' in group['key'] else 15.0,
                     "output_price": 15.0 if 'sonnet' in group['key'] else 75.0,
                 }
+
+        return result
+    finally:
+        conn.close()
+
+
+def get_device_hourly_distribution(machine_name: str, db_path: Path = DEFAULT_DB_PATH, week_offset: int = 0) -> dict[tuple[int, int], int]:
+    """
+    Get hourly usage distribution for a specific device across a week.
+
+    Returns token usage grouped by (day_of_week, hour_of_day).
+
+    Args:
+        machine_name: Name of the machine/device
+        db_path: Path to the database file (not used, uses machine-specific DB)
+        week_offset: Number of weeks to offset (0=current week, -1=last week, 1=next week)
+
+    Returns:
+        Dictionary mapping (day_of_week, hour) -> token_count
+        - day_of_week: 0=Monday, 1=Tuesday, ..., 6=Sunday
+        - hour: 0-23
+        - token_count: Total tokens used in that hour slot
+
+    Example:
+        {
+            (0, 9): 1500000,   # Monday 9am
+            (0, 10): 2300000,  # Monday 10am
+            (1, 14): 800000,   # Tuesday 2pm
+            ...
+        }
+    """
+    from datetime import datetime, timedelta
+
+    # Get the machine-specific DB path using the same logic as get_all_machine_db_paths
+    machine_db_paths = get_all_machine_db_paths()
+
+    # Find the DB for this specific machine
+    machine_db_path = None
+    for db_machine_name, db_path in machine_db_paths:
+        if db_machine_name == machine_name:
+            machine_db_path = db_path
+            break
+
+    if machine_db_path is None or not machine_db_path.exists():
+        return {}
+
+    conn = sqlite3.connect(machine_db_path)
+    conn.row_factory = sqlite3.Row
+
+    try:
+        cursor = conn.cursor()
+
+        # Calculate the date range for the target week
+        today = datetime.now().date()
+        # Calculate the start of the target week (Monday)
+        days_since_monday = today.weekday()  # 0=Monday, 6=Sunday
+        current_week_monday = today - timedelta(days=days_since_monday)
+        target_week_monday = current_week_monday + timedelta(weeks=week_offset)
+        target_week_sunday = target_week_monday + timedelta(days=6)
+
+        week_start = target_week_monday.strftime("%Y-%m-%d")
+        week_end = target_week_sunday.strftime("%Y-%m-%d")
+
+        # Query: extract day of week and hour from timestamp
+        # Note: timestamp in DB is in UTC, convert to local time for display
+        # Using 'localtime' modifier to convert UTC to local timezone
+        # Exclude Haiku models (background sub-agent requests from Claude Code)
+        # NOTE: No need to filter by machine_name since we're already using machine-specific DB
+        cursor.execute("""
+            SELECT
+                CAST(strftime('%w', timestamp, 'localtime') AS INTEGER) as day_of_week,
+                CAST(strftime('%H', timestamp, 'localtime') AS INTEGER) as hour,
+                SUM(total_tokens) as total_tokens
+            FROM usage_records
+            WHERE date >= ? AND date <= ?
+              AND (model IS NULL OR LOWER(model) NOT LIKE '%haiku%')
+            GROUP BY day_of_week, hour
+        """, (week_start, week_end))
+
+        result = {}
+        for row in cursor.fetchall():
+            # SQLite's %w: 0=Sunday, 1=Monday, ..., 6=Saturday
+            # Convert to Python convention: 0=Monday, ..., 6=Sunday
+            sqlite_dow = row['day_of_week']
+            python_dow = (sqlite_dow + 6) % 7  # 0=Sun->6, 1=Mon->0, ..., 6=Sat->5
+
+            hour = row['hour']
+            tokens = row['total_tokens'] or 0
+
+            result[(python_dow, hour)] = tokens
 
         return result
     finally:

@@ -155,59 +155,60 @@ def _display_heatmap(console: Console, stats, limits_data: dict, year: Optional[
 
     # Helper function to create one heatmap panel
     def create_single_heatmap_panel(heatmap_title: str, color_func, legend_colors, legend_left: str, legend_right: str) -> Panel:
-        # Create content group
-        content_lines = []
+        # Create table with wider cells to make them square-like
+        table = Table(
+            show_header=True,
+            box=None,
+            padding=(0, 0),
+            collapse_padding=True,
+        )
 
-        # Build month label line with numbers (1, 2, 3...)
-        month_line = "    "  # Space for day labels
+        # Add day column
+        table.add_column("", style="dim", width=3, justify="right")
+
+        # Build month header and add week columns
         last_month = None
-        for week in weeks:
-            month_added = False
+        for week_idx, week in enumerate(weeks):
+            # Find first valid date in this week for month label
+            month_label = ""
             for day_stats, date in week:
-                if date is not None and not month_added:
+                if date is not None:
                     month = date.month
                     if month != last_month:
-                        month_line += str(month)
+                        month_label = str(month)
                         last_month = month
-                        month_added = True
                     break
-            if not month_added:
-                month_line += " "  # 1 space to match cell width
 
-        content_lines.append(Text(month_line, style="dim"))
+            # Add column for this week - width=2 to make cells more square
+            table.add_column(month_label, style="dim", width=2, justify="center")
 
         # Display 7 rows (one per day of week)
         for day_idx in range(7):
-            line = Text()
-            line.append(day_names[day_idx], style="dim")
-            line.append(" ", style="")
+            row_cells = [day_names[day_idx]]
 
             for week_idx, week in enumerate(weeks):
                 day_stats, date = week[day_idx]
 
                 if date is None:
-                    line.append(" ", style="")  # 1 space for cell
+                    # Empty cell for padding
+                    row_cells.append(Text("  ", style=""))
                 else:
+                    # Get color and create colored cell (2 spaces for square shape)
                     color_style = color_func(day_stats, date)
-                    line.append("■", style=color_style)  # BLACK SQUARE with built-in padding
+                    row_cells.append(Text("  ", style=f"on {color_style}"))
 
-            content_lines.append(line)
+            table.add_row(*row_cells)
 
-        # Blank line before legend
-        content_lines.append(Text(""))
-
-        # Legend
+        # Create legend
         legend = Text()
         legend.append(legend_left + " ", style="dim")
         for color in legend_colors:
             legend.append("■", style=color)
         legend.append(" " + legend_right, style="dim")
 
-        content_lines.append(legend)
-
-        # Create panel with content
+        # Combine table and legend
         from rich.console import Group
-        panel_content = Group(*content_lines)
+        panel_content = Group(table, Text(""), legend)
 
         return Panel(
             panel_content,
