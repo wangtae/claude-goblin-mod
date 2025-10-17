@@ -3699,12 +3699,28 @@ def get_device_hourly_distribution(machine_name: str, db_path: Path = DEFAULT_DB
             """
             cursor.execute(query)
         elif period == "monthly":
-            # Current month
-            month_start = today.replace(day=1)
-            if today.month == 12:
-                month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+            # Calculate target month based on week_offset (treat as month_offset)
+            current_year = today.year
+            current_month_num = today.month
+
+            # Add week_offset as month offset
+            target_month_num = current_month_num + week_offset
+            target_year = current_year
+
+            # Adjust year if month goes out of bounds
+            while target_month_num <= 0:
+                target_month_num += 12
+                target_year -= 1
+            while target_month_num > 12:
+                target_month_num -= 12
+                target_year += 1
+
+            # Calculate month start and end dates
+            month_start = datetime(target_year, target_month_num, 1).date()
+            if target_month_num == 12:
+                month_end = datetime(target_year + 1, 1, 1).date() - timedelta(days=1)
             else:
-                month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+                month_end = datetime(target_year, target_month_num + 1, 1).date() - timedelta(days=1)
 
             query = """
                 SELECT

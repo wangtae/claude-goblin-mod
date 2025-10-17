@@ -276,9 +276,41 @@ def _render_device_heatmaps(devices: list[dict], week_offset: int = 0, display_p
         date_range = "All Time"
         period_label = " [dim](All Time)[/dim]"
     elif display_period == "monthly":
-        current_month = today.strftime("%B %Y")
-        date_range = current_month
-        period_label = f" [dim]({current_month})[/dim]"
+        # Calculate target month based on week_offset (treat as month_offset)
+        current_year = today.year
+        current_month_num = today.month
+
+        # Add week_offset as month offset
+        target_month_num = current_month_num + week_offset
+        target_year = current_year
+
+        # Adjust year if month goes out of bounds
+        while target_month_num <= 0:
+            target_month_num += 12
+            target_year -= 1
+        while target_month_num > 12:
+            target_month_num -= 12
+            target_year += 1
+
+        # Create date for the target month
+        target_month_date = datetime(target_year, target_month_num, 1).date()
+        month_name = target_month_date.strftime("%B %Y")
+
+        # Calculate month start and end for display
+        month_start = target_month_date
+        if target_month_num == 12:
+            month_end = datetime(target_year + 1, 1, 1).date() - timedelta(days=1)
+        else:
+            month_end = datetime(target_year, target_month_num + 1, 1).date() - timedelta(days=1)
+
+        date_range = f"{month_start.strftime('%m/%d')} - {month_end.strftime('%m/%d')}"
+
+        if week_offset == 0:
+            period_label = f" [dim]({month_name})[/dim]"
+        elif week_offset < 0:
+            period_label = f" [dim]({month_name}) [{abs(week_offset)} month(s) ago][/dim]"
+        else:
+            period_label = f" [dim]({month_name}) [{week_offset} month(s) ahead][/dim]"
     else:  # weekly
         days_since_monday = today.weekday()
         current_week_monday = today - timedelta(days=days_since_monday)

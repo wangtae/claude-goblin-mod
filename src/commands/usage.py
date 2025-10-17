@@ -372,20 +372,16 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                     view_mode_ref['changed'] = True
                 elif key == '<':  # Previous week (devices mode)
                     if view_mode_ref['mode'] == VIEW_MODE_DEVICES:
-                        # Only allow week navigation in weekly mode
-                        if view_mode_ref.get('device_display_period', 'all') == 'weekly':
-                            current_offset = view_mode_ref.get('device_week_offset', 0)
-                            view_mode_ref['device_week_offset'] = current_offset - 1
-                            view_mode_ref['changed'] = True
+                        current_offset = view_mode_ref.get('device_week_offset', 0)
+                        view_mode_ref['device_week_offset'] = current_offset - 1
+                        view_mode_ref['changed'] = True
                 elif key == '>':  # Next week (devices mode)
                     if view_mode_ref['mode'] == VIEW_MODE_DEVICES:
-                        # Only allow week navigation in weekly mode
-                        if view_mode_ref.get('device_display_period', 'all') == 'weekly':
-                            current_offset = view_mode_ref.get('device_week_offset', 0)
-                            # Don't go beyond current week
-                            if current_offset < 0:
-                                view_mode_ref['device_week_offset'] = current_offset + 1
-                                view_mode_ref['changed'] = True
+                        current_offset = view_mode_ref.get('device_week_offset', 0)
+                        # Don't go beyond current week
+                        if current_offset < 0:
+                            view_mode_ref['device_week_offset'] = current_offset + 1
+                            view_mode_ref['changed'] = True
                 elif key == '\t':  # Tab key
                     # Check if in message detail mode (content mode rotation: hide -> brief -> detail -> hide)
                     if view_mode_ref.get('hourly_detail_hour') is not None:
