@@ -155,7 +155,7 @@ All screenshots show the interactive TUI dashboard with real-time data and keybo
 
 ### 7. Heatmap View - Activity Patterns
 
-![Heatmap View](docs/images/07_heatmap.png)
+![Heatmap View](docs/images/07_heatmap.png?1)
 
 **Key Features:**
 - GitHub-style contribution graph
@@ -168,7 +168,7 @@ All screenshots show the interactive TUI dashboard with real-time data and keybo
 
 ### 8. Devices View - Multi-PC Statistics
 
-![Devices View](docs/images/08_devices.png?1)
+![Devices View](docs/images/08_devices.png?2)
 
 **Key Features:**
 - Per-machine usage breakdown
