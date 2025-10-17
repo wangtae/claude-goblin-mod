@@ -3791,7 +3791,7 @@ def get_all_devices_hourly_distribution(week_offset: int = 0, period: str = "wee
     """
     from datetime import datetime, timedelta
 
-    # Get all machine-specific DB paths
+    # Get all machine-specific DB paths (returns list of tuples)
     machine_db_paths = get_all_machine_db_paths()
 
     if not machine_db_paths:
@@ -3800,7 +3800,7 @@ def get_all_devices_hourly_distribution(week_offset: int = 0, period: str = "wee
     # Aggregate data from all machines
     aggregated_result: dict[tuple[int, int], int] = {}
 
-    for machine_name, db_path in machine_db_paths.items():
+    for machine_name, db_path in machine_db_paths:
         # Get hourly distribution for this machine
         machine_data = get_device_hourly_distribution(machine_name, db_path, week_offset, period)
 
