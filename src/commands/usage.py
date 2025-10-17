@@ -366,7 +366,22 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                 elif key == 'd':
                     view_mode_ref['mode'] = VIEW_MODE_DEVICES
                     view_mode_ref['offset'] = 0  # Reset offset when changing mode
+                    view_mode_ref.pop('device_week_offset', None)  # Reset device week offset
+                    # Don't reset device_display_period - keep user's last selection
+                    # view_mode_ref.setdefault('device_display_period', 'all')  # Already defaults to 'all'
                     view_mode_ref['changed'] = True
+                elif key == '<':  # Previous week (devices mode)
+                    if view_mode_ref['mode'] == VIEW_MODE_DEVICES:
+                        current_offset = view_mode_ref.get('device_week_offset', 0)
+                        view_mode_ref['device_week_offset'] = current_offset - 1
+                        view_mode_ref['changed'] = True
+                elif key == '>':  # Next week (devices mode)
+                    if view_mode_ref['mode'] == VIEW_MODE_DEVICES:
+                        current_offset = view_mode_ref.get('device_week_offset', 0)
+                        # Don't go beyond current week
+                        if current_offset < 0:
+                            view_mode_ref['device_week_offset'] = current_offset + 1
+                            view_mode_ref['changed'] = True
                 elif key == '\t':  # Tab key
                     # Check if in message detail mode (content mode rotation: hide -> brief -> detail -> hide)
                     if view_mode_ref.get('hourly_detail_hour') is not None:
@@ -428,6 +443,16 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                         # Toggle between monthly and weekly breakdown
                         current = view_mode_ref.get('yearly_display_mode', 'monthly')
                         view_mode_ref['yearly_display_mode'] = 'weekly' if current == 'monthly' else 'monthly'
+                        view_mode_ref['changed'] = True
+                    elif view_mode_ref['mode'] == VIEW_MODE_DEVICES:
+                        # Cycle through: all -> monthly -> weekly -> all
+                        current = view_mode_ref.get('device_display_period', 'all')
+                        if current == 'all':
+                            view_mode_ref['device_display_period'] = 'monthly'
+                        elif current == 'monthly':
+                            view_mode_ref['device_display_period'] = 'weekly'
+                        else:  # weekly
+                            view_mode_ref['device_display_period'] = 'all'
                         view_mode_ref['changed'] = True
                 elif key == 's':  # Settings menu
                     # Save current view mode to restore later

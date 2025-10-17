@@ -185,9 +185,57 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
     # For devices mode, show device statistics
     if view_mode == "devices":
         from src.visualization.device_stats import render_device_statistics
-        render_device_statistics(console)
-        # Show footer with keyboard shortcuts
-        footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
+        from src.storage.snapshot_db import get_device_statistics_for_period
+        from datetime import datetime, timedelta
+
+        # Get device week offset and display period from view_mode_ref
+        device_week_offset = view_mode_ref.get('device_week_offset', 0) if view_mode_ref else 0
+        device_display_period = view_mode_ref.get('device_display_period', 'all') if view_mode_ref else 'all'
+
+        # Calculate date range based on display period and week offset
+        today = datetime.now().date()
+
+        if device_display_period == 'all':
+            # All time - get actual data range from device statistics
+            device_stats = get_device_statistics_for_period(period='all')
+            if device_stats:
+                # Find the oldest and newest dates across all devices
+                all_oldest_dates = [d['oldest_date'] for d in device_stats if d.get('oldest_date')]
+                all_newest_dates = [d['newest_date'] for d in device_stats if d.get('newest_date')]
+
+                if all_oldest_dates and all_newest_dates:
+                    oldest_date = min(all_oldest_dates)
+                    newest_date = max(all_newest_dates)
+                    # Convert to datetime for formatting
+                    oldest_dt = datetime.strptime(oldest_date, '%Y-%m-%d')
+                    newest_dt = datetime.strptime(newest_date, '%Y-%m-%d')
+                    devices_date_range = f"{oldest_dt.strftime('%y/%m/%d')} ~ {newest_dt.strftime('%y/%m/%d')}"
+                else:
+                    devices_date_range = None
+            else:
+                devices_date_range = None
+        elif device_display_period == 'monthly':
+            # Current month
+            month_start = today.replace(day=1)
+            # Calculate last day of month
+            if today.month == 12:
+                month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
+            devices_date_range = f"{month_start.strftime('%y/%m/%d')} ~ {month_end.strftime('%y/%m/%d')}"
+        elif device_display_period == 'weekly':
+            # Calculate week range with offset
+            days_since_monday = today.weekday()
+            current_week_monday = today - timedelta(days=days_since_monday)
+            target_week_monday = current_week_monday + timedelta(weeks=device_week_offset)
+            target_week_sunday = target_week_monday + timedelta(days=6)
+            devices_date_range = f"{target_week_monday.strftime('%y/%m/%d')} ~ {target_week_sunday.strftime('%y/%m/%d')}"
+        else:
+            devices_date_range = date_range
+
+        render_device_statistics(console, week_offset=device_week_offset, display_period=device_display_period)
+        # Show footer with keyboard shortcuts and calculated date range
+        footer = _create_footer(devices_date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
         console.print()
         console.print(footer, end="")
         return
@@ -2817,8 +2865,32 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
                 footer.append("esc", style=f"bold {YELLOW}")
                 footer.append(" key to quit.", style=DIM)
                 footer.append("\n")
-        elif view_mode in ["heatmap", "devices"]:
-            # Quit instruction for heatmap and devices modes
+        elif view_mode == "devices":
+            # Navigation for devices mode (week offset + period switching)
+            footer.append("Use ", style=DIM)
+            footer.append("<", style=f"bold {YELLOW}")
+            footer.append(" ", style=DIM)
+            footer.append(">", style=f"bold {YELLOW}")
+            footer.append(" to navigate weeks, ", style=DIM)
+            footer.append("tab", style=f"bold {YELLOW}")
+            footer.append(" to switch period(", style=DIM)
+
+            # Show current period
+            current_period = view_mode_ref.get('device_display_period', 'all') if view_mode_ref else 'all'
+            if current_period == 'all':
+                period_name = "All Time"
+            elif current_period == 'monthly':
+                period_name = "Monthly"
+            else:  # weekly
+                period_name = "Weekly"
+
+            footer.append(period_name, style="bright_green")
+            footer.append("), ", style=DIM)
+            footer.append("esc", style=f"bold {YELLOW}")
+            footer.append(" key to quit.", style=DIM)
+            footer.append("\n")
+        elif view_mode == "heatmap":
+            # Quit instruction for heatmap mode
             footer.append("Use ", style=DIM)
             footer.append("esc", style=f"bold {YELLOW}")
             footer.append(" key to quit.", style=DIM)
