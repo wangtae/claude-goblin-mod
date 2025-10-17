@@ -1,38 +1,52 @@
-# VHS Script: Usage Mode Demo
-# Shows current session/week/opus limits with real-time data
+# VHS Script: VSCode Integration Demo
+# Shows how ccu runs in VSCode's integrated terminal
 
 Output ../images/01-usage-mode.gif
 
 # Terminal settings
-Set FontSize 13
+Set FontSize 37
 Set Width 1200
-Set Height 700
+Set Height 800
 Set Theme "Dracula"
 Set TypingSpeed 0.05s
+Set Padding 10 
+
+# Simulate VSCode terminal
+Type "# VSCode: Monitor Claude Code usage in real-time with various color themes"
+Enter
+Sleep 1s
+
+Hide
 
 # Start the program
 Type "ccu"
 Enter
-Sleep 4s
+Sleep 7s
 
-# Switch to usage mode (if not already there)
-Type "u"
+Show 
+
+# Switch views
+Tab
 Sleep 3s
 
-# Show tab functionality - cycle through display modes
-Type@0.5s "Pressing Tab to cycle display modes..."
-Sleep 1s
+# Switch views
 Tab
-Sleep 2s
-Tab
-Sleep 2s
-Tab
-Sleep 2s
+Sleep 3s
+
+# Switch views
 Tab
 Sleep 2s
 
-# Back to usage mode
-Type "u"
+# Switch views
+Tab
+Sleep 2s
+
+# Switch views
+Tab
+Sleep 2s
+
+# Switch views
+Tab
 Sleep 2s
 
 # Exit

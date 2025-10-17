@@ -1,38 +1,41 @@
-# VHS Script: Weekly Mode Demo
-# Shows 7-day overview with daily breakdown and drill-down navigation
+# VHS Script: VSCode Integration Demo
+# Shows how ccu runs in VSCode's integrated terminal
 
 Output ../images/02-weekly-mode.gif
 
 # Terminal settings
-Set FontSize 13
+Set FontSize 17
 Set Width 1200
-Set Height 700
+Set Height 1300
 Set Theme "Dracula"
 Set TypingSpeed 0.05s
+Set Padding 10 
+
+Hide
 
 # Start the program
-Type "ccu"
+Type "ccu --anon"
 Enter
-Sleep 4s
+Sleep 10s
 
-# Switch to weekly mode
+# Switch views
 Type "w"
+Sleep 8s
+
+Show
 Sleep 3s
-
-# Navigate to previous/next week
-Type "<"
-Sleep 2s
-Type ">"
-Sleep 2s
-
-# Drill down into first day (press 1)
 Type "1"
-Sleep 3s
+Sleep 5s
 
-# Back to weekly view
-Escape
-Sleep 2s
+Type "1"
+Sleep 5s
 
-# Exit
-Type "q"
-Sleep 1s
+# Switch views
+Tab
+Sleep 5s
+
+Tab
+Sleep 5s
+
+Tab
+Sleep 5s

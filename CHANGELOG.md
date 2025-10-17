@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2025-10-17
+
+### Added
+- **Interactive GIF Demonstrations**: Complete visual documentation for all view modes
+  - 00-setup.gif: First-time configuration wizard with database location selection
+  - 01-usage-mode.gif: Real-time limits, session tracking, and cost estimation
+  - 02-weekly-mode.gif: Daily breakdown with drill-down navigation (1-7 keys)
+  - 05-monthly-mode.gif: Monthly project statistics with time navigation (<, >)
+  - 06-yearly-mode.gif: Annual overview with monthly/weekly breakdowns
+  - 07-heatmap-mode.gif: GitHub-style activity visualization with year navigation
+  - 08-devices-mode.gif: Multi-PC usage breakdown with period cycling
+  - 09-settings-mode.gif: Configuration management and customization
+- **Heatmap Year Navigation**: Navigate through historical years with `<` and `>` keys
+  - Consistent navigation pattern with Weekly/Monthly/Yearly views
+  - Footer displays current year being viewed
+  - Year offset tracking with view_mode_ref dictionary
+- Comprehensive version documentation in `docs/versions/1.2.3.md`
+
+### Changed
+- **README.md Screenshots Section**: Replaced all PNG screenshots with VHS-generated GIF files
+  - Added interactive demonstrations showing real-time keyboard navigation
+  - Updated descriptions with keyboard shortcut details
+  - Reorganized with proper numbering (0-9)
+  - Removed unused sections (03-weekly-daily-detail, 04-weekly-message-detail)
+- **Heatmap View Footer**: Enhanced with year navigation instructions
+  - Shows current year being viewed
+  - Displays navigation key hints (<, >)
+
+### Fixed
+- VHS tape script syntax errors preventing GIF generation
+  - Corrected lowercase `type` to uppercase `Type`
+  - Fixed standalone number commands (e.g., `1` → `Type "1"`)
+
+### Technical Details
+- Modified `src/visualization/dashboard.py`:
+  - Lines 175-184: Added year offset support for Heatmap view
+  - Lines 2901-2923: Enhanced footer with year navigation instructions
+- Updated VHS tape scripts in `docs/gifs/*.tape`:
+  - 00-setup.tape (renamed from 00-vscode-integration.tape)
+  - 09-settings-mode.tape (renamed from 09-settings-menu.tape)
+  - Fixed syntax in 01-usage-mode.tape, 02-weekly-mode.tape
+- Generated new GIF files in `docs/images/`
+
 ## [1.2.2] - 2025-10-17
 
 ### Added

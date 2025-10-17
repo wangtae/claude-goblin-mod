@@ -60,7 +60,7 @@ def render_device_statistics(console: Console, week_offset: int = 0, display_per
     console.print()  # Blank line
 
     # Render weekly hourly heatmap for each device
-    heatmap_panel = _render_device_heatmaps(device_stats, week_offset)
+    heatmap_panel = _render_device_heatmaps(device_stats, week_offset, display_period)
     console.print(heatmap_panel, end="")
 
 
@@ -240,9 +240,9 @@ def _render_device_table(devices: list[dict], display_period: str = "all") -> Pa
     )
 
 
-def _render_device_heatmaps(devices: list[dict], week_offset: int = 0) -> Panel:
+def _render_device_heatmaps(devices: list[dict], week_offset: int = 0, display_period: str = "weekly") -> Panel:
     """
-    Render weekly hourly heatmap for each device.
+    Render hourly heatmap for each device.
 
     Shows usage distribution across:
     - 7 days (Monday to Sunday)
@@ -253,6 +253,8 @@ def _render_device_heatmaps(devices: list[dict], week_offset: int = 0) -> Panel:
     Args:
         devices: List of device statistics dictionaries
         week_offset: Number of weeks to offset (0=current week, -1=last week, 1=next week)
+                     Only used when display_period="weekly"
+        display_period: Display period - "all", "monthly", or "weekly"
 
     Returns:
         Panel with heatmaps for all devices
@@ -263,18 +265,65 @@ def _render_device_heatmaps(devices: list[dict], week_offset: int = 0) -> Panel:
     if not devices:
         return Panel(
             Text("No device data available", style=DIM),
-            title="[bold]Weekly Hourly Distribution",
+            title="[bold]Hourly Distribution by Device",
             border_style="white",
         )
 
-    # Calculate week date range for title
+    # Calculate date range and title based on period
     today = datetime.now().date()
-    days_since_monday = today.weekday()
-    current_week_monday = today - timedelta(days=days_since_monday)
-    target_week_monday = current_week_monday + timedelta(weeks=week_offset)
-    target_week_sunday = target_week_monday + timedelta(days=6)
 
-    week_range = f"{target_week_monday.strftime('%m/%d')} - {target_week_sunday.strftime('%m/%d')}"
+    if display_period == "all":
+        date_range = "All Time"
+        period_label = " [dim](All Time)[/dim]"
+    elif display_period == "monthly":
+        # Calculate target month based on week_offset (treat as month_offset)
+        current_year = today.year
+        current_month_num = today.month
+
+        # Add week_offset as month offset
+        target_month_num = current_month_num + week_offset
+        target_year = current_year
+
+        # Adjust year if month goes out of bounds
+        while target_month_num <= 0:
+            target_month_num += 12
+            target_year -= 1
+        while target_month_num > 12:
+            target_month_num -= 12
+            target_year += 1
+
+        # Create date for the target month
+        target_month_date = datetime(target_year, target_month_num, 1).date()
+        month_name = target_month_date.strftime("%B %Y")
+
+        # Calculate month start and end for display
+        month_start = target_month_date
+        if target_month_num == 12:
+            month_end = datetime(target_year + 1, 1, 1).date() - timedelta(days=1)
+        else:
+            month_end = datetime(target_year, target_month_num + 1, 1).date() - timedelta(days=1)
+
+        date_range = f"{month_start.strftime('%m/%d')} - {month_end.strftime('%m/%d')}"
+
+        if week_offset == 0:
+            period_label = f" [dim]({month_name})[/dim]"
+        elif week_offset < 0:
+            period_label = f" [dim]({month_name}) [{abs(week_offset)} month(s) ago][/dim]"
+        else:
+            period_label = f" [dim]({month_name}) [{week_offset} month(s) ahead][/dim]"
+    else:  # weekly
+        days_since_monday = today.weekday()
+        current_week_monday = today - timedelta(days=days_since_monday)
+        target_week_monday = current_week_monday + timedelta(weeks=week_offset)
+        target_week_sunday = target_week_monday + timedelta(days=6)
+        date_range = f"{target_week_monday.strftime('%m/%d')} - {target_week_sunday.strftime('%m/%d')}"
+
+        if week_offset == 0:
+            period_label = f" ({date_range}) [dim]← Current Week →[/dim]"
+        elif week_offset < 0:
+            period_label = f" ({date_range}) [dim]← {abs(week_offset)} week(s) ago →[/dim]"
+        else:
+            period_label = f" ({date_range}) [dim]← {week_offset} week(s) ahead →[/dim]"
 
     # Sort devices by usage (same order as table)
     sorted_devices = sorted(devices, key=lambda x: x['total_tokens'], reverse=True)
@@ -286,8 +335,8 @@ def _render_device_heatmaps(devices: list[dict], week_offset: int = 0) -> Panel:
         device_name = device['machine_name']
         device_color = DEVICE_COLORS[idx % len(DEVICE_COLORS)]
 
-        # Get hourly distribution for this device
-        hourly_data = get_device_hourly_distribution(device_name, week_offset=week_offset)
+        # Get hourly distribution for this device with period parameter
+        hourly_data = get_device_hourly_distribution(device_name, week_offset=week_offset, period=display_period)
 
         # Create heatmap table
         heatmap_table = _create_weekly_heatmap(device_name, hourly_data, device_color)
@@ -304,13 +353,8 @@ def _render_device_heatmaps(devices: list[dict], week_offset: int = 0) -> Panel:
         sections.append(Text())  # Blank line between tables
     sections.append(legend)
 
-    # Add navigation hint to title
-    if week_offset == 0:
-        title = f"[bold]Weekly Hourly Distribution by Device[/bold] ({week_range}) [dim]← Current Week →[/dim]"
-    elif week_offset < 0:
-        title = f"[bold]Weekly Hourly Distribution by Device[/bold] ({week_range}) [dim]← {abs(week_offset)} week(s) ago →[/dim]"
-    else:
-        title = f"[bold]Weekly Hourly Distribution by Device[/bold] ({week_range}) [dim]← {week_offset} week(s) ahead →[/dim]"
+    # Build title
+    title = f"[bold]Hourly Distribution by Device[/bold]{period_label}"
 
     return Panel(
         Group(*sections),

@@ -59,77 +59,54 @@ Access via keyboard shortcuts - no separate commands needed:
 
 ## Screenshots
 
-All screenshots show the interactive TUI dashboard with real-time data and keyboard navigation.
+All interactive GIF demonstrations show real-time TUI dashboard with keyboard navigation.
 
-### 0. VSCode Integration - Terminal Usage
+### 0. Setup Wizard - First-Time Configuration
 
-![VSCode Usage](docs/images/00_vscode-usages.png)
+![Setup Wizard](docs/images/00-setup.gif)
 
 **Key Features:**
-- Runs seamlessly in VSCode's integrated terminal
-- Works in compact window sizes (minimal vertical space needed)
-- Supports various VSCode color themes
-- Full keyboard navigation without leaving the editor
-- Real-time updates while coding
+- Interactive setup wizard on first run
+- Choose database location: OneDrive/iCloud sync or local storage
+- Optional machine name configuration
+- Auto-detects cloud storage paths
+- Configurable anytime via Settings menu
 
-**Use Case:** Monitor Claude Code usage without switching applications
+**Use Case:** Easy initial configuration for single or multi-PC setups
 
 ### 1. Usage Mode - Real-time Limits
 
-![Usage Mode](docs/images/01_usages.png)
+![Usage Mode](docs/images/01-usage-mode.gif)
 
 **Key Features:**
-- Current session usage (5-hour window) with reset countdown
-- Weekly limit across all models with percentage bars
+- Current session usage tracking (5-hour rolling window)
+- Session reset countdown timer
+- Weekly limit monitoring with percentage bars
 - Opus-specific weekly limit tracking
-- Token breakdown: Input, Output, Cache Write, Cache Read
-- Cost estimation and message count
-- Auto-refreshes in background
+- Token breakdown by type (input/output/cache)
+- Cost estimation vs Claude Pro subscription
+- Tab key cycles through different display modes
 
 **Keyboard:** `u` to switch to this view
 
-### 2. Weekly View - Daily Breakdown
+### 2. Weekly Mode - Daily Breakdown with Navigation
 
-![Weekly View](docs/images/02_weekly.png)
+![Weekly Mode](docs/images/02-weekly-mode.gif)
 
 **Key Features:**
 - 7-day overview with daily statistics
 - Visual progress bars for each day
 - Token usage by model (Sonnet/Opus breakdown)
-- Top 10 projects for the week
+- Top projects ranked by usage
 - Press number keys `1-7` to drill down into hourly details
+- Navigate weeks with `<` and `>` keys
+- Tab key cycles through display modes
 
 **Keyboard:** `w` to switch to this view
 
-### 3. Weekly Daily Detail - Hourly Breakdown
+### 5. Monthly Mode - Project Focus
 
-![Weekly Daily Detail](docs/images/03_weekly_daily.png)
-
-**Key Features:**
-- Hourly statistics for selected day
-- Time-based token usage patterns
-- Model and project breakdowns specific to that day
-- Press number keys `1-24` to view individual message details
-- Press `ESC` to return to weekly view
-
-**Keyboard:** `1-7` from weekly view to select a day
-
-### 4. Message Detail View - Individual Messages
-
-![Message Detail](docs/images/04_weekly_daily_messages.png)
-
-**Key Features:**
-- Individual message metadata (timestamp, model, tokens)
-- Input/Output token counts with cache statistics
-- Cost per message
-- Content preview for each message (42 characters)
-- User prompts and Assistant responses shown separately
-
-**Keyboard:** `1-24` from daily detail view to select an hour
-
-### 5. Monthly View - Project Focus
-
-![Monthly View](docs/images/05_monthly.png)
+![Monthly Mode](docs/images/05-monthly-mode.gif)
 
 **Key Features:**
 - Full month overview with daily bars
@@ -137,12 +114,13 @@ All screenshots show the interactive TUI dashboard with real-time data and keybo
 - Top projects ranked by usage
 - Cost and percentage breakdowns
 - Navigate previous/next months with `<` and `>`
+- Tab key cycles display modes (daily/weekly breakdown)
 
 **Keyboard:** `m` to switch to this view
 
-### 6. Yearly View - Annual Overview
+### 6. Yearly Mode - Annual Overview
 
-![Yearly View](docs/images/06_yearly.png)
+![Yearly Mode](docs/images/06-yearly-mode.gif)
 
 **Key Features:**
 - 12-month summary with monthly statistics
@@ -150,45 +128,50 @@ All screenshots show the interactive TUI dashboard with real-time data and keybo
 - Project rankings for the entire year
 - Year-to-date cost estimation
 - Navigate previous/next years with `<` and `>`
+- Tab key toggles monthly/weekly breakdown
 
 **Keyboard:** `y` to switch to this view
 
-### 7. Heatmap View - Activity Patterns
+### 7. Heatmap Mode - Activity Patterns
 
-![Heatmap View](docs/images/07_heatmap.png?1)
+![Heatmap Mode](docs/images/07-heatmap-mode.gif)
 
 **Key Features:**
 - GitHub-style contribution graph
 - Color intensity based on token usage
 - Full year visualization (52 weeks)
 - Identify usage patterns and trends
+- Navigate previous/next years with `<` and `>`
 - Quick visual overview of activity
 
 **Keyboard:** `h` to switch to this view
 
-### 8. Devices View - Multi-PC Statistics
+### 8. Devices Mode - Multi-PC Statistics
 
-![Devices View](docs/images/08_devices.png?2)
+![Devices Mode](docs/images/08-devices-mode.gif)
 
 **Key Features:**
 - Per-machine usage breakdown
 - Device names (customizable via settings)
 - Token and cost totals per device
 - Date range for each device's activity
-- Useful for multi-PC setups with cloud storage sync (OneDrive on WSL2/Windows, iCloud Drive on macOS)
+- Navigate weeks/months with `<` and `>`
+- Tab key cycles display periods (all/monthly/weekly)
+- Useful for multi-PC setups with cloud storage sync
 
 **Keyboard:** `d` to switch to this view
 
-### 9. Settings Menu - Configuration
+### 9. Settings Mode - Configuration
 
-![Settings Menu](docs/images/09_settings.png?2)
+![Settings Mode](docs/images/09-settings-mode.gif)
 
 **Key Features:**
 - Color customization (solid colors and gradient ranges)
 - Display mode preferences
-- Auto-refresh interval settings
 - Timezone configuration
 - Backup management options
+- Database path configuration
+- Machine name customization
 - Reset to defaults with confirmation
 
 **Keyboard:** `s` to open settings menu from any view

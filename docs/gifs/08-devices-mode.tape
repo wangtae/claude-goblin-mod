@@ -1,27 +1,35 @@
-# VHS Script: Devices Mode Demo
-# Shows per-machine usage breakdown for multi-PC setups
+# VHS Script: VSCode Integration Demo
+# Shows how ccu runs in VSCode's integrated terminal
 
 Output ../images/08-devices-mode.gif
 
 # Terminal settings
-Set FontSize 13
+Set FontSize 17
 Set Width 1200
-Set Height 700
+Set Height 830
 Set Theme "Dracula"
 Set TypingSpeed 0.05s
+Set Padding 10 
+
+Hide
 
 # Start the program
-Type "ccu"
+Type "ccu --anon"
 Enter
-Sleep 4s
+Sleep 10s
 
-# Switch to devices mode
+# Switch views
 Type "d"
-Sleep 4s
+Sleep 10s
 
-# Stay on devices view to show statistics
-Sleep 2s
+Show 
+Sleep 3s
 
-# Exit
-Type "q"
-Sleep 1s
+Tab
+Sleep 8s
+
+Tab
+Sleep 8s
+
+Tab
+Sleep 8s

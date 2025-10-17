@@ -1,6 +1,6 @@
 #region Imports
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -174,8 +174,14 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
     # For heatmap mode, show heatmap instead of dashboard
     if view_mode == "heatmap":
         from src.commands.heatmap import _display_heatmap, _load_limits_data
+        from datetime import datetime
+
+        # Get year offset from view_mode_ref
+        time_offset = view_mode_ref.get('offset', 0) if view_mode_ref else 0
+        target_year = datetime.now().year + time_offset
+
         limits_data = _load_limits_data()
-        _display_heatmap(console, stats, limits_data, year=None)
+        _display_heatmap(console, stats, limits_data, year=target_year)
         # Show footer with keyboard shortcuts
         footer = _create_footer(date_range, fast_mode=fast_mode, view_mode=view_mode, in_live_mode=True, is_updating=is_updating, view_mode_ref=view_mode_ref)
         console.print()
@@ -1575,19 +1581,22 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
         is_future = date_obj.date() > today
         is_today = date_obj.date() == today
 
+        # Apply bright cyan background to day_name if today
+        if is_today:
+            day_name_styled = f"[black on bright_cyan]{day_name}[/black on bright_cyan]"
+        else:
+            day_name_styled = day_name
+
         if is_future:
             if reset_day and reset_time and day_name == reset_day:
-                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name} [purple][{reset_time}][/purple]"
+                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name_styled} [purple][{reset_time}][/purple]"
             else:
-                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name}"
+                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name_styled}"
         else:
             if reset_day and reset_time and day_name == reset_day:
-                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name} [purple][{reset_time}][/purple]"
+                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name_styled} [purple][{reset_time}][/purple]"
             else:
-                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name}"
-
-            if is_today:
-                date_with_shortcut += " [bright_cyan]Today[/bright_cyan]"
+                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name_styled}"
 
         if tokens == 0:
             bar = Text("▬" * 20, style=DIM)
@@ -2890,10 +2899,27 @@ def _create_footer(date_range: str = None, fast_mode: bool = False, view_mode: s
             footer.append(" key to quit.", style=DIM)
             footer.append("\n")
         elif view_mode == "heatmap":
-            # Quit instruction for heatmap mode
-            footer.append("Use ", style=DIM)
+            # Navigation and quit instructions for heatmap mode
+            from datetime import datetime
+            time_offset = view_mode_ref.get('offset', 0) if view_mode_ref else 0
+            current_year = datetime.now().year + time_offset
+
+            # Year navigation
+            footer.append("Year: ", style=DIM)
+            footer.append(f"{current_year}", style="bold bright_green")
+            footer.append("  |  ", style=DIM)
+
+            # Navigation keys
+            footer.append("Navigate: ", style=DIM)
+            footer.append("<", style=f"bold {YELLOW}")
+            footer.append(" Previous year, ", style=DIM)
+            footer.append(">", style=f"bold {YELLOW}")
+            footer.append(" Next year  |  ", style=DIM)
+
+            # Quit instruction
+            footer.append("Press ", style=DIM)
             footer.append("esc", style=f"bold {YELLOW}")
-            footer.append(" key to quit.", style=DIM)
+            footer.append(" to quit.", style=DIM)
             footer.append("\n")
 
         # Add auto update time or updating status (last line, so cursor appears on right)
