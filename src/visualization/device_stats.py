@@ -322,7 +322,7 @@ def _render_device_heatmaps(devices: list[dict], week_offset: int = 0, display_p
     sections.append(legend)
 
     # Build title
-    title = f"[bold]Weekly Hourly Distribution by Device[/bold]{period_label}"
+    title = f"[bold]Hourly Distribution by Device[/bold]{period_label}"
 
     return Panel(
         Group(*sections),
