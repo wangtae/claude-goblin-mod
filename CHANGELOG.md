@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2025-10-17
+
+### Changed
+- **README.md Title**: Updated from "Multi devices" to "Multi-Device Aggregation"
+  - Clarifies that the tool aggregates (combines/sums) usage data from multiple devices
+  - Better communicates the value proposition: total usage across all PCs
+- **Devices Mode GIF**: Regenerated with improved height (1100px)
+  - Better visibility of device statistics table
+  - Complete display without scrolling
+- **Heatmap Mode GIF**: Regenerated with updated settings
+- **GIF Cache Management**: Added cache busting parameter (`?1`) to devices mode GIF URL
+
+### Technical Details
+- Modified `docs/gifs/08-devices-mode.tape`: Height increased from 830px to 1100px
+- Regenerated `docs/images/07-heatmap-mode.gif` with current VHS settings
+- Regenerated `docs/images/08-devices-mode.gif` with new height setting
+- Added comprehensive version documentation in `docs/versions/1.2.4.md`
+
+### Documentation
+- Improved clarity of multi-device aggregation feature in README title
+- Enhanced visual demonstrations with optimized GIF dimensions
+- Better first impression for new users
+
 ## [1.2.3] - 2025-10-17
 
 ### Added
