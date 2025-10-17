@@ -6,7 +6,7 @@ Output ../images/08-devices-mode.gif
 # Terminal settings
 Set FontSize 17
 Set Width 1200
-Set Height 830
+Set Height 1100
 Set Theme "Dracula"
 Set TypingSpeed 0.05s
 Set Padding 10 

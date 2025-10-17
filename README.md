@@ -1,4 +1,5 @@
-# Claude Code Goblin (Modified Fork)
+# 🎯 Claude Code Usage Monitor (Multi-Device Aggregation)
+
 
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue?logo=python&logoColor=white)
 ![Claude Code](https://img.shields.io/badge/Claude%20Code-required-orange?logo=anthropic)
@@ -148,7 +149,7 @@ All interactive GIF demonstrations show real-time TUI dashboard with keyboard na
 
 ### 8. Devices Mode - Multi-PC Statistics
 
-![Devices Mode](docs/images/08-devices-mode.gif)
+![Devices Mode](docs/images/08-devices-mode.gif?1)
 
 **Key Features:**
 - Per-machine usage breakdown
