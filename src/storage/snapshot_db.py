@@ -3772,6 +3772,45 @@ def get_device_hourly_distribution(machine_name: str, db_path: Path = DEFAULT_DB
         conn.close()
 
 
+def get_all_devices_hourly_distribution(week_offset: int = 0, period: str = "weekly") -> dict[tuple[int, int], int]:
+    """
+    Get hourly usage distribution for ALL devices combined.
+
+    Returns token usage grouped by (day_of_week, hour_of_day) across all machines.
+
+    Args:
+        week_offset: Number of weeks to offset (0=current week, -1=last week, 1=next week)
+                     Only used when period="weekly"
+        period: Display period - "all", "monthly", or "weekly"
+
+    Returns:
+        Dictionary mapping (day_of_week, hour) -> token_count
+        - day_of_week: 0=Monday, 1=Tuesday, ..., 6=Sunday
+        - hour: 0-23
+        - token_count: Total tokens used in that hour slot across all devices
+    """
+    from datetime import datetime, timedelta
+
+    # Get all machine-specific DB paths
+    machine_db_paths = get_all_machine_db_paths()
+
+    if not machine_db_paths:
+        return {}
+
+    # Aggregate data from all machines
+    aggregated_result: dict[tuple[int, int], int] = {}
+
+    for machine_name, db_path in machine_db_paths.items():
+        # Get hourly distribution for this machine
+        machine_data = get_device_hourly_distribution(machine_name, db_path, week_offset, period)
+
+        # Add to aggregated result
+        for key, tokens in machine_data.items():
+            aggregated_result[key] = aggregated_result.get(key, 0) + tokens
+
+    return aggregated_result
+
+
 def check_data_sync_status() -> dict:
     """
     Check if local source data (Claude Code JSONL files) matches database records.
