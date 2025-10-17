@@ -370,17 +370,31 @@ def _keyboard_listener(view_mode_ref: dict, stop_event: threading.Event) -> None
                     # Don't reset device_display_period - keep user's last selection
                     # view_mode_ref.setdefault('device_display_period', 'all')  # Already defaults to 'all'
                     view_mode_ref['changed'] = True
-                elif key == '<':  # Previous week (devices mode)
+                elif key == '<':
+                    # Handle navigation for different modes
                     if view_mode_ref['mode'] == VIEW_MODE_DEVICES:
+                        # Device mode: navigate weeks/months
                         current_offset = view_mode_ref.get('device_week_offset', 0)
                         view_mode_ref['device_week_offset'] = current_offset - 1
                         view_mode_ref['changed'] = True
-                elif key == '>':  # Next week (devices mode)
+                    elif view_mode_ref['mode'] in [VIEW_MODE_WEEKLY, VIEW_MODE_MONTHLY, VIEW_MODE_YEARLY]:
+                        # Weekly/Monthly/Yearly modes: navigate periods
+                        view_mode_ref['offset'] = view_mode_ref.get('offset', 0) - 1
+                        view_mode_ref['changed'] = True
+                elif key == '>':
+                    # Handle navigation for different modes
                     if view_mode_ref['mode'] == VIEW_MODE_DEVICES:
+                        # Device mode: navigate weeks/months
                         current_offset = view_mode_ref.get('device_week_offset', 0)
                         # Don't go beyond current week
                         if current_offset < 0:
                             view_mode_ref['device_week_offset'] = current_offset + 1
+                            view_mode_ref['changed'] = True
+                    elif view_mode_ref['mode'] in [VIEW_MODE_WEEKLY, VIEW_MODE_MONTHLY, VIEW_MODE_YEARLY]:
+                        # Weekly/Monthly/Yearly modes: navigate periods
+                        current_offset = view_mode_ref.get('offset', 0)
+                        if current_offset < 0:  # Only allow if we're in the past
+                            view_mode_ref['offset'] = current_offset + 1
                             view_mode_ref['changed'] = True
                 elif key == '\t':  # Tab key
                     # Check if in message detail mode (content mode rotation: hide -> brief -> detail -> hide)
