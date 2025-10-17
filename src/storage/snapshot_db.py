@@ -3635,9 +3635,9 @@ def get_model_pricing_for_settings(db_path: Path = DEFAULT_DB_PATH) -> dict:
         conn.close()
 
 
-def get_device_hourly_distribution(machine_name: str, db_path: Path = DEFAULT_DB_PATH, week_offset: int = 0) -> dict[tuple[int, int], int]:
+def get_device_hourly_distribution(machine_name: str, db_path: Path = DEFAULT_DB_PATH, week_offset: int = 0, period: str = "weekly") -> dict[tuple[int, int], int]:
     """
-    Get hourly usage distribution for a specific device across a week.
+    Get hourly usage distribution for a specific device.
 
     Returns token usage grouped by (day_of_week, hour_of_day).
 
@@ -3645,6 +3645,8 @@ def get_device_hourly_distribution(machine_name: str, db_path: Path = DEFAULT_DB
         machine_name: Name of the machine/device
         db_path: Path to the database file (not used, uses machine-specific DB)
         week_offset: Number of weeks to offset (0=current week, -1=last week, 1=next week)
+                     Only used when period="weekly"
+        period: Display period - "all", "monthly", or "weekly"
 
     Returns:
         Dictionary mapping (day_of_week, hour) -> token_count
@@ -3681,32 +3683,61 @@ def get_device_hourly_distribution(machine_name: str, db_path: Path = DEFAULT_DB
     try:
         cursor = conn.cursor()
 
-        # Calculate the date range for the target week
+        # Determine date range based on period
         today = datetime.now().date()
-        # Calculate the start of the target week (Monday)
-        days_since_monday = today.weekday()  # 0=Monday, 6=Sunday
-        current_week_monday = today - timedelta(days=days_since_monday)
-        target_week_monday = current_week_monday + timedelta(weeks=week_offset)
-        target_week_sunday = target_week_monday + timedelta(days=6)
 
-        week_start = target_week_monday.strftime("%Y-%m-%d")
-        week_end = target_week_sunday.strftime("%Y-%m-%d")
+        if period == "all":
+            # All time: no date filter
+            query = """
+                SELECT
+                    CAST(strftime('%w', timestamp, 'localtime') AS INTEGER) as day_of_week,
+                    CAST(strftime('%H', timestamp, 'localtime') AS INTEGER) as hour,
+                    SUM(total_tokens) as total_tokens
+                FROM usage_records
+                WHERE (model IS NULL OR LOWER(model) NOT LIKE '%haiku%')
+                GROUP BY day_of_week, hour
+            """
+            cursor.execute(query)
+        elif period == "monthly":
+            # Current month
+            month_start = today.replace(day=1)
+            if today.month == 12:
+                month_end = today.replace(year=today.year + 1, month=1, day=1) - timedelta(days=1)
+            else:
+                month_end = today.replace(month=today.month + 1, day=1) - timedelta(days=1)
 
-        # Query: extract day of week and hour from timestamp
-        # Note: timestamp in DB is in UTC, convert to local time for display
-        # Using 'localtime' modifier to convert UTC to local timezone
-        # Exclude Haiku models (background sub-agent requests from Claude Code)
-        # NOTE: No need to filter by machine_name since we're already using machine-specific DB
-        cursor.execute("""
-            SELECT
-                CAST(strftime('%w', timestamp, 'localtime') AS INTEGER) as day_of_week,
-                CAST(strftime('%H', timestamp, 'localtime') AS INTEGER) as hour,
-                SUM(total_tokens) as total_tokens
-            FROM usage_records
-            WHERE date >= ? AND date <= ?
-              AND (model IS NULL OR LOWER(model) NOT LIKE '%haiku%')
-            GROUP BY day_of_week, hour
-        """, (week_start, week_end))
+            query = """
+                SELECT
+                    CAST(strftime('%w', timestamp, 'localtime') AS INTEGER) as day_of_week,
+                    CAST(strftime('%H', timestamp, 'localtime') AS INTEGER) as hour,
+                    SUM(total_tokens) as total_tokens
+                FROM usage_records
+                WHERE date >= ? AND date <= ?
+                  AND (model IS NULL OR LOWER(model) NOT LIKE '%haiku%')
+                GROUP BY day_of_week, hour
+            """
+            cursor.execute(query, (month_start.strftime("%Y-%m-%d"), month_end.strftime("%Y-%m-%d")))
+        else:  # weekly (default)
+            # Calculate the date range for the target week
+            days_since_monday = today.weekday()  # 0=Monday, 6=Sunday
+            current_week_monday = today - timedelta(days=days_since_monday)
+            target_week_monday = current_week_monday + timedelta(weeks=week_offset)
+            target_week_sunday = target_week_monday + timedelta(days=6)
+
+            week_start = target_week_monday.strftime("%Y-%m-%d")
+            week_end = target_week_sunday.strftime("%Y-%m-%d")
+
+            query = """
+                SELECT
+                    CAST(strftime('%w', timestamp, 'localtime') AS INTEGER) as day_of_week,
+                    CAST(strftime('%H', timestamp, 'localtime') AS INTEGER) as hour,
+                    SUM(total_tokens) as total_tokens
+                FROM usage_records
+                WHERE date >= ? AND date <= ?
+                  AND (model IS NULL OR LOWER(model) NOT LIKE '%haiku%')
+                GROUP BY day_of_week, hour
+            """
+            cursor.execute(query, (week_start, week_end))
 
         result = {}
         for row in cursor.fetchall():
