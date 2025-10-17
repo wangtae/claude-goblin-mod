@@ -298,11 +298,13 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
                 limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
                 limits_table.add_row("")  # Blank line
 
-                # Opus limit (3 rows)
+                # Opus limit (2-3 rows: hide reset info if 0%, matching claude /usage behavior)
                 limits_table.add_row("Current week (Opus)")
                 opus_bar = _create_usage_bar_with_percent(limits["opus_pct"], width=bar_width, color_mode=color_mode, colors=colors)
                 limits_table.add_row(opus_bar)
-                limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+                # Only show reset info if usage > 0%
+                if limits["opus_pct"] > 0:
+                    limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
                 # Store table for later grouped output
                 usage_content = limits_table
@@ -329,14 +331,16 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
                 limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
                 limits_table.add_row("")  # Blank line
 
-                # Opus limit (3 rows)
+                # Opus limit (2-3 rows: hide reset info if 0%, matching claude /usage behavior)
                 limits_table.add_row("Current week (Opus)")
                 opus_bar = _create_bar(limits["opus_pct"], 100, width=bar_width, color=_get_bar_color(limits["opus_pct"], color_mode, colors))
                 bar_text = Text()
                 bar_text.append(opus_bar)
                 bar_text.append(f"  {limits['opus_pct']}%", style="bold white")
                 limits_table.add_row(bar_text)
-                limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+                # Only show reset info if usage > 0%
+                if limits["opus_pct"] > 0:
+                    limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
                 # Store table for later grouped output
                 usage_content = limits_table
@@ -357,11 +361,13 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
                 limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
                 limits_table.add_row("")  # Blank line
 
-                # Opus limit (3 rows)
+                # Opus limit (2-3 rows: hide reset info if 0%, matching claude /usage behavior)
                 limits_table.add_row("Current week (Opus)")
                 opus_bar = _create_usage_bar_with_percent(limits["opus_pct"], width=bar_width, color_mode=color_mode, colors=colors)
                 limits_table.add_row(opus_bar)
-                limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+                # Only show reset info if usage > 0%
+                if limits["opus_pct"] > 0:
+                    limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
                 # Wrap in outer "Usage Limits" panel
                 usage_content = Panel(
@@ -393,14 +399,16 @@ def render_dashboard(summary: UsageSummary, stats: AggregatedStats, records: lis
                 limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
                 limits_table.add_row("")  # Blank line
 
-                # Opus limit (3 rows)
+                # Opus limit (2-3 rows: hide reset info if 0%, matching claude /usage behavior)
                 limits_table.add_row("Current week (Opus)")
                 opus_bar = _create_bar(limits["opus_pct"], 100, width=bar_width, color=_get_bar_color(limits["opus_pct"], color_mode, colors))
                 bar_text = Text()
                 bar_text.append(opus_bar)
                 bar_text.append(f"  {limits['opus_pct']}%", style="bold white")
                 limits_table.add_row(bar_text)
-                limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+                # Only show reset info if usage > 0%
+                if limits["opus_pct"] > 0:
+                    limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
                 # Wrap in outer "Usage Limits" panel
                 usage_content = Panel(
@@ -903,10 +911,10 @@ def _create_kpi_section(summary: UsageSummary, records: list[UsageRecord], view_
 
         # Create individual limit boxes if available
         if limits and "error" not in limits:
-            # Remove timezone info from reset dates
-            session_reset = limits['session_reset'].split(' (')[0] if '(' in limits['session_reset'] else limits['session_reset']
-            week_reset = limits['week_reset'].split(' (')[0] if '(' in limits['week_reset'] else limits['week_reset']
-            opus_reset = limits['opus_reset'].split(' (')[0] if '(' in limits['opus_reset'] else limits['opus_reset']
+            # Use reset strings as-is (no formatting) for weekly mode
+            session_reset = limits['session_reset']
+            week_reset = limits['week_reset']
+            opus_reset = limits['opus_reset']
 
             # Calculate costs for each limit period
             from datetime import timedelta
@@ -941,11 +949,13 @@ def _create_kpi_section(summary: UsageSummary, records: list[UsageRecord], view_
             limits_table.add_row(f"Resets {week_reset} ({format_cost(weekly_sonnet_cost)})", style=DIM)
             limits_table.add_row("")  # Blank line
 
-            # Opus limit (3 rows)
+            # Opus limit (2-3 rows: hide reset info if 0%, matching claude /usage behavior)
             limits_table.add_row("Current week (Opus)")
             opus_bar = _create_usage_bar_with_percent(limits["opus_pct"], width=bar_width, color_mode=color_mode, colors=colors)
             limits_table.add_row(opus_bar)
-            limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
+            # Only show reset info if usage > 0%
+            if limits["opus_pct"] > 0:
+                limits_table.add_row(f"Resets {opus_reset} ({format_cost(weekly_opus_cost)})", style=DIM)
 
             # Wrap in outer "Usage Limits" panel (expand to fit terminal width)
             limits_outer_panel = Panel(

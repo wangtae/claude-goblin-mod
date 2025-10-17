@@ -120,18 +120,32 @@ def capture_limits() -> dict | None:
             }
 
         # Parse for percentages and reset times
-        session_match = re.search(r'Current session.*?(\d+)%\s+used.*?Resets\s+(.+?)(?:\n|$)', clean_output, re.DOTALL)
-        week_match = re.search(r'Current week \(all models\).*?(\d+)%\s+used.*?Resets\s+(.+?)(?:\n|$)', clean_output, re.DOTALL)
-        opus_match = re.search(r'Current week \(Opus\).*?(\d+)%\s+used.*?Resets\s+(.+?)(?:\n|$)', clean_output, re.DOTALL)
+        session_match = re.search(r'Current session.*?(\d+)%\s+used.*?Resets\s+(.+?)(?:\r?\n|$)', clean_output, re.DOTALL)
+        week_match = re.search(r'Current week \(all models\).*?(\d+)%\s+used.*?Resets\s+(.+?)(?:\r?\n|$)', clean_output, re.DOTALL)
+        opus_match = re.search(r'Current week \(Opus\).*?(\d+)%\s+used', clean_output, re.DOTALL)
+
+        # For Opus reset time: try to find "Resets" info, fallback to week reset if 0%
+        opus_reset_match = re.search(r'Current week \(Opus\).*?(\d+)%\s+used.*?Resets\s+(.+?)(?:\r?\n|$)', clean_output, re.DOTALL)
 
         if session_match and week_match and opus_match:
+            # Clean reset strings (remove \r and extra whitespace)
+            session_reset = session_match.group(2).strip().replace('\r', '')
+            week_reset = week_match.group(2).strip().replace('\r', '')
+
+            # If Opus has reset info, use it; otherwise use week reset (when Opus is 0%)
+            if opus_reset_match:
+                opus_reset = opus_reset_match.group(2).strip().replace('\r', '')
+            else:
+                # Opus is 0%, use week reset time
+                opus_reset = week_reset
+
             return {
                 "session_pct": int(session_match.group(1)),
                 "week_pct": int(week_match.group(1)),
                 "opus_pct": int(opus_match.group(1)),
-                "session_reset": session_match.group(2).strip(),
-                "week_reset": week_match.group(2).strip(),
-                "opus_reset": opus_match.group(2).strip(),
+                "session_reset": session_reset,
+                "week_reset": week_reset,
+                "opus_reset": opus_reset,
             }
 
         return None
