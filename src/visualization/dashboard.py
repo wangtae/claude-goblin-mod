@@ -1575,19 +1575,22 @@ def _create_daily_breakdown_weekly(records: list[UsageRecord], week_start_date=N
         is_future = date_obj.date() > today
         is_today = date_obj.date() == today
 
+        # Apply bright cyan background to day_name if today
+        if is_today:
+            day_name_styled = f"[black on bright_cyan]{day_name}[/black on bright_cyan]"
+        else:
+            day_name_styled = day_name
+
         if is_future:
             if reset_day and reset_time and day_name == reset_day:
-                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name} [purple][{reset_time}][/purple]"
+                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name_styled} [purple][{reset_time}][/purple]"
             else:
-                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name}"
+                date_with_shortcut = f"[dim][{idx}][/dim] {date_str}, {day_name_styled}"
         else:
             if reset_day and reset_time and day_name == reset_day:
-                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name} [purple][{reset_time}][/purple]"
+                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name_styled} [purple][{reset_time}][/purple]"
             else:
-                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name}"
-
-            if is_today:
-                date_with_shortcut += " [bright_cyan]Today[/bright_cyan]"
+                date_with_shortcut = f"[yellow][{idx}][/yellow] {date_str}, {day_name_styled}"
 
         if tokens == 0:
             bar = Text("▬" * 20, style=DIM)
