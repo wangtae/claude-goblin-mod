@@ -334,7 +334,7 @@ def _render_device_heatmaps(devices: list[dict], week_offset: int = 0, display_p
     # First, add "All devices" combined heatmap
     from src.storage.snapshot_db import get_all_devices_hourly_distribution
     all_devices_hourly_data = get_all_devices_hourly_distribution(week_offset=week_offset, period=display_period)
-    all_devices_heatmap = _create_weekly_heatmap("All devices", all_devices_hourly_data, "bright_white")
+    all_devices_heatmap = _create_weekly_heatmap("All devices", all_devices_hourly_data, "#ffffff")  # White
     heatmap_tables.append(all_devices_heatmap)
 
     # Then add individual device heatmaps
